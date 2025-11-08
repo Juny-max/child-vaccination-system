@@ -240,7 +240,7 @@ export default function Home() {
                 fill
                 className="object-cover"
               />
-              <div className="absolute inset-0 bg-linear-to-t from-background/95 via-background/60 to-transparent" />
+              <div className="absolute inset-0 bg-linear-to-t from-background/85 via-background/45 to-transparent dark:from-background/95 dark:via-background/60" />
               <div className="absolute bottom-0 left-0 right-0 space-y-4 p-8">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-primary">

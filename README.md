@@ -2,6 +2,8 @@
 
 **Production-Ready Multi-Branch Vaccination Tracking System for Ghana Government**
 
+> Note: We are building and refining the front-end experience first. Once the UI is finalized, we will implement the backend services and database layer.
+
 ## Quick Start
 
 ### Prerequisites
@@ -87,6 +89,18 @@ Current implementation uses mock data. To integrate with real backend:
 2. Replace `/dashboard` data fetching with real API calls
 3. Implement offline sync with Service Workers
 4. Add IndexedDB for offline storage
+
+### Backend contract: Appointment booking (TODO)
+
+- When a parent submits an appointment request from the front-end booking form, the backend MUST deliver that booking to the health facility where the child was born or where the child was registered.
+- The booking payload should include: child id, parent id, parent contact, preferred date, preferred time, optional notes, and preferred facility id (if supplied).
+- The receiving facility server should acknowledge receipt and either:
+    - Confirm the appointment and return a confirmation id and scheduled time, or
+    - Assign a community health worker (CHW) to perform a home visit (include CHW id) and return an assignment acknowledgement.
+- Delivery guarantees: POST appointment endpoint should return 202 Accepted on async acceptance, 200 OK with confirmation when synchronously scheduled, and retry on transient errors. Persist the booking request on the backend for audit and retry.
+- Security: bookings must be authenticated and authorized (parent role) and use TLS. Rate-limit booking endpoints to prevent abuse.
+
+Add this to the backend implementation checklist so the appointment flow does not cause integration errors when the backend is started.
 
 ## Deployment
 

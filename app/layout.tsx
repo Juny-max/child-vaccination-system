@@ -12,14 +12,17 @@ export const metadata: Metadata = {
   title: "Ghana Child Vaccination System",
   description: "Multi-branch vaccination tracking system for Ghana government",
   icons: {
-    // Primary favicon files placed in `public/`
-    icon: "/favicon.ico",
-    shortcut: "/favicon-32x32.png",
-    apple: "/apple-touch-icon.png",
-    other: [
-      { rel: "icon", url: "/icon.svg", type: "image/svg+xml" },
-      { rel: "manifest", url: "/site.webmanifest" },
+    icon: [
+      { url: "/cvcc-favicon.png", type: "image/png" },
+      { url: "/favicon-32x32.png", type: "image/png" },
+      { url: "/favicon.ico" },
     ],
+    shortcut: [
+      { url: "/cvcc-favicon.png", type: "image/png" },
+      { url: "/favicon-32x32.png", type: "image/png" },
+    ],
+    apple: "/cvcc-favicon.png",
+    other: [{ rel: "manifest", url: "/site.webmanifest" }],
   },
     generator: 'v0.app'
 }
