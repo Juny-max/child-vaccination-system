@@ -19,6 +19,7 @@ import {
   User,
 } from "lucide-react"
 import { ParentDashboardProvider } from "./dashboard-context"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 type DashboardLayoutProps = {
   children: React.ReactNode
@@ -109,6 +110,7 @@ export default function ParentDashboardLayout({ children }: DashboardLayoutProps
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <ThemeToggle />
               <span className="hidden text-sm text-muted-foreground md:inline">Signed in as {userName}</span>
               <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
                 <LogOut className="size-4" /> Logout

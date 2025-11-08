@@ -2,19 +2,55 @@ export type ChildInfo = {
   name: string
   id: string
   age: string
+  height: string
   birthWeight: string
   bloodType: string
   primaryFacility: string
+  profilePhoto: string
 }
 
 export const childInfo: ChildInfo = {
   name: "Ama Asante",
   id: "CHILD-001",
   age: "18 months",
+  height: "78 cm",
   birthWeight: "3.2 kg",
   bloodType: "O+",
   primaryFacility: "Accra Central Health Center",
+  profilePhoto: "/images/demo-child-1.svg",
 }
+
+export type ChildProfile = ChildInfo & {
+  relationship: string
+  dateOfBirth: string
+}
+
+export const childProfiles: ChildProfile[] = [
+  {
+    id: "CHILD-001",
+    name: "Ama Asante",
+  age: "18 months",
+  height: "78 cm",
+    dateOfBirth: "2023-05-10",
+    relationship: "First daughter",
+    birthWeight: "3.2 kg",
+    bloodType: "O+",
+    primaryFacility: "Accra Central Health Center",
+  profilePhoto: "/images/demo-child-1.svg",
+  },
+  {
+    id: "CHILD-002",
+    name: "Kojo Asante",
+  age: "6 months",
+  height: "66 cm",
+    dateOfBirth: "2024-04-21",
+    relationship: "Second son",
+    birthWeight: "3.0 kg",
+    bloodType: "A+",
+    primaryFacility: "Accra Central Health Center",
+  profilePhoto: "/images/demo-child-2.svg",
+  },
+]
 
 export const healthReminders: string[] = [
   "Keep Ama hydrated and observe for any reactions within 24 hours after each shot.",
@@ -76,21 +112,64 @@ export const appointments: Appointment[] = [
   },
 ]
 
+export type ContactMethod = "phone" | "sms" | "whatsapp" | "email"
+
 export type MotherDetails = {
-  phone: string
+  name: string
+  primaryPhone: string
+  secondaryPhone?: string
   email: string
-  address: string
+  addressLine1: string
+  landmark?: string
+  city: string
+  region: string
+  country: string
+  postalCode?: string
+  preferredContactMethod: ContactMethod
   nextVisit: string
   primaryNurse: string
 }
 
 export const motherDetailsTemplate: MotherDetails = {
-  phone: "+233 24 123 4567",
-  email: "mother@example.com",
-  address: "Accra - Ga Central",
+  name: "Akosua Asante",
+  primaryPhone: "+233 24 123 4567",
+  secondaryPhone: "+233 20 765 4321",
+  email: "akosua.asante@example.com",
+  addressLine1: "House 12, Mango Street",
+  landmark: "Near Ga Central Clinic",
+  city: "Accra",
+  region: "Greater Accra",
+  country: "Ghana",
+  postalCode: "GA-184-5123",
+  preferredContactMethod: "sms",
   nextVisit: "March 5, 2025",
   primaryNurse: "Nurse Afua Mensah",
 }
+
+export type EmergencyContact = {
+  id: string
+  name: string
+  relationship: string
+  phone: string
+  isPrimary: boolean
+}
+
+export const emergencyContactsTemplate: EmergencyContact[] = [
+  {
+    id: "CONTACT-001",
+    name: "Kwame Asante",
+    relationship: "Father",
+    phone: "+233 24 555 8899",
+    isPrimary: true,
+  },
+  {
+    id: "CONTACT-002",
+    name: "Ama Serwaa",
+    relationship: "Sister",
+    phone: "+233 20 111 2233",
+    isPrimary: false,
+  },
+]
 
 export const chatbotPrompts: string[] = [
   '"What should I expect after the MMR shot?"',
