@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -41,8 +42,16 @@ export default function ParentLogin() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-4">
           <div className="flex justify-center">
-            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-              <Heart className="text-primary" size={24} />
+            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-lg flex items-center justify-center bg-transparent">
+              <Image
+                src="/CVCC TRANSparent.png"
+                alt="CVCC logo"
+                width={112}
+                height={112}
+                className="object-contain bg-transparent"
+                style={{ backgroundColor: "transparent" }}
+                priority
+              />
             </div>
           </div>
           <div className="text-center">
