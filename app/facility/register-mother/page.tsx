@@ -1,0 +1,370 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { AlertCircle, ArrowLeft, CheckCircle2, ClipboardEdit, Phone } from "lucide-react"
+
+import { ThemeToggle } from "@/components/theme-toggle"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+
+type MotherFormState = {
+  fullName: string
+  phoneNumber: string
+  alternatePhone: string
+  email: string
+  addressLine1: string
+  landmark: string
+  city: string
+  region: string
+  country: string
+  postalCode: string
+  community: string
+  ghanaCard: string
+  nhisNumber: string
+  preferredContact: "sms" | "email"
+  emergencyContactName: string
+  emergencyContactPhone: string
+  notes: string
+}
+
+const initialState: MotherFormState = {
+  fullName: "",
+  phoneNumber: "",
+  alternatePhone: "",
+  email: "",
+  addressLine1: "",
+  landmark: "",
+  city: "",
+  region: "",
+  country: "Ghana",
+  postalCode: "",
+  community: "",
+  ghanaCard: "",
+  nhisNumber: "",
+  preferredContact: "sms",
+  emergencyContactName: "",
+  emergencyContactPhone: "",
+  notes: "",
+}
+
+export default function RegisterMotherPage() {
+  const router = useRouter()
+  const [userName, setUserName] = useState("")
+  const [formData, setFormData] = useState<MotherFormState>(initialState)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [systemMessage, setSystemMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    const token = localStorage.getItem("authToken")
+    const role = localStorage.getItem("userRole")
+    const detail = localStorage.getItem("userRoleDetail")
+    const name = localStorage.getItem("userName")
+
+    if (!token) {
+      router.push("/auth/login")
+      return
+    }
+
+    if (role !== "staff" || detail !== "facility-nurse") {
+      router.push("/facility/dashboard")
+      return
+    }
+
+    setUserName(name || "Facility Nurse")
+  }, [router])
+
+  useEffect(() => {
+    if (!systemMessage) return
+    const timeout = window.setTimeout(() => setSystemMessage(null), 6000)
+    return () => window.clearTimeout(timeout)
+  }, [systemMessage])
+
+  const handleChange = (field: keyof MotherFormState, value: string) => {
+    setFormData((previous) => ({ ...previous, [field]: value }))
+  }
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setIsSubmitting(true)
+
+    window.setTimeout(() => {
+      setIsSubmitting(false)
+      if (formData.email) {
+        setSystemMessage(
+          `Mother registered successfully. Login instructions emailed to ${formData.email}. The new CVCC ID will sync to the branch list.`
+        )
+      } else {
+        setSystemMessage(
+          "Mother registered successfully. Print the clinic passbook with the generated CVCC ID and QR code before the caregiver leaves."
+        )
+      }
+      setFormData(initialState)
+    }, 800)
+  }
+
+  return (
+    <div className="min-h-screen bg-muted/30">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" className="gap-2" asChild>
+              <Link href="/facility/dashboard">
+                <ArrowLeft className="h-4 w-4" /> Today&apos;s clinic
+              </Link>
+            </Button>
+            <div>
+              <p className="text-sm text-muted-foreground">Facility Nurse Workflow</p>
+              <p className="text-lg font-semibold text-foreground">Register new mother</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <div className="flex flex-col items-end">
+              <span className="text-sm text-muted-foreground">{userName}</span>
+              <span className="text-xs text-muted-foreground/80">Facility Nurse</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
+        {systemMessage ? (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{systemMessage}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        <Card className="mt-6 border-primary/40">
+          <CardHeader className="space-y-2">
+            <CardTitle>Mother details</CardTitle>
+            <CardDescription>
+              Capture the information recorded on the Ghana Child Welfare Clinic Maternal Details page. Required fields ensure SMS
+              reminders are delivered to the right caregiver.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-6" onSubmit={handleSubmit}>
+              <section className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Full name</Label>
+                  <Input
+                    id="fullName"
+                    required
+                    placeholder="e.g. Akosua Mensah"
+                    value={formData.fullName}
+                    onChange={(event) => handleChange("fullName", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ghanaCard">Ghana card number (optional)</Label>
+                  <Input
+                    id="ghanaCard"
+                    placeholder="GHA-123456789-0"
+                    value={formData.ghanaCard}
+                    onChange={(event) => handleChange("ghanaCard", event.target.value.toUpperCase())}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phoneNumber">Primary phone number</Label>
+                  <Input
+                    id="phoneNumber"
+                    type="tel"
+                    required
+                    placeholder="e.g. +233 24 500 1100"
+                    value={formData.phoneNumber}
+                    onChange={(event) => handleChange("phoneNumber", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="alternatePhone">Alternate phone / WhatsApp</Label>
+                  <Input
+                    id="alternatePhone"
+                    type="tel"
+                    placeholder="Optional support contact"
+                    value={formData.alternatePhone}
+                    onChange={(event) => handleChange("alternatePhone", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email address (optional)</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={formData.email}
+                    onChange={(event) => handleChange("email", event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">If provided, the parent portal credentials will be emailed immediately.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="nhisNumber">NHIS number (optional)</Label>
+                  <Input
+                    id="nhisNumber"
+                    placeholder="e.g. 1234567890"
+                    value={formData.nhisNumber}
+                    onChange={(event) => handleChange("nhisNumber", event.target.value)}
+                  />
+                </div>
+              </section>
+
+              <section className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="addressLine1">Residential address</Label>
+                  <Input
+                    id="addressLine1"
+                    required
+                    placeholder="House 12, Zongo Lane"
+                    value={formData.addressLine1}
+                    onChange={(event) => handleChange("addressLine1", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="landmark">Nearest landmark / GPS</Label>
+                  <Input
+                    id="landmark"
+                    placeholder="Bole Clinic Junction, GPS: WR-123-4567"
+                    value={formData.landmark}
+                    onChange={(event) => handleChange("landmark", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="city">Town / city</Label>
+                  <Input
+                    id="city"
+                    required
+                    placeholder="e.g. Bole"
+                    value={formData.city}
+                    onChange={(event) => handleChange("city", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="region">Region</Label>
+                  <Input
+                    id="region"
+                    required
+                    placeholder="e.g. Savannah Region"
+                    value={formData.region}
+                    onChange={(event) => handleChange("region", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="community">Community / catchment</Label>
+                  <Input
+                    id="community"
+                    required
+                    placeholder="e.g. Jakpa North"
+                    value={formData.community}
+                    onChange={(event) => handleChange("community", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="country">Country</Label>
+                  <Input
+                    id="country"
+                    required
+                    placeholder="Ghana"
+                    value={formData.country}
+                    onChange={(event) => handleChange("country", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="postalCode">Postal / digital address (optional)</Label>
+                  <Input
+                    id="postalCode"
+                    placeholder="GA-184-5123"
+                    value={formData.postalCode}
+                    onChange={(event) => handleChange("postalCode", event.target.value.toUpperCase())}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Preferred contact method</Label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                        formData.preferredContact === "sms"
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background text-foreground"
+                      }`}
+                      onClick={() => handleChange("preferredContact", "sms")}
+                    >
+                      <Phone className="h-4 w-4" /> SMS
+                    </button>
+                    <button
+                      type="button"
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                        formData.preferredContact === "email"
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background text-foreground"
+                      }`}
+                      onClick={() => handleChange("preferredContact", "email")}
+                    >
+                      Email
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="emergencyContactName">Emergency contact name</Label>
+                  <Input
+                    id="emergencyContactName"
+                    placeholder="Optional guardian or relative"
+                    value={formData.emergencyContactName}
+                    onChange={(event) => handleChange("emergencyContactName", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="emergencyContactPhone">Emergency contact phone</Label>
+                  <Input
+                    id="emergencyContactPhone"
+                    type="tel"
+                    placeholder="Optional backup number"
+                    value={formData.emergencyContactPhone}
+                    onChange={(event) => handleChange("emergencyContactPhone", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="notes">Clinic notes</Label>
+                  <textarea
+                    id="notes"
+                    placeholder="Add any additional information (e.g. preferred language, mobility support needs)."
+                    className="min-h-[112px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={formData.notes}
+                    onChange={(event) => handleChange("notes", event.target.value)}
+                  />
+                </div>
+              </section>
+
+              <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
+                <div className="text-xs text-muted-foreground">
+                  By saving, the record syncs to HQ and branches once backend integration is enabled.
+                </div>
+                <Button type="submit" className="gap-2" disabled={isSubmitting}>
+                  <ClipboardEdit className="h-4 w-4" /> {isSubmitting ? "Saving..." : "Save mother record"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+          <p>Next step: register the child once the caregiver&apos;s information is saved.</p>
+          <Button variant="outline" size="sm" className="gap-2" asChild>
+            <Link href="/facility/register-child">
+              Continue to child registration
+              <CheckCircle2 className="h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
+      </main>
+    </div>
+  )
+}

@@ -46,17 +46,27 @@ const certificateData = [
 
 const COLORS = ["#10b981", "#3b82f6", "#f59e0b"]
 
+function formatRoleLabel(role?: string | null) {
+  if (!role) return "Staff"
+  return role
+    .split("-")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ")
+}
+
 export default function Dashboard() {
   const router = useRouter()
   const [userName, setUserName] = useState("")
+  const [roleDetail, setRoleDetail] = useState("")
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const name = localStorage.getItem("userName")
+    const detail = localStorage.getItem("userRoleDetail")
 
     if (!token) {
-      router.push("/auth/staff-login")
+      router.push("/auth/login")
       return
     }
 
@@ -65,12 +75,29 @@ export default function Dashboard() {
       return
     }
 
+    if (detail === "hq-admin") {
+      router.push("/hq/dashboard")
+      return
+    }
+
+    if (detail === "branch-manager") {
+      router.push("/branch/dashboard")
+      return
+    }
+
+    if (detail === "facility-nurse") {
+      router.push("/facility/dashboard")
+      return
+    }
+
     setUserName(name || "User")
+    setRoleDetail(detail || "")
   }, [router])
 
   const handleLogout = () => {
     localStorage.removeItem("authToken")
     localStorage.removeItem("userRole")
+    localStorage.removeItem("userRoleDetail")
     localStorage.removeItem("userName")
     router.push("/")
   }
@@ -88,7 +115,10 @@ export default function Dashboard() {
               <span className="font-semibold">Staff Dashboard</span>
             </div>
             <div className="flex items-center gap-4">
-              <span className="text-sm text-muted-foreground">Welcome, {userName}</span>
+              <div className="flex flex-col items-end">
+                <span className="text-sm text-muted-foreground">Welcome, {userName}</span>
+                <span className="text-xs text-muted-foreground/80">{formatRoleLabel(roleDetail)}</span>
+              </div>
               <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2 bg-transparent">
                 <LogOut size={16} />
                 Logout

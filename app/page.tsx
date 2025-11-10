@@ -95,6 +95,34 @@ const highlights = [
   },
 ]
 
+const demoAccounts = [
+  {
+    role: "Parent",
+    email: "parent@example.com",
+    detail: "Review child immunisation journeys and reminders.",
+  },
+  {
+    role: "HQ Admin",
+    email: "admin@health.gov.gh",
+    detail: "Monitor national coverage, drop-off and cold chain alerts.",
+  },
+  {
+    role: "Facility Nurse",
+    email: "nurse@health.gov.gh",
+    detail: "Capture clinic doses and manage appointment queues.",
+  },
+  {
+    role: "Community Health Worker",
+    email: "chw@health.gov.gh",
+    detail: "Plan home visits and record outreach vaccinations offline.",
+  },
+  {
+    role: "Data Analyst",
+    email: "analytics@health.gov.gh",
+    detail: "Analyse trends, export reports and audit data quality.",
+  },
+]
+
 export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -136,13 +164,11 @@ export default function Home() {
             >
               {isDark ? <Sun className="h-5 w-5" /> : <MoonStar className="h-5 w-5" />}
             </button>
-            <Link href="/auth/parent-login">
-              <Button variant="outline" className="hover:bg-muted hover:text-foreground dark:hover:bg-muted/60 dark:hover:text-foreground">
-                Parent Portal
+            <Link href="/auth/login">
+              <Button className="gap-2">
+                Portal Login
+                <ArrowRight className="h-4 w-4" />
               </Button>
-            </Link>
-            <Link href="/auth/staff-login">
-              <Button>Staff Sign In</Button>
             </Link>
           </div>
 
@@ -168,13 +194,11 @@ export default function Home() {
                 {isDark ? <Sun className="h-5 w-5" /> : <MoonStar className="h-5 w-5" />}
                 <span className="ml-2">{isDark ? "Light Mode" : "Dark Mode"}</span>
               </button>
-              <Link href="/auth/parent-login" onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="outline" className="w-full hover:bg-muted hover:text-foreground dark:hover:bg-muted/60 dark:hover:text-foreground">
-                  Parent Portal
+              <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}>
+                <Button className="w-full gap-2">
+                  Portal Login
+                  <ArrowRight className="h-4 w-4" />
                 </Button>
-              </Link>
-              <Link href="/auth/staff-login" onClick={() => setMobileMenuOpen(false)}>
-                <Button className="w-full">Staff Sign In</Button>
               </Link>
             </div>
           </div>
@@ -208,15 +232,15 @@ export default function Home() {
               guardians informed through a unified SMS and Email engagement engine.
             </p>
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:gap-4 sm:justify-start">
-              <Link href="/auth/staff-login">
+              <Link href="/auth/login">
                 <Button size="lg" className="w-full gap-2 sm:w-auto">
-                  Explore Staff Console
+                  Portal Login
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
-              <Link href="/auth/parent-login">
+              <Link href="#demo-credentials">
                 <Button variant="outline" size="lg" className="w-full sm:w-auto">
-                  Access Parent Records
+                  View Demo Accounts
                 </Button>
               </Link>
             </div>
@@ -330,7 +354,7 @@ export default function Home() {
                 connected to the mission.
               </p>
             </div>
-            <Link href="/auth/staff-login">
+            <Link href="/auth/login">
               <Button>Book a guided demo</Button>
             </Link>
           </div>
@@ -402,22 +426,64 @@ export default function Home() {
             digital certificates to parents across the country.
           </p>
           <div className="flex w-full flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4">
-            <Link href="/auth/staff-login">
+            <Link href="/auth/login">
               <Button
                 size="lg"
                 variant="default"
                 className="w-full bg-primary text-white shadow-lg transition duration-150 ease-out hover:-translate-y-1 hover:bg-primary/90 hover:shadow-2xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary/50 sm:w-auto"
               >
-                Launch Staff Portal
+                Launch Portal
               </Button>
             </Link>
-            <Link href="/auth/parent-login">
+            <Link href="#demo-credentials">
               <Button
                 size="lg"
                 variant="outline"
                 className="w-full border-primary-foreground/80 text-primary dark:text-primary-foreground hover:bg-primary-foreground/5 sm:w-auto"
               >
-                Parent Access
+                Demo Credentials
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section id="demo-credentials" className="bg-background py-16 sm:py-24">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-10 space-y-3 text-center">
+            <h2 className="text-3xl font-semibold md:text-4xl">Preview the unified portal</h2>
+            <p className="text-lg text-muted-foreground">
+              Use any email below with a password that has six or more characters. We&apos;ll route you to the right workspace automatically.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {demoAccounts.map((account) => (
+              <Card key={account.email} className="border-border/70 bg-card/90 shadow-sm">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Check className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{account.role}</CardTitle>
+                      <CardDescription>{account.detail}</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-md border border-dashed border-primary/40 bg-muted/30 px-3 py-3 text-sm font-mono text-muted-foreground">
+                    {account.email}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <p className="mt-6 text-center text-sm text-muted-foreground">Tip: demo mode accepts any password as long as it has at least six characters.</p>
+          <div className="mt-6 text-center">
+            <Link href="/auth/login">
+              <Button className="gap-2">
+                Sign in now
+                <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
           </div>
@@ -432,11 +498,8 @@ export default function Home() {
               <p>Ministry of Health • Expanded Programme on Immunization</p>
             </div>
             <div className="flex flex-wrap justify-center gap-4 sm:justify-end">
-              <Link href="/auth/staff-login" className="transition hover:text-foreground">
-                Staff Portal
-              </Link>
-              <Link href="/auth/parent-login" className="transition hover:text-foreground">
-                Parent Portal
+              <Link href="/auth/login" className="transition hover:text-foreground">
+                Portal Login
               </Link>
               <Link href="/dashboard/reports" className="transition hover:text-foreground">
                 Reporting Suite

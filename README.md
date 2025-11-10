@@ -24,28 +24,48 @@ Visit `http://localhost:3000`
 
 ## System Features
 
-### For Healthcare Workers (Staff Login)
+### For Health Teams (Portal Login)
 - **Child Registration**: Register children with UUID and QR codes
 - **Vaccination Recording**: Record vaccine doses with batch tracking
 - **Dashboard Analytics**: Real-time coverage, dropout rate, and performance metrics
 - **Offline Support**: Record data without internet, auto-sync when online
 - **Report Generation**: Export coverage data and performance metrics
 
-### For Parents (Parent Login)
-- **View Records**: See child's complete vaccination history
+### For Parents (Portal Login)
+- **View Records**: See a child&apos;s complete vaccination history
 - **Digital Certificates**: Download official vaccination certificates with QR codes
 - **Appointment Reminders**: Receive SMS/Email notifications for upcoming doses
 - **Certificate Verification**: Share QR code for verification
 
+### For HQ Admin (Portal Login)
+- **National Command Console**: Monitor branches, coverage trends, and AEFI alerts across the country.
+- **Branch & Catchment Management**: Create facilities, assign managers, and define service territories.
+- **Role Provisioning**: Onboard and manage Branch Managers, CHWs, Data Officers, and PHAs.
+- **Schedule Configuration**: Maintain the master vaccine catalogue and national dosing rules.
+- **System Health & Audits**: Review infrastructure status, audit logs, and trigger backups on demand.
+
+## Primary User Roles
+
+- **Admin (HQ/Regional)**: Manages branches, users, configurations, and audit trails.
+- **Branch Manager**: Supervises branch staff (including CHWs) and tracks branch-level KPIs.
+- **Nurse / Clinician**: Handles in-clinic registration, vaccination capture, and follow-up scheduling. Facility console now
+    includes QR-code patient lookup, Ghana CWC-aligned onboarding, and patient charting ready for backend wiring.
+- **Community Health Worker (CHW)**: Runs door-to-door registration and vaccination via the offline-first PWA.
+- **Data Officer**: Monitors data quality, resolves duplicates, and curates reporting outputs.
+- **Public Health Authority (PHA)**: Read-only oversight of analytics, dashboards, and national reports.
+- **Parent / Guardian**: Reviews a child&apos;s vaccination journey, certificates, reminders, and emergency contacts.
+
 ## Demo Accounts
 
-### Staff Portal
-- **Email**: admin@health.gov.gh | **Password**: any 6+ characters
-- **Email**: nurse@health.gov.gh | **Password**: any 6+ characters
-- **Email**: chw@health.gov.gh | **Password**: any 6+ characters
+All roles authenticate through `/auth/login`. Use any password with six or more characters.
 
-### Parent Portal
-- **Email**: parent@example.com | **Password**: any 6+ characters
+- **Parent**: parent@example.com
+- **HQ Admin**: admin@health.gov.gh
+- **Branch Manager**: branch.manager@health.gov.gh
+- **Facility Nurse**: nurse@health.gov.gh
+- **Community Health Worker**: chw@health.gov.gh
+- **Data Officer**: data.officer@health.gov.gh
+- **Public Health Authority**: pha@health.gov.gh
 
 ## Project Structure
 
@@ -53,8 +73,18 @@ Visit `http://localhost:3000`
 app/
 ├── page.tsx                    # Landing page
 ├── auth/
-│   ├── staff-login/           # Healthcare worker login
-│   └── parent-login/          # Parent login
+│   ├── login/                 # Unified role-aware login experience
+│   ├── parent-login/          # Legacy redirect to unified login
+│   └── staff-login/           # Legacy redirect to unified login
+├── hq/
+│   └── dashboard/             # HQ admin national command console
+├── branch/
+│   └── dashboard/             # Branch manager operations console
+├── facility/
+│   ├── dashboard/             # Facility nurse "Today's Clinic" mission control
+│   ├── register-mother/       # Ghana CWC-aligned mother onboarding form
+│   ├── register-child/        # Newborn registration with automated schedule
+│   └── child/[childId]/       # Child patient chart and vaccination timeline
 ├── dashboard/
 │   ├── page.tsx               # Staff dashboard
 │   ├── register-child/        # Child registration form
@@ -89,6 +119,14 @@ Current implementation uses mock data. To integrate with real backend:
 2. Replace `/dashboard` data fetching with real API calls
 3. Implement offline sync with Service Workers
 4. Add IndexedDB for offline storage
+
+### Backend contract: QR identity + clinic lookup (TODO)
+
+- Facility nurse flows currently search against mock arrays. Backend must expose `GET /facility/{facilityId}/children?query=` that matches by child name, CVCC ID, or guardian phone.
+- When a mother or child record is created, backend issues canonical IDs (`motherId`, `childId`) plus a QR payload (JWT or signed JSON) and returns it to the UI.
+- Parent dashboard stores the QR payload; the "Show clinic QR" button renders it so caregivers can present it on paper or mobile.
+- Facility dashboard reads the same QR, decodes the payload, and routes directly to the child chart (`/facility/child/{childId}`) without manual search.
+- Keep QR payload minimal (id, checksum, optional DOB) and sign it so clinics can trust scans even offline; regenerate or download on demand so all channels share one source of truth.
 
 ### Backend contract: Appointment booking (TODO)
 

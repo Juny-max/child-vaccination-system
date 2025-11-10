@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Baby, CalendarDays, ClipboardList, Stethoscope, Users } from "lucide-react"
+import { Baby, CalendarDays, ClipboardList, QrCode, Stethoscope, Users, X } from "lucide-react"
+import { QRCodeSVG } from "qrcode.react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -12,11 +13,49 @@ import { childProfiles, healthReminders, type ChildProfile } from "../data"
 export default function ChildDetailsPage() {
   const [activeChildId, setActiveChildId] = useState(childProfiles[0]?.id ?? "")
   const activeChild = childProfiles.find((child) => child.id === activeChildId) ?? childProfiles[0]
+  const [isQrOverlayOpen, setIsQrOverlayOpen] = useState(false)
+  const [qrIsMounted, setQrIsMounted] = useState(false)
+  const closeTimeoutRef = useRef<number | null>(null)
 
   const formattedAge = useMemo(() => {
     if (!activeChild) return "--"
     return formatAge(activeChild.dateOfBirth)
   }, [activeChild])
+
+  const qrPayload = useMemo(() => {
+    if (!activeChild) return ""
+    return JSON.stringify({
+      type: "cvcc-child",
+      id: activeChild.id,
+      name: activeChild.name,
+      dob: activeChild.dateOfBirth,
+    })
+  }, [activeChild])
+
+  const openQrOverlay = () => {
+    if (!activeChild) return
+    if (closeTimeoutRef.current) {
+      window.clearTimeout(closeTimeoutRef.current)
+      closeTimeoutRef.current = null
+    }
+    setIsQrOverlayOpen(true)
+    requestAnimationFrame(() => setQrIsMounted(true))
+  }
+
+  const closeQrOverlay = () => {
+    setQrIsMounted(false)
+    closeTimeoutRef.current = window.setTimeout(() => {
+      setIsQrOverlayOpen(false)
+    }, 200)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        window.clearTimeout(closeTimeoutRef.current)
+      }
+    }
+  }, [])
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -52,6 +91,9 @@ export default function ChildDetailsPage() {
             <Badge variant="outline" className="flex items-center gap-1">
               <Users className="size-3" /> {childProfiles.length} registered child{childProfiles.length > 1 ? "ren" : ""}
             </Badge>
+            <Button variant="outline" size="sm" className="gap-2" onClick={openQrOverlay}>
+              <QrCode className="size-4" /> Show clinic QR
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -143,6 +185,37 @@ export default function ChildDetailsPage() {
           </CardContent>
         </Card>
       </div>
+      {isQrOverlayOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-md"
+          onClick={closeQrOverlay}
+        >
+          <div
+            className={`w-full max-w-sm rounded-2xl border border-border bg-background/95 p-6 text-center shadow-2xl transition-all duration-200 ${
+              qrIsMounted ? "scale-100 opacity-100" : "scale-95 opacity-0"
+            }`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Clinic scan</p>
+                <p className="text-sm font-semibold text-foreground">{activeChild?.name}</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={closeQrOverlay}>
+                <X className="size-4" />
+              </Button>
+            </div>
+            <div className="mt-5 flex flex-col items-center gap-3">
+              <div className="rounded-2xl border border-dashed border-primary/40 bg-primary/5 p-4">
+                {qrPayload ? <QRCodeSVG value={qrPayload} size={224} /> : <PlaceholderQr />}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Present this code at any participating clinic. Scanning opens the child record, upcoming vaccines, and visit log.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -151,6 +224,14 @@ type DetailProps = {
   label: string
   value: string
   hint?: string
+}
+
+function PlaceholderQr() {
+  return (
+    <div className="flex h-56 w-56 items-center justify-center bg-muted text-sm text-muted-foreground">
+      QR unavailable
+    </div>
+  )
 }
 
 function Detail({ label, value, hint }: DetailProps) {

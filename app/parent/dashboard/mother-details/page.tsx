@@ -527,7 +527,7 @@ export default function MotherDetailsPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+      <div className="grid gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Contact information</CardTitle>
@@ -546,27 +546,6 @@ export default function MotherDetailsPage() {
               value={CONTACT_METHOD_LABELS[motherDetails.preferredContactMethod]}
               icon={<MessageCircle className="size-4 text-primary" />}
             />
-          </CardContent>
-        </Card>
-
-        <Card className="border border-primary/30">
-          <CardHeader>
-            <CardTitle className="text-lg">Care coordinator</CardTitle>
-            <CardDescription>Your assigned nurse and next planned visit.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
-              <p className="text-xs uppercase tracking-wide text-primary">Assigned nurse</p>
-              <p className="text-base font-semibold text-foreground">{motherDetails.primaryNurse}</p>
-            </div>
-            <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
-              <p className="text-xs uppercase tracking-wide text-primary">Next visit</p>
-              <p className="text-base font-semibold text-foreground">{motherDetails.nextVisit}</p>
-            </div>
-            <p>
-              Keep this information updated to ensure the clinic can reach you for schedule changes, reminders, or urgent
-              follow-ups.
-            </p>
           </CardContent>
         </Card>
       </div>
