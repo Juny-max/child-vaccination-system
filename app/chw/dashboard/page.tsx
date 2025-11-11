@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import dynamic from "next/dynamic"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -20,7 +21,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 
 type SyncState = "offline" | "syncing" | "synced"
 
@@ -61,12 +61,38 @@ const mockPendingCounts = {
   vaccinations: 7,
 }
 
+type VaccinationMapPoint = {
+  childId: string
+  childName: string
+  vaccineId: string
+  vaccineName: string
+  recordedDate: string
+  latitude: number
+  longitude: number
+}
+
+const PENDING_VACCINATION_STORAGE_KEY = "chwPendingVaccinations"
+const VACCINATION_SAVED_EVENT = "chw-pending-vaccination-added"
+
+const OutreachMap = dynamic(
+  () => import("@/components/chw/outreach-map").then((module) => module.OutreachMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-primary/30 bg-primary/5 text-sm text-muted-foreground">
+        Loading outreach map…
+      </div>
+    ),
+  },
+)
+
 export default function ChwDashboardPage() {
   const router = useRouter()
   const [userName, setUserName] = useState("")
   const [syncState, setSyncState] = useState<SyncState>("offline")
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
+  const [vaccinationLogs, setVaccinationLogs] = useState<VaccinationMapPoint[]>([])
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -109,6 +135,62 @@ export default function ChwDashboardPage() {
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
 
+  useEffect(() => {
+    const readFromStorage = () => {
+      if (typeof window === "undefined") {
+        return
+      }
+
+      const raw = window.localStorage.getItem(PENDING_VACCINATION_STORAGE_KEY)
+      if (!raw) {
+        setVaccinationLogs([])
+        return
+      }
+
+      try {
+        const parsed = JSON.parse(raw) as Array<{
+          childId: string
+          childName: string
+          vaccineId: string
+          vaccineName: string
+          recordedDate: string
+          latitude?: number
+          longitude?: number
+        }>
+
+        const withCoordinates: VaccinationMapPoint[] = parsed
+          .filter((entry) => typeof entry.latitude === "number" && typeof entry.longitude === "number")
+          .map((entry) => ({
+            childId: entry.childId,
+            childName: entry.childName,
+            vaccineId: entry.vaccineId,
+            vaccineName: entry.vaccineName,
+            recordedDate: entry.recordedDate,
+            latitude: entry.latitude as number,
+            longitude: entry.longitude as number,
+          }))
+
+        setVaccinationLogs(withCoordinates)
+      } catch (error) {
+        console.warn("Failed to parse vaccination logs for outreach map", error)
+        setVaccinationLogs([])
+      }
+    }
+
+    const handleUpdate = () => {
+      readFromStorage()
+    }
+
+    readFromStorage()
+    window.addEventListener(VACCINATION_SAVED_EVENT, handleUpdate)
+    window.addEventListener("storage", handleUpdate)
+
+    return () => {
+      window.removeEventListener(VACCINATION_SAVED_EVENT, handleUpdate)
+      window.removeEventListener("storage", handleUpdate)
+    }
+  }, [])
+
   const pendingSyncTotal = useMemo(() => mockPendingCounts.registrations + mockPendingCounts.vaccinations, [])
 
   const syncIndicator = useMemo(() => {
@@ -134,6 +216,8 @@ export default function ChwDashboardPage() {
         }
     }
   }, [syncState, pendingSyncTotal, lastSyncTime])
+
+  const mapPoints = useMemo(() => vaccinationLogs, [vaccinationLogs])
 
   const triggerMockSync = () => {
     if (syncState === "syncing") return
@@ -246,6 +330,56 @@ export default function ChwDashboardPage() {
                     </div>
                   </div>
                 ))
+              )}
+            </CardContent>
+          </Card>
+        </section>
+
+        <section className="mt-8">
+          <Card className="border-primary/30">
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <MapPin className="h-5 w-5 text-primary" /> Outreach vaccination map
+                </CardTitle>
+                <CardDescription>Automatically plots households where offline doses were captured today.</CardDescription>
+              </div>
+              <Badge variant="outline" className="text-xs">
+                {mapPoints.length} site{mapPoints.length === 1 ? "" : "s"}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {mapPoints.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Record at least one vaccination with GPS to see your outreach footprint on the map.
+                </p>
+              ) : (
+                <>
+                  <OutreachMap entries={mapPoints} />
+                  <div className="space-y-2">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Most recent captures</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {mapPoints.slice(0, 4).map((entry) => (
+                        <div
+                          key={`${entry.childId}-${entry.vaccineId}-${entry.recordedDate}`}
+                          className="rounded-lg border border-border bg-background/80 p-3 text-xs text-muted-foreground"
+                        >
+                          <p className="text-sm font-semibold text-foreground">{entry.childName}</p>
+                          <p>Vaccine: {entry.vaccineName}</p>
+                          <p>Date: {entry.recordedDate}</p>
+                          <p className="font-mono">
+                            {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    {mapPoints.length > 4 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Additional coordinates sync to head office automatically once you reconnect.
+                      </p>
+                    ) : null}
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

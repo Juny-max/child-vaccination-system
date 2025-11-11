@@ -47,11 +47,19 @@ type VaccineDose = {
 
 type PendingVaccination = {
   childId: string
+  childName: string
   vaccineId: string
   vaccineName: string
   recordedDate: string
+  latitude?: number
+  longitude?: number
   notes?: string
 }
+
+const PENDING_VACCINATION_STORAGE_KEY = "chwPendingVaccinations"
+const VACCINATION_SAVED_EVENT = "chw-pending-vaccination-added"
+
+const composePendingVaccinationKey = (entry: PendingVaccination) => `${entry.childId}-${entry.vaccineId}-${entry.recordedDate}`
 
 const offlineChildren: Record<string, ChildSnapshot> = {
   "CHW-0001": {
@@ -83,6 +91,62 @@ const offlineChildren: Record<string, ChildSnapshot> = {
       { id: "PENTA3", name: "Penta 3", status: "completed", scheduledDate: "10 Jun 2025", administeredDate: "12 Jun 2025" },
     ],
   },
+}
+
+type VaccinationCoordinate = {
+  latitude: number
+  longitude: number
+}
+
+const readAllPendingVaccinations = (): PendingVaccination[] => {
+  if (typeof window === "undefined") {
+    return []
+  }
+
+  const raw = window.localStorage.getItem(PENDING_VACCINATION_STORAGE_KEY)
+  if (!raw) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as PendingVaccination[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch (error) {
+    console.warn("Failed to parse stored pending vaccinations", error)
+    return []
+  }
+}
+
+const persistPendingVaccination = (entry: PendingVaccination) => {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  const existing = readAllPendingVaccinations().filter(
+    (candidate) => composePendingVaccinationKey(candidate) !== composePendingVaccinationKey(entry),
+  )
+  const updated = [entry, ...existing]
+  window.localStorage.setItem(PENDING_VACCINATION_STORAGE_KEY, JSON.stringify(updated))
+  window.dispatchEvent(new Event(VACCINATION_SAVED_EVENT))
+}
+
+const captureVaccinationCoordinate = (): Promise<VaccinationCoordinate | null> => {
+  if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.geolocation) {
+    return Promise.resolve(null)
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: Number(position.coords.latitude.toFixed(6)),
+          longitude: Number(position.coords.longitude.toFixed(6)),
+        })
+      },
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  })
 }
 
 export default function ChwChildChartPage() {
@@ -123,6 +187,15 @@ export default function ChwChildChartPage() {
 
   const childSnapshot = useMemo(() => offlineChildren[childId], [childId])
 
+  useEffect(() => {
+    if (!childSnapshot) {
+      return
+    }
+
+    const stored = readAllPendingVaccinations().filter((entry) => entry.childId === childSnapshot.id)
+    setPendingVaccinations(stored)
+  }, [childSnapshot])
+
   const openAdministerModal = (dose: VaccineDose) => {
     setSelectedVaccine(dose)
     setNotes("")
@@ -133,25 +206,40 @@ export default function ChwChildChartPage() {
     setNotes("")
   }
 
-  const handleVaccinationSave = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleVaccinationSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!childSnapshot || !selectedVaccine) return
+    if (!childSnapshot || !selectedVaccine) {
+      return
+    }
+
     setSaving(true)
+
+    const coordinates = await captureVaccinationCoordinate()
+    const recordedDate = new Date().toISOString().split("T")[0]
+
+    const newEntry: PendingVaccination = {
+      childId: childSnapshot.id,
+      childName: childSnapshot.name,
+      vaccineId: selectedVaccine.id,
+      vaccineName: selectedVaccine.name,
+      recordedDate,
+      latitude: coordinates?.latitude,
+      longitude: coordinates?.longitude,
+      notes: notes.trim() ? notes.trim() : undefined,
+    }
+
     window.setTimeout(() => {
-      setPendingVaccinations((previous) => [
-        {
-          childId: childSnapshot.id,
-          vaccineId: selectedVaccine.id,
-          vaccineName: selectedVaccine.name,
-          recordedDate: new Date().toISOString().split("T")[0],
-          notes: notes.trim() ? notes.trim() : undefined,
-        },
-        ...previous,
-      ])
+      setPendingVaccinations((previous) => {
+        const filtered = previous.filter(
+          (candidate) => composePendingVaccinationKey(candidate) !== composePendingVaccinationKey(newEntry),
+        )
+        return [newEntry, ...filtered]
+      })
+      persistPendingVaccination(newEntry)
       setSystemMessage(`${selectedVaccine.name} saved locally. Will sync when online.`)
       setSaving(false)
       closeAdministerModal()
-    }, 1200)
+    }, 800)
   }
 
   if (!childSnapshot) {
@@ -237,12 +325,17 @@ export default function ChwChildChartPage() {
                 <p className="text-sm text-muted-foreground">No offline vaccinations yet.</p>
               ) : (
                 pendingVaccinations.map((entry) => (
-                  <div key={`${entry.vaccineId}-${entry.recordedDate}`} className="rounded-lg border border-border bg-background/80 p-3">
+                  <div key={composePendingVaccinationKey(entry)} className="rounded-lg border border-border bg-background/80 p-3">
                     <p className="text-sm font-semibold text-foreground">{entry.vaccineName}</p>
                     <p className="text-xs text-muted-foreground">Recorded: {entry.recordedDate}</p>
                     <p className="text-xs text-muted-foreground">
                       Notes: {entry.notes ? entry.notes : "None"}
                     </p>
+                    {entry.latitude !== undefined && entry.longitude !== undefined ? (
+                      <p className="text-xs text-muted-foreground">
+                        GPS: {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
+                      </p>
+                    ) : null}
                   </div>
                 ))
               )}

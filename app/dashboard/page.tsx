@@ -1,50 +1,14 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts"
-import { Users, TrendingUp, AlertTriangle, CheckCircle, Plus, LogOut } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import Image from "next/image"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { AlertTriangle, BookOpen, Database, Layers, LayoutList, Link2, ListChecks, LogOut, Search, Sparkles, TriangleAlert } from "lucide-react"
 
-// Mock data
-const coverageData = [
-  { vaccine: "BCG", coverage: 92 },
-  { vaccine: "Polio", coverage: 88 },
-  { vaccine: "DPT", coverage: 85 },
-  { vaccine: "MMR", coverage: 80 },
-  { vaccine: "Yellow Fever", coverage: 78 },
-]
-
-const dropoutData = [
-  { vaccine: "BCG", rate: 8 },
-  { vaccine: "Polio", rate: 12 },
-  { vaccine: "DPT", rate: 15 },
-  { vaccine: "MMR", rate: 20 },
-]
-
-const certificateData = [
-  { name: "Issued", value: 892 },
-  { name: "Eligible", value: 145 },
-  { name: "Pending", value: 208 },
-]
-
-const COLORS = ["#10b981", "#3b82f6", "#f59e0b"]
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 function formatRoleLabel(role?: string | null) {
   if (!role) return "Staff"
@@ -58,6 +22,12 @@ export default function Dashboard() {
   const router = useRouter()
   const [userName, setUserName] = useState("")
   const [roleDetail, setRoleDetail] = useState("")
+  const [kpis] = useState({
+    duplicates: 12,
+    syncConflicts: 2,
+    missingChildData: 0.08,
+    notificationFailures: 15,
+  })
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -75,24 +45,114 @@ export default function Dashboard() {
       return
     }
 
-    if (detail === "hq-admin") {
-      router.push("/hq/dashboard")
+    if (!detail || detail !== "data-officer") {
+      if (detail === "hq-admin") {
+        router.push("/hq/dashboard")
+        return
+      }
+      if (detail === "branch-manager") {
+        router.push("/branch/dashboard")
+        return
+      }
+      if (detail === "facility-nurse") {
+        router.push("/facility/dashboard")
+        return
+      }
+      if (detail === "chw") {
+        router.push("/chw/dashboard")
+        return
+      }
+      router.push("/")
       return
     }
 
-    if (detail === "branch-manager") {
-      router.push("/branch/dashboard")
-      return
-    }
-
-    if (detail === "facility-nurse") {
-      router.push("/facility/dashboard")
-      return
-    }
-
-    setUserName(name || "User")
-    setRoleDetail(detail || "")
+    setUserName(name || "Data Officer")
+    setRoleDetail(detail)
   }, [router])
+
+  const actionQueues = useMemo(
+    () => [
+      {
+        label: "Go to Deduplication Queue",
+        description: "12 potential duplicates awaiting manual review",
+        href: "/dashboard/deduplication",
+        countLabel: "12 pending",
+        icon: Layers,
+      },
+      {
+        label: "Go to Sync Conflict Resolver",
+        description: "Resolve mobile sync collisions before end of day",
+        href: "/dashboard/sync-conflicts",
+        countLabel: "2 pending",
+        icon: Link2,
+      },
+      {
+        label: "Go to Notification Log",
+        description: "Audit failed SMS or email deliveries",
+        href: "/dashboard/notifications",
+        countLabel: "15 failed",
+        icon: TriangleAlert,
+      },
+    ],
+    [],
+  )
+
+  const duplicatePreview = useMemo(
+    () => [
+      { id: "DQ-4472", childName: "Ama Mensah", similarity: "92% match", fields: "DOB + Mother Phone" },
+      { id: "DQ-4473", childName: "Kojo Mensima", similarity: "88% match", fields: "Name + CHW catchment" },
+      { id: "DQ-4474", childName: "Afia Nyarko", similarity: "83% match", fields: "Mother name" },
+    ],
+    [],
+  )
+
+  const conflictPreview = useMemo(
+    () => [
+      {
+        id: "SC-982",
+        headline: "Vaccination event orphaned",
+        detail: "CHW_Kofi recorded MR1 for child CH-991, but record merged yesterday",
+        recommended: "Re-link to CH-558",
+      },
+      {
+        id: "SC-976",
+        headline: "Deleted child reference",
+        detail: "Field upload references child CH-702 removed by Nurse Ama",
+        recommended: "Review before discard",
+      },
+    ],
+    [],
+  )
+
+  const notificationSnapshot = useMemo(
+    () => [
+      {
+        id: "NF-55221",
+        timestamp: "11 Nov 2025 · 08:42",
+        channel: "SMS",
+        template: "Overdue reminder",
+        recipient: "+233 24 000 1122",
+        status: "Failed",
+      },
+      {
+        id: "NF-55219",
+        timestamp: "11 Nov 2025 · 08:30",
+        channel: "Email",
+        template: "Certificate download",
+        recipient: "abena@example.com",
+        status: "Delivered",
+      },
+      {
+        id: "NF-55218",
+        timestamp: "11 Nov 2025 · 08:05",
+        channel: "SMS",
+        template: "Clinic appointment",
+        recipient: "+233 27 889 3201",
+        status: "Sent",
+      },
+    ],
+    [],
+  )
 
   const handleLogout = () => {
     localStorage.removeItem("authToken")
@@ -107,12 +167,22 @@ export default function Dashboard() {
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <span className="text-primary-foreground font-bold">V</span>
+          <div className="flex h-16 items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-primary/30 bg-primary/5">
+                <Image
+                  src="/images/cvcc-logo.png"
+                  alt="Child Vaccination Command Center logo"
+                  fill
+                  sizes="40px"
+                  className="object-cover"
+                  priority
+                />
               </div>
-              <span className="font-semibold">Staff Dashboard</span>
+              <div className="leading-tight">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Child Vaccination Command Center</p>
+                <p className="text-sm font-semibold text-foreground">Data Quality Mission Control</p>
+              </div>
             </div>
             <div className="flex items-center gap-4">
               <div className="flex flex-col items-end">
@@ -131,195 +201,187 @@ export default function Dashboard() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium">Total Children</CardTitle>
-                <Users className="text-primary" size={20} />
-              </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <Card className="border-primary/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending duplicates</CardTitle>
+              <CardDescription className="text-xs text-muted-foreground/80">Records to confirm before EOD</CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">1,245</p>
-              <p className="text-xs text-muted-foreground mt-1">↑ 12% from last month</p>
+            <CardContent className="flex items-end justify-between">
+              <p className="text-3xl font-bold text-primary">{kpis.duplicates}</p>
+              <Layers className="h-7 w-7 text-primary" />
             </CardContent>
           </Card>
-
           <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium">Fully Vaccinated</CardTitle>
-                <CheckCircle className="text-green-600" size={20} />
-              </div>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sync conflicts</CardTitle>
+              <CardDescription className="text-xs text-muted-foreground/80">Offline batches needing intervention</CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">892</p>
-              <p className="text-xs text-muted-foreground mt-1">71.6% coverage rate</p>
+            <CardContent className="flex items-end justify-between">
+              <p className="text-3xl font-bold text-amber-500">{kpis.syncConflicts}</p>
+              <Link2 className="h-7 w-7 text-amber-500" />
             </CardContent>
           </Card>
-
           <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium">Overdue Vaccines</CardTitle>
-                <AlertTriangle className="text-orange-600" size={20} />
-              </div>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Missing data (children)</CardTitle>
+              <CardDescription className="text-xs text-muted-foreground/80">Profiles missing DOB or mother link</CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">47</p>
-              <p className="text-xs text-muted-foreground mt-1">Require follow-up</p>
+            <CardContent className="flex items-end justify-between">
+              <p className="text-3xl font-bold text-orange-500">{(kpis.missingChildData * 100).toFixed(1)}%</p>
+              <Database className="h-7 w-7 text-orange-500" />
             </CardContent>
           </Card>
-
           <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium">AEFI Reports</CardTitle>
-                <AlertTriangle className="text-red-600" size={20} />
-              </div>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notification failures (24h)</CardTitle>
+              <CardDescription className="text-xs text-muted-foreground/80">SMS / email retries needed</CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">3</p>
-              <p className="text-xs text-muted-foreground mt-1">Under review</p>
+            <CardContent className="flex items-end justify-between">
+              <p className="text-3xl font-bold text-rose-500">{kpis.notificationFailures}</p>
+              <TriangleAlert className="h-7 w-7 text-rose-500" />
             </CardContent>
           </Card>
         </div>
 
-        {/* Action Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <Link href="/dashboard/register-child">
-            <Button className="w-full gap-2">
-              <Plus size={18} />
-              Register Child
-            </Button>
-          </Link>
-          <Link href="/dashboard/record-vaccination">
-            <Button className="w-full gap-2 bg-transparent" variant="outline">
-              <CheckCircle size={18} />
-              Record Vaccination
-            </Button>
-          </Link>
-          <Link href="/dashboard/reports">
-            <Button className="w-full gap-2 bg-transparent" variant="outline">
-              <TrendingUp size={18} />
-              View Reports
-            </Button>
-          </Link>
-        </div>
+        {/* Action queues */}
+        <section className="mt-8 grid gap-4 md:grid-cols-3">
+          {actionQueues.map(({ label, description, href, countLabel, icon: Icon }) => (
+            <Card key={label} className="border-border/60 bg-background/80">
+              <CardHeader className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold text-foreground">{label}</CardTitle>
+                  <BadgePill>{countLabel}</BadgePill>
+                </div>
+                <CardDescription>{description}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href={href} className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 px-4 py-2 text-sm font-medium text-primary transition hover:bg-primary/10">
+                  <Icon className="h-4 w-4" />
+                  Open module
+                </Link>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Coverage by Vaccine */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Vaccination Coverage</CardTitle>
-              <CardDescription>Coverage percentage by vaccine type</CardDescription>
+        <section className="mt-8 grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
+          <Card className="border-primary/30">
+            <CardHeader className="space-y-2">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Layers className="h-5 w-5 text-primary" /> Deduplication fires to review
+              </CardTitle>
+              <CardDescription>Highest-risk duplicate clusters flagged overnight by the similarity service.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={coverageData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="vaccine" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="coverage" fill="#10b981" />
-                </BarChart>
-              </ResponsiveContainer>
+            <CardContent className="space-y-3">
+              {duplicatePreview.map((item) => (
+                <div key={item.id} className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{item.childName}</p>
+                      <p className="text-xs text-muted-foreground">Similarity: {item.similarity}</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">Signals: {item.fields}</span>
+                  </div>
+                  <Link href="/dashboard/deduplication" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                    <Search className="h-3 w-3" /> Review in merge tool
+                  </Link>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">Queue sorted by highest similarity first. Resolve before 17:00 to unblock HQ analytics.</p>
             </CardContent>
           </Card>
 
-          {/* Dropout Rates */}
           <Card>
-            <CardHeader>
-              <CardTitle>Dropout Rates</CardTitle>
-              <CardDescription>Dose 1 to 2 completion rates</CardDescription>
+            <CardHeader className="space-y-2">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Link2 className="h-5 w-5 text-amber-500" /> Sync conflicts feed
+              </CardTitle>
+              <CardDescription>Latest mobile sync collisions that need manual routing.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={dropoutData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="vaccine" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="rate" stroke="#ef4444" />
-                </LineChart>
-              </ResponsiveContainer>
+            <CardContent className="space-y-4">
+              {conflictPreview.map((conflict) => (
+                <div key={conflict.id} className="rounded-lg border border-border bg-background/80 p-3 text-sm text-muted-foreground">
+                  <p className="flex items-center justify-between text-foreground">
+                    <span className="font-semibold">{conflict.headline}</span>
+                    <span className="text-xs text-muted-foreground">{conflict.id}</span>
+                  </p>
+                  <p className="mt-1 text-xs leading-snug">{conflict.detail}</p>
+                  <p className="mt-2 text-xs font-medium text-amber-600">Suggested: {conflict.recommended}</p>
+                  <Link href="/dashboard/sync-conflicts" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                    <ListChecks className="h-3 w-3" /> Resolve conflict
+                  </Link>
+                </div>
+              ))}
             </CardContent>
           </Card>
+        </section>
 
-          {/* Certificate Status */}
+        <section className="mt-8 grid gap-6 lg:grid-cols-[1fr,1fr]">
           <Card>
-            <CardHeader>
-              <CardTitle>Certificate Status</CardTitle>
-              <CardDescription>Distribution of certificate issuance</CardDescription>
+            <CardHeader className="space-y-2">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <BookOpen className="h-5 w-5 text-primary" /> Notification spot check
+              </CardTitle>
+              <CardDescription>Filter failures quickly before caregivers escalate.</CardDescription>
             </CardHeader>
-            <CardContent className="flex justify-center">
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={certificateData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, value }) => `${name}: ${value}`}
-                    outerRadius={100}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {certificateData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-              <CardDescription>Latest actions in the system</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-2 h-2 rounded-full bg-green-600 mt-2" />
-                  <div>
-                    <p className="font-medium text-sm">Child registered</p>
-                    <p className="text-xs text-muted-foreground">Ama Asante, Age 2 months</p>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-rose-400 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-600">
+                  {notificationSnapshot.filter((entry) => entry.status === "Failed").length} failed in last sync
+                </span>
+                <Link href="/dashboard/notifications" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                  <Search className="h-3 w-3" /> Open full audit log
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {notificationSnapshot.map((log) => (
+                  <div key={log.id} className="rounded-lg border border-border bg-background/80 p-3 text-xs text-muted-foreground">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-foreground">{log.template}</span>
+                      <span>{log.status}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <span>{log.timestamp}</span>
+                      <span>·</span>
+                      <span>{log.channel}</span>
+                      <span>·</span>
+                      <span>{log.recipient}</span>
+                    </div>
                   </div>
-                  <span className="text-xs text-muted-foreground ml-auto">2 min ago</span>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="w-2 h-2 rounded-full bg-blue-600 mt-2" />
-                  <div>
-                    <p className="font-medium text-sm">Vaccination recorded</p>
-                    <p className="text-xs text-muted-foreground">BCG dose 1, Kwame Boateng</p>
-                  </div>
-                  <span className="text-xs text-muted-foreground ml-auto">15 min ago</span>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="w-2 h-2 rounded-full bg-purple-600 mt-2" />
-                  <div>
-                    <p className="font-medium text-sm">Certificate generated</p>
-                    <p className="text-xs text-muted-foreground">Yaa Mensah completed all vaccines</p>
-                  </div>
-                  <span className="text-xs text-muted-foreground ml-auto">1 hour ago</span>
-                </div>
+                ))}
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Alerts */}
-        <Alert>
+          <Card className="border-dashed border-primary/40 bg-primary/5">
+            <CardHeader className="space-y-2">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Sparkles className="h-5 w-5 text-primary" /> Quick export reminder
+              </CardTitle>
+              <CardDescription>Build ad-hoc coverage extracts using the custom report generator.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>Select a data source, choose columns, apply filters, then export as CSV, Excel, or PDF.</p>
+              <p className="text-xs text-muted-foreground">Common saved report: “Accra North · Measles 1 backlog · Last 14 days”.</p>
+              <Link href="/dashboard/reports" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
+                <LayoutList className="h-4 w-4" /> Launch report generator
+              </Link>
+            </CardContent>
+          </Card>
+        </section>
+
+        <Alert className="mt-10">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            47 children have overdue vaccinations. Review the follow-up list to ensure immunization targets are met.
+            Keep the deduplication queue below five items daily. High duplicate counts block HQ analytics and SMS reminders.
           </AlertDescription>
         </Alert>
       </main>
     </div>
   )
+}
+
+function BadgePill({ children }: { children: string }) {
+  return <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">{children}</span>
 }
