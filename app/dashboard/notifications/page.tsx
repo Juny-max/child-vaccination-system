@@ -4,11 +4,13 @@ import { useMemo, useState } from "react"
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Filter, Mail, RefreshCw, Smartphone } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 
 const channels = [
   { id: "sms", label: "SMS", icon: Smartphone },
@@ -52,6 +54,7 @@ export default function NotificationAuditLogPage() {
   const [channelFilter, setChannelFilter] = useState("All")
   const [statusFilter, setStatusFilter] = useState("Failed")
   const [searchTerm, setSearchTerm] = useState("")
+  const [isExporting, setIsExporting] = useState(false)
 
   const visibleEvents = useMemo(() => {
     return notificationEvents.filter((event) => {
@@ -61,6 +64,90 @@ export default function NotificationAuditLogPage() {
       return matchesChannel && matchesStatus && matchesSearch
     })
   }, [channelFilter, statusFilter, searchTerm])
+
+  const statusTheme = useMemo(
+    () => ({
+      Failed: {
+        card: "border-rose-500/70 bg-rose-100 text-rose-950",
+        badge: "bg-rose-600 text-white border-rose-700",
+        icon: "text-rose-700",
+        reason: "text-rose-700",
+        title: "text-rose-900",
+        meta: "text-rose-800",
+      },
+      Sent: {
+        card: "border-amber-300 bg-amber-50 text-amber-900",
+        badge: "bg-amber-500 text-amber-950 border-amber-600",
+        icon: "text-amber-600",
+        reason: "text-amber-700",
+        title: "text-amber-900",
+        meta: "text-amber-700",
+      },
+      Delivered: {
+        card: "border-emerald-300 bg-emerald-50 text-emerald-900",
+        badge: "bg-emerald-500 text-emerald-950 border-emerald-600",
+        icon: "text-emerald-600",
+        reason: "text-emerald-700",
+        title: "text-emerald-900",
+        meta: "text-emerald-700",
+      },
+      Pending: {
+        card: "border-slate-300 bg-slate-100 text-slate-900",
+        badge: "bg-slate-500 text-white border-slate-600",
+        icon: "text-slate-600",
+        reason: "text-slate-700",
+        title: "text-slate-900",
+        meta: "text-slate-700",
+      },
+      default: {
+        card: "border-border bg-background/90",
+        badge: "bg-primary/15 text-primary border-primary/40",
+        icon: "text-primary",
+        reason: "text-muted-foreground",
+        title: "text-foreground",
+        meta: "text-muted-foreground",
+      },
+    }),
+    [],
+  )
+
+  const handleExportLog = async () => {
+    setIsExporting(true)
+
+    const exportPayload = {
+      filters: {
+        channel: channelFilter,
+        status: statusFilter,
+        searchTerm: searchTerm.trim() || null,
+      },
+      resultCount: visibleEvents.length,
+      totalCount: notificationEvents.length,
+      exportedAt: new Date().toISOString(),
+      events: visibleEvents.map((event) => ({
+        id: event.id,
+        channel: event.channel,
+        template: event.template,
+        recipient: event.recipient,
+        status: event.status,
+        reason: event.reason || null,
+        timestamp: event.timestamp,
+      })),
+    }
+
+    // TODO: Replace with export API call
+    // Example: POST /api/notifications/export with exportPayload
+    // eslint-disable-next-line no-console
+    console.log("Exporting notification log", exportPayload)
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      toast.success(`Export ready · ${visibleEvents.length} events · ${channelFilter} channel · ${statusFilter} status`)
+    } catch (error) {
+      toast.error("Failed to export notification log. Please retry.")
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-muted/20">
@@ -137,8 +224,8 @@ export default function NotificationAuditLogPage() {
             <div className="space-y-2">
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">Quick actions</Label>
               <div className="grid gap-2">
-                <Button variant="outline" className="w-full gap-2 text-sm">
-                  <Download className="h-4 w-4" /> Export filtered log
+                <Button variant="outline" className="w-full gap-2 text-sm" onClick={handleExportLog} disabled={isExporting}>
+                  <Download className="h-4 w-4" /> {isExporting ? "Exporting…" : "Export filtered log"}
                 </Button>
                 <Link href="/dashboard/deduplication" className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-4 py-2 text-sm transition hover:border-primary/40">
                   <CheckCircle2 className="h-4 w-4 text-primary" /> Jump to deduplication
@@ -159,27 +246,30 @@ export default function NotificationAuditLogPage() {
                 <Filter className="mx-auto mb-2 h-4 w-4" /> No notification events match the current filters.
               </div>
             ) : (
-              visibleEvents.map((event) => (
-                <div key={event.id} className={`rounded-lg border p-4 text-sm transition ${event.status === "Failed" ? "border-rose-400/60 bg-rose-50/80" : "border-border bg-background/80"}`}>
+              visibleEvents.map((event) => {
+                const theme = statusTheme[event.status as keyof typeof statusTheme] ?? statusTheme.default
+                return (
+                  <div key={event.id} className={`rounded-lg border p-4 text-sm transition ${theme.card}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      {event.channel === "SMS" ? <Smartphone className="h-4 w-4 text-primary" /> : <Mail className="h-4 w-4 text-primary" />}
-                      <span className="font-semibold text-foreground">{event.template}</span>
+                        {event.channel === "SMS" ? <Smartphone className={`h-4 w-4 ${theme.icon}`} /> : <Mail className={`h-4 w-4 ${theme.icon}`} />}
+                        <span className={`font-semibold ${theme.title}`}>{event.template}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">{event.id}</span>
+                      <span className={`text-xs ${theme.meta}`}>{event.id}</span>
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{event.timestamp}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">Recipient: {event.recipient}</p>
-                  <div className="mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium">
-                    Status: {event.status}
+                    <p className={`mt-2 text-xs ${theme.meta}`}>{event.timestamp}</p>
+                    <p className={`mt-2 text-xs ${theme.meta}`}>Recipient: {event.recipient}</p>
+                    <Badge variant="outline" className={`mt-2 inline-flex items-center gap-2 border ${theme.badge}`}>
+                      Status: {event.status}
+                    </Badge>
+                    {event.reason && (
+                      <p className={`mt-2 text-xs ${theme.reason}`}>
+                        <AlertTriangle className={`mr-1 inline-block h-3 w-3 ${theme.icon}`} /> {event.reason}
+                      </p>
+                    )}
                   </div>
-                  {event.reason && (
-                    <p className="mt-2 text-xs text-rose-600">
-                      <AlertTriangle className="mr-1 inline-block h-3 w-3" /> {event.reason}
-                    </p>
-                  )}
-                </div>
-              ))
+                )
+              })
             )}
           </CardContent>
         </Card>

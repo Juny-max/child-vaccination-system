@@ -5,6 +5,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ArrowLeft, CheckCircle2, FileWarning, Link2, Search } from "lucide-react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -62,9 +63,95 @@ const mergeReasons = [
 export default function DeduplicationQueuePage() {
   const router = useRouter()
   const [selectedPairId, setSelectedPairId] = useState(pairs[0]?.id ?? "")
+  const [preferredRecord, setPreferredRecord] = useState("")
+  const [mergeReason, setMergeReason] = useState("")
   const [note, setNote] = useState("")
+  const [isMerging, setIsMerging] = useState(false)
+  const [isDismissing, setIsDismissing] = useState(false)
 
   const selectedPair = useMemo(() => pairs.find((pair) => pair.id === selectedPairId) ?? pairs[0], [selectedPairId])
+
+  const resetForm = () => {
+    setPreferredRecord("")
+    setMergeReason("")
+    setNote("")
+  }
+
+  const handleMerge = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!preferredRecord) {
+      toast.error("Please select which record to keep.")
+      return
+    }
+
+    if (!mergeReason) {
+      toast.error("Please select a reason for merging.")
+      return
+    }
+
+    setIsMerging(true)
+
+    const payload = {
+      pairId: selectedPair?.id,
+      survivorId: preferredRecord,
+      duplicateId: selectedPair?.childA.id === preferredRecord ? selectedPair?.childB.id : selectedPair?.childA.id,
+      reason: mergeReason,
+      note: note || null,
+      timestamp: new Date().toISOString(),
+    }
+
+    // TODO: Replace with merge API call
+    // eslint-disable-next-line no-console
+    console.log("Merging duplicate records", payload)
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      toast.success(`Records merged successfully. ${payload.duplicateId} archived into ${payload.survivorId}.`)
+      resetForm()
+    } catch (error) {
+      toast.error("Merge operation failed. Please retry.")
+    } finally {
+      setIsMerging(false)
+    }
+  }
+
+  const handleDismiss = async () => {
+    if (!selectedPair) {
+      toast.error("No pair selected to dismiss.")
+      return
+    }
+
+    setIsDismissing(true)
+
+    const payload = {
+      pairId: selectedPair.id,
+      childAId: selectedPair.childA.id,
+      childBId: selectedPair.childB.id,
+      reason: "Not a duplicate (false positive)",
+      note: note || null,
+      timestamp: new Date().toISOString(),
+    }
+
+    // TODO: Replace with dismiss API call
+    // eslint-disable-next-line no-console
+    console.log("Dismissing duplicate pair as false positive", payload)
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      toast.success(`${selectedPair.id} dismissed as not duplicate. Records remain separate.`)
+      resetForm()
+    } catch (error) {
+      toast.error("Dismiss operation failed. Please retry.")
+    } finally {
+      setIsDismissing(false)
+    }
+  }
+
+  const handlePairChange = (pairId: string) => {
+    setSelectedPairId(pairId)
+    resetForm()
+  }
 
   return (
     <div className="min-h-screen bg-muted/20">
@@ -92,7 +179,7 @@ export default function DeduplicationQueuePage() {
             {pairs.map((pair) => (
               <button
                 key={pair.id}
-                onClick={() => setSelectedPairId(pair.id)}
+                onClick={() => handlePairChange(pair.id)}
                 className={`w-full rounded-lg border p-3 text-left transition ${selectedPairId === pair.id ? "border-primary bg-primary/10" : "border-border bg-background/70 hover:border-primary/60"}`}
               >
                 <div className="flex items-center justify-between text-sm">
@@ -132,14 +219,16 @@ export default function DeduplicationQueuePage() {
               </ul>
             </div>
 
-            <form className="space-y-4" onSubmit={(event: FormEvent<HTMLFormElement>) => event.preventDefault()}>
+            <form className="space-y-4" onSubmit={handleMerge}>
               <div className="grid gap-3">
                 <Label htmlFor="preferred-record">Keep which record?</Label>
                 <select
                   id="preferred-record"
                   className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-                  defaultValue=""
+                  value={preferredRecord}
+                  onChange={(e) => setPreferredRecord(e.target.value)}
                   required
+                  disabled={isMerging || isDismissing}
                 >
                   <option value="" disabled>
                     Select active record
@@ -151,7 +240,13 @@ export default function DeduplicationQueuePage() {
 
               <div className="grid gap-3">
                 <Label htmlFor="merge-reason">Reason for merge</Label>
-                <select id="merge-reason" className="rounded-md border border-border bg-background px-3 py-2 text-sm" defaultValue="">
+                <select
+                  id="merge-reason"
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={mergeReason}
+                  onChange={(e) => setMergeReason(e.target.value)}
+                  disabled={isMerging || isDismissing}
+                >
                   <option value="" disabled>
                     Choose a reason
                   </option>
@@ -172,16 +267,17 @@ export default function DeduplicationQueuePage() {
                   value={note}
                   onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setNote(event.target.value)}
                   className="min-h-[120px]"
+                  disabled={isMerging || isDismissing}
                 />
                 <p className="text-xs text-muted-foreground">This note appears in the audit log for this merge event.</p>
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button type="submit" className="flex-1 gap-2">
-                  <Link2 className="h-4 w-4" /> Merge and archive duplicate
+                <Button type="submit" className="flex-1 gap-2" disabled={isMerging || isDismissing}>
+                  <Link2 className="h-4 w-4" /> {isMerging ? "Merging..." : "Merge and archive duplicate"}
                 </Button>
-                <Button type="button" variant="outline" className="flex-1 gap-2">
-                  <FileWarning className="h-4 w-4" /> Dismiss as not duplicate
+                <Button type="button" variant="outline" className="flex-1 gap-2" onClick={handleDismiss} disabled={isMerging || isDismissing}>
+                  <FileWarning className="h-4 w-4" /> {isDismissing ? "Dismissing..." : "Dismiss as not duplicate"}
                 </Button>
               </div>
             </form>

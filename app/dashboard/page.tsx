@@ -4,11 +4,28 @@ import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertTriangle, BookOpen, Database, Layers, LayoutList, Link2, ListChecks, LogOut, Search, Sparkles, TriangleAlert } from "lucide-react"
+import {
+  AlertTriangle,
+  BookOpen,
+  Database,
+  Layers,
+  LayoutList,
+  Link2,
+  ListChecks,
+  LogOut,
+  Search,
+  ServerOff,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  TriangleAlert,
+} from "lucide-react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 function formatRoleLabel(role?: string | null) {
   if (!role) return "Staff"
@@ -27,6 +44,8 @@ export default function Dashboard() {
     syncConflicts: 2,
     missingChildData: 0.08,
     notificationFailures: 15,
+    securityAlerts: 1,
+    downtimeMinutes: 6,
   })
 
   useEffect(() => {
@@ -93,6 +112,13 @@ export default function Dashboard() {
         countLabel: "15 failed",
         icon: TriangleAlert,
       },
+      {
+        label: "Open Security Watchboard",
+        description: "Monitor breach attempts and downtime escalations",
+        href: "#security-watch",
+        countLabel: "1 alert",
+        icon: ShieldAlert,
+      },
     ],
     [],
   )
@@ -154,6 +180,74 @@ export default function Dashboard() {
     [],
   )
 
+  const securityIncidents = useMemo(
+    () => [
+      {
+        id: "SEC-771",
+        headline: "Blocked login burst",
+        detail: "15 failed attempts from 196.44.21.18 auto-blocked · Parent portal",
+        severity: "High",
+        detectedAt: "11 Nov 2025 · 07:15",
+        status: "Investigating",
+      },
+      {
+        id: "SEC-768",
+        headline: "Unhandled API token",
+        detail: "Expired staff token used against /hq endpoints · access denied",
+        severity: "Medium",
+        detectedAt: "11 Nov 2025 · 05:02",
+        status: "Resolved",
+      },
+    ],
+    [],
+  )
+
+  const infrastructureSignals = useMemo(
+    () => [
+      {
+        id: "api",
+        service: "Core API",
+        status: "operational",
+        detail: "Latency 230ms · No errors",
+      },
+      {
+        id: "auth",
+        service: "Identity & MFA",
+        status: "degraded",
+        detail: "OTP vendor timeout spike (3 min)",
+      },
+      {
+        id: "sync",
+        service: "Offline Sync Broker",
+        status: "offline",
+        detail: "Northern region broker unreachable since 08:22",
+      },
+    ],
+    [],
+  )
+
+  const severityVariant = (severity: string) => {
+    switch (severity) {
+      case "High":
+        return "destructive" as const
+      case "Medium":
+        return "default" as const
+      default:
+        return "secondary" as const
+    }
+  }
+
+  const statusVariant = (status: string) => {
+    switch (status) {
+      case "offline":
+        return "destructive" as const
+      case "degraded":
+        return "default" as const
+      default:
+        return "secondary" as const
+    }
+  }
+
   const handleLogout = () => {
     localStorage.removeItem("authToken")
     localStorage.removeItem("userRole")
@@ -167,7 +261,7 @@ export default function Dashboard() {
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
+          <div className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-primary/30 bg-primary/5">
                 <Image
@@ -184,8 +278,9 @@ export default function Dashboard() {
                 <p className="text-sm font-semibold text-foreground">Data Quality Mission Control</p>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex flex-col items-end">
+            <div className="flex flex-wrap items-center justify-between gap-3 sm:flex-nowrap sm:justify-end">
+              <ThemeToggle />
+              <div className="flex flex-col items-end text-right">
                 <span className="text-sm text-muted-foreground">Welcome, {userName}</span>
                 <span className="text-xs text-muted-foreground/80">{formatRoleLabel(roleDetail)}</span>
               </div>
@@ -201,7 +296,7 @@ export default function Dashboard() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+  <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-6">
           <Card className="border-primary/40">
             <CardHeader className="pb-2">
               <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending duplicates</CardTitle>
@@ -242,6 +337,26 @@ export default function Dashboard() {
               <TriangleAlert className="h-7 w-7 text-rose-500" />
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Security alerts (24h)</CardTitle>
+              <CardDescription className="text-xs text-muted-foreground/80">Breach attempts and abnormal access</CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-end justify-between">
+              <p className="text-3xl font-bold text-destructive">{kpis.securityAlerts}</p>
+              <ShieldAlert className="h-7 w-7 text-destructive" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Downtime (last 24h)</CardTitle>
+              <CardDescription className="text-xs text-muted-foreground/80">Minutes of core service outage</CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-end justify-between">
+              <p className="text-3xl font-bold text-blue-600">{kpis.downtimeMinutes}</p>
+              <ServerOff className="h-7 w-7 text-blue-600" />
+            </CardContent>
+          </Card>
         </div>
 
         {/* Action queues */}
@@ -265,7 +380,7 @@ export default function Dashboard() {
           ))}
         </section>
 
-        <section className="mt-8 grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
+  <section className="mt-8 grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
           <Card className="border-primary/30">
             <CardHeader className="space-y-2">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -317,7 +432,7 @@ export default function Dashboard() {
           </Card>
         </section>
 
-        <section className="mt-8 grid gap-6 lg:grid-cols-[1fr,1fr]">
+  <section className="mt-8 grid gap-6 lg:grid-cols-[1fr,1fr]">
           <Card>
             <CardHeader className="space-y-2">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -367,6 +482,59 @@ export default function Dashboard() {
               <Link href="/dashboard/reports" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
                 <LayoutList className="h-4 w-4" /> Launch report generator
               </Link>
+            </CardContent>
+          </Card>
+        </section>
+
+        <section id="security-watch" className="mt-8 grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
+          <Card className="border-destructive/40">
+            <CardHeader className="space-y-2">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <ShieldAlert className="h-5 w-5 text-destructive" /> Security incident center
+              </CardTitle>
+              <CardDescription>Track breach attempts and escalation workflow status.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {securityIncidents.map((incident) => (
+                <div key={incident.id} className="rounded-lg border border-border bg-background/90 p-4 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-semibold text-foreground">{incident.headline}</p>
+                    <Badge variant={severityVariant(incident.severity)}>{incident.severity}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{incident.detail}</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span>{incident.detectedAt}</span>
+                    <span>·</span>
+                    <span>Status: {incident.status}</span>
+                    <span>·</span>
+                    <span>ID: {incident.id}</span>
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">Work with HQ security to close items marked "Investigating" before close of business.</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-primary/30">
+            <CardHeader className="space-y-2">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <ShieldCheck className="h-5 w-5 text-primary" /> Infrastructure heartbeat
+              </CardTitle>
+              <CardDescription>Surface downtime and degradation affecting data pipelines.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {infrastructureSignals.map((signal) => (
+                <div key={signal.id} className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-4 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-semibold text-foreground">{signal.service}</p>
+                    <Badge variant={statusVariant(signal.status)} className="capitalize">
+                      {signal.status}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{signal.detail}</p>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">If a service is "offline", sync with IT operations and post an advisory to branches.</p>
             </CardContent>
           </Card>
         </section>

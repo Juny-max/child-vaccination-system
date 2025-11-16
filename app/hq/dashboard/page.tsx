@@ -1,9 +1,28 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { AlertCircle, Activity, ArrowDownToLine, BellRing, Building2, CheckCircle2, FileText, Gauge, Globe2, Layers, ListChecks, MapPinned, Megaphone, ServerCog, Shield, ShieldCheck, Users as UsersIcon } from "lucide-react"
+import {
+  AlertCircle,
+  Activity,
+  ArrowDownToLine,
+  BellRing,
+  Building2,
+  CheckCircle2,
+  FileText,
+  Gauge,
+  Globe2,
+  Layers,
+  ListChecks,
+  MapPinned,
+  Megaphone,
+  ServerCog,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Users as UsersIcon,
+} from "lucide-react"
 import { ResponsiveContainer, RadialBarChart, RadialBar, Legend, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, LineChart, Line, AreaChart, Area } from "recharts"
 
 import { Button } from "@/components/ui/button"
@@ -23,6 +42,9 @@ const SECTIONS = [
   { id: "notifications", label: "Notifications", icon: Megaphone },
   { id: "system", label: "System Health", icon: ServerCog },
 ] as const
+
+const HQ_REVIEW_QUEUE_STORAGE_KEY = "hqReviewQueue"
+
 
 type SectionId = (typeof SECTIONS)[number]["id"]
 
@@ -74,6 +96,18 @@ type AuditLog = {
   action: string
   timestamp: string
   category: string
+}
+
+type ReviewQueueItem = {
+  conflictId: string
+  queuedAt: string
+  originator: string
+  location: string
+  payloadSummary: string
+  reason: string
+  linkedChildId: string | null
+  followUp: string | null
+  attachmentName: string | null
 }
 
 const initialBranches: Branch[] = [
@@ -289,6 +323,7 @@ export default function HqDashboardPage() {
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [activeChwBranchId, setActiveChwBranchId] = useState<string | null>(null)
   const [chwFormNames, setChwFormNames] = useState("")
+  const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([])
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -313,6 +348,66 @@ export default function HqDashboardPage() {
 
     setUserName(name || "Admin")
   }, [router])
+
+  // Pull escalations staged by data officers via localStorage until the backend wiring is ready
+  const ingestQueuedConflicts = useCallback(() => {
+    const rawQueue = localStorage.getItem(HQ_REVIEW_QUEUE_STORAGE_KEY)
+    if (!rawQueue) return
+
+    try {
+      const parsed = JSON.parse(rawQueue) as
+        | Array<{
+            conflict: { id: string; originator: string; location: string; payloadSummary: string }
+            payload: { reason: string; attachmentName?: string | null }
+            queuedAt: string
+          }>
+        | {
+            conflict: { id: string; originator: string; location: string; payloadSummary: string }
+            payload: { reason: string; attachmentName?: string | null }
+            queuedAt: string
+          }
+
+      const queueItems = Array.isArray(parsed) ? parsed : [parsed]
+
+      if (queueItems.length) {
+        setReviewQueue((previous) => {
+          const existingIds = new Set(previous.map((item) => item.conflictId))
+          const newItems: ReviewQueueItem[] = queueItems
+            .filter((item) => item?.conflict?.id && !existingIds.has(item.conflict.id))
+            .map((item) => ({
+              conflictId: item.conflict.id,
+              queuedAt: item.queuedAt,
+              originator: item.conflict.originator,
+              location: item.conflict.location,
+              payloadSummary: item.conflict.payloadSummary,
+              reason: item.payload.reason,
+              linkedChildId: item.payload.linkedChildId ?? null,
+              followUp: item.payload.followUp ?? null,
+              attachmentName: item.payload.attachmentName ?? null,
+            }))
+
+          if (!newItems.length) return previous
+          return [...newItems, ...previous]
+        })
+      }
+    } catch (error) {
+      console.error("Failed to ingest HQ review queue payload", error)
+    } finally {
+      localStorage.removeItem(HQ_REVIEW_QUEUE_STORAGE_KEY)
+    }
+  }, [])
+
+  useEffect(() => {
+    ingestQueuedConflicts()
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== HQ_REVIEW_QUEUE_STORAGE_KEY) return
+      ingestQueuedConflicts()
+    }
+
+    window.addEventListener("storage", handleStorage)
+    return () => window.removeEventListener("storage", handleStorage)
+  }, [ingestQueuedConflicts])
 
   useEffect(() => {
     if (!systemMessage) return
@@ -517,6 +612,23 @@ export default function HqDashboardPage() {
     ])
   }
 
+  const resolveReviewItem = (conflictId: string) => {
+    setReviewQueue((previous) => previous.filter((item) => item.conflictId !== conflictId))
+  }
+
+  const acknowledgeReviewItem = (item: ReviewQueueItem) => {
+    // TODO: Replace with backend acknowledgement API
+    // eslint-disable-next-line no-console
+    console.log("Acknowledging HQ review item", item)
+    resolveReviewItem(item.conflictId)
+    setSystemMessage(`${item.conflictId} acknowledged. Follow up with data officer.`)
+  }
+
+  const openConflictDetails = (conflictId: string) => {
+    // TODO: Replace with HQ-native conflict detail view
+    router.push(`/dashboard/sync-conflicts?focus=${conflictId}`)
+  }
+
   const renderOverview = () => (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -662,6 +774,55 @@ export default function HqDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {reviewQueue.length > 0 ? (
+        <Card className="border-amber-500/60 bg-amber-50/70">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg text-amber-800">
+              <ShieldAlert className="h-5 w-5" /> Conflicts escalated by Data Officers
+            </CardTitle>
+            <CardDescription className="text-xs text-amber-800/90">
+              Sync collisions awaiting HQ resolution after being queued from the field.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {reviewQueue.map((item) => (
+              <div key={item.conflictId} className="rounded-lg border border-amber-400/70 bg-white/90 p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-amber-900">{item.conflictId}</span>
+                  <span className="text-xs text-amber-700">Queued {new Date(item.queuedAt).toLocaleString()}</span>
+                </div>
+                <p className="mt-2 text-xs text-amber-900/80">
+                  {item.payloadSummary} · {item.location} · {item.originator}
+                </p>
+                <p className="mt-1 text-[11px] text-amber-900/70">Suggested action: {item.reason}</p>
+                {item.followUp ? (
+                  <p className="mt-1 text-[11px] text-amber-900/70">Follow up: {item.followUp}</p>
+                ) : null}
+                {item.linkedChildId ? (
+                  <p className="mt-1 text-[11px] text-amber-900/70">Linked record: {item.linkedChildId}</p>
+                ) : null}
+                {item.attachmentName ? (
+                  <p className="mt-1 text-[11px] text-amber-900/70">Attachment: {item.attachmentName}</p>
+                ) : null}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" className="gap-2 bg-amber-600 text-white hover:bg-amber-700" onClick={() => acknowledgeReviewItem(item)}>
+                    <CheckCircle2 className="h-4 w-4" /> Mark as acknowledged
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2 border-amber-400 text-amber-800 hover:bg-amber-100"
+                    onClick={() => openConflictDetails(item.conflictId)}
+                  >
+                    <ListChecks className="h-4 w-4" /> Open conflict details
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   )
 

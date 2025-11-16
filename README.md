@@ -51,7 +51,7 @@ Visit `http://localhost:3000`
 - **Nurse / Clinician**: Handles in-clinic registration, vaccination capture, and follow-up scheduling. Facility console now
     includes QR-code patient lookup, Ghana CWC-aligned onboarding, and patient charting ready for backend wiring.
 - **Community Health Worker (CHW)**: Runs door-to-door registration and vaccination via the offline-first PWA.
-- **Data Officer**: Monitors data quality, resolves duplicates, and curates reporting outputs.
+- **Data Officer**: Monitors data quality, resolves duplicates, curates reporting outputs, and triages security or availability alerts.
 - **Public Health Authority (PHA)**: Read-only oversight of analytics, dashboards, and national reports.
 - **Parent / Guardian**: Reviews a child&apos;s vaccination journey, certificates, reminders, and emergency contacts.
 

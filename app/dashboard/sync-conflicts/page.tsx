@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertTriangle, ArrowLeft, CheckCircle2, FileWarning, ListChecks, MapPin, RefreshCw, Upload } from "lucide-react"
+import { AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, ListChecks, MapPin, RefreshCw, Upload } from "lucide-react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -35,10 +36,131 @@ const resolutionTemplates = [
   "Hold until HQ review",
 ]
 
+const HQ_REVIEW_QUEUE_STORAGE_KEY = "hqReviewQueue"
+
 export default function SyncConflictResolverPage() {
   const router = useRouter()
   const [selectedConflictId, setSelectedConflictId] = useState(conflicts[0]?.id ?? "")
-  const selectedConflict = conflicts.find((conflict) => conflict.id === selectedConflictId) ?? conflicts[0]
+  const [resolutionTemplate, setResolutionTemplate] = useState("")
+  const [linkedChildId, setLinkedChildId] = useState("")
+  const [followUpAction, setFollowUpAction] = useState("")
+  const [attachment, setAttachment] = useState<File | null>(null)
+  const [isResolving, setIsResolving] = useState(false)
+  const [isQueueing, setIsQueueing] = useState(false)
+
+  const selectedConflict = useMemo(
+    () => conflicts.find((conflict) => conflict.id === selectedConflictId) ?? conflicts[0],
+    [selectedConflictId],
+  )
+
+  const resetForm = () => {
+    setResolutionTemplate("")
+    setLinkedChildId("")
+    setFollowUpAction("")
+    setAttachment(null)
+  }
+
+  useEffect(() => {
+    resetForm()
+  }, [selectedConflictId])
+
+  const handleAttachmentChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    setAttachment(file)
+  }
+
+  const handleResolve = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedConflict) {
+      toast.error("Select a conflict before applying a resolution.")
+      return
+    }
+    if (!resolutionTemplate) {
+      toast.error("Choose a resolution template to proceed.")
+      return
+    }
+
+    setIsResolving(true)
+
+    const payload = {
+      conflictId: selectedConflict.id,
+      template: resolutionTemplate,
+      linkedChildId: linkedChildId || null,
+      followUp: followUpAction || null,
+      attachmentName: attachment?.name ?? null,
+    }
+
+    // TODO: Replace with conflict resolution API call
+    // eslint-disable-next-line no-console
+    console.log("Submitting conflict resolution", payload)
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      toast.success(`Resolution staged for ${selectedConflict.id}. Ready for backend submission.`)
+      resetForm()
+    } catch (error) {
+      toast.error("Failed to stage resolution. Please retry.")
+    } finally {
+      setIsResolving(false)
+    }
+  }
+
+  const handleQueue = async () => {
+    if (!selectedConflict) {
+      toast.error("Select a conflict before queueing for review.")
+      return
+    }
+
+    setIsQueueing(true)
+
+    const payload = {
+      conflictId: selectedConflict.id,
+      reason: resolutionTemplate || "manual-review",
+      linkedChildId: linkedChildId || null,
+      followUp: followUpAction || null,
+      attachmentName: attachment?.name ?? null,
+    }
+
+    // TODO: Replace with HQ escalation API call
+    // eslint-disable-next-line no-console
+    console.log("Queueing conflict for HQ review", payload)
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 600))
+
+      if (typeof window !== "undefined") {
+        const queuedAt = new Date().toISOString()
+        const queueItem = {
+          conflict: {
+            id: selectedConflict.id,
+            originator: selectedConflict.originator,
+            location: selectedConflict.location,
+            payloadSummary: selectedConflict.payloadSummary,
+          },
+          payload,
+          queuedAt,
+        }
+
+        let existingQueue: unknown = null
+        try {
+          existingQueue = JSON.parse(localStorage.getItem(HQ_REVIEW_QUEUE_STORAGE_KEY) ?? "null")
+        } catch (error) {
+          console.error("Failed to parse existing HQ review queue payload", error)
+        }
+
+        const queueArray = Array.isArray(existingQueue) ? existingQueue : []
+        queueArray.push(queueItem)
+        localStorage.setItem(HQ_REVIEW_QUEUE_STORAGE_KEY, JSON.stringify(queueArray))
+      }
+
+      toast.success(`${selectedConflict.id} queued for HQ review.`)
+      resetForm()
+    } catch (error) {
+      toast.error("Failed to queue for HQ review. Please retry.")
+    } finally {
+      setIsQueueing(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-muted/20">
@@ -71,10 +193,10 @@ export default function SyncConflictResolverPage() {
                 className={`w-full rounded-lg border p-3 text-left transition ${selectedConflictId === conflict.id ? "border-amber-500 bg-amber-50" : "border-border bg-background/70 hover:border-amber-400/60"}`}
               >
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-foreground">{conflict.issue}</span>
-                  <span className="text-xs text-muted-foreground">{conflict.id}</span>
+                  <span className={`font-semibold ${selectedConflictId === conflict.id ? "text-amber-900" : "text-foreground"}`}>{conflict.issue}</span>
+                  <span className={`text-xs font-medium ${selectedConflictId === conflict.id ? "text-amber-700" : "text-muted-foreground"}`}>{conflict.id}</span>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <div className={`mt-2 flex flex-wrap items-center gap-2 text-xs ${selectedConflictId === conflict.id ? "text-amber-800" : "text-muted-foreground"}`}>
                   <span>{conflict.location}</span>
                   <span>·</span>
                   <span>{conflict.originator}</span>
@@ -93,32 +215,38 @@ export default function SyncConflictResolverPage() {
           </CardHeader>
           <CardContent className="space-y-6 text-sm">
             <div className="rounded-lg border border-dashed border-amber-400/50 bg-amber-50/60 p-4">
-              <dl className="grid gap-1 text-xs text-muted-foreground">
+              <dl className="grid gap-1.5 text-xs">
                 <div className="flex items-center justify-between">
-                  <dt className="font-semibold text-foreground">Captured</dt>
-                  <dd>{selectedConflict?.capturedAt}</dd>
+                  <dt className="font-semibold text-amber-900">Captured</dt>
+                  <dd className="text-amber-800">{selectedConflict?.capturedAt}</dd>
                 </div>
                 <div className="flex items-center justify-between">
-                  <dt className="font-semibold text-foreground">Originator</dt>
-                  <dd>{selectedConflict?.originator}</dd>
+                  <dt className="font-semibold text-amber-900">Originator</dt>
+                  <dd className="text-amber-800">{selectedConflict?.originator}</dd>
                 </div>
                 <div className="flex items-center justify-between">
-                  <dt className="font-semibold text-foreground">Location</dt>
-                  <dd className="inline-flex items-center gap-1">
+                  <dt className="font-semibold text-amber-900">Location</dt>
+                  <dd className="inline-flex items-center gap-1 text-amber-800">
                     <MapPin className="h-3 w-3" /> {selectedConflict?.location}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between">
-                  <dt className="font-semibold text-foreground">Payload</dt>
-                  <dd>{selectedConflict?.payloadSummary}</dd>
+                  <dt className="font-semibold text-amber-900">Payload</dt>
+                  <dd className="text-amber-800">{selectedConflict?.payloadSummary}</dd>
                 </div>
               </dl>
             </div>
 
-            <form className="space-y-4" onSubmit={(event) => event.preventDefault()}>
+            <form className="space-y-4" onSubmit={handleResolve}>
               <div className="grid gap-3">
                 <Label htmlFor="resolution-template">Resolution template</Label>
-                <select id="resolution-template" className="rounded-md border border-border bg-background px-3 py-2 text-sm" defaultValue="" required>
+                <select
+                  id="resolution-template"
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={resolutionTemplate}
+                  onChange={(event) => setResolutionTemplate(event.target.value)}
+                  required
+                >
                   <option value="" disabled>
                     Select an action
                   </option>
@@ -132,19 +260,32 @@ export default function SyncConflictResolverPage() {
 
               <div className="grid gap-3">
                 <Label htmlFor="link-to-child">Link to child record (optional)</Label>
-                <Input id="link-to-child" placeholder="CH-558" className="text-sm" />
+                <Input
+                  id="link-to-child"
+                  placeholder="CH-558"
+                  className="text-sm"
+                  value={linkedChildId}
+                  onChange={(event) => setLinkedChildId(event.target.value)}
+                />
                 <p className="text-xs text-muted-foreground">Provide a valid child ID if rerouting to a new survivor record.</p>
               </div>
 
               <div className="grid gap-3">
                 <Label htmlFor="upload-attachment">Attach supporting file</Label>
-                <Input id="upload-attachment" type="file" className="cursor-pointer" />
-                <p className="text-xs text-muted-foreground">Attach CHW notes or spreadsheets that justify the decision.</p>
+                <Input id="upload-attachment" type="file" className="cursor-pointer" onChange={handleAttachmentChange} disabled={isResolving || isQueueing} />
+                <p className="text-xs text-muted-foreground">
+                  Attach CHW notes or spreadsheets that justify the decision. {attachment ? `Selected: ${attachment.name}` : ""}
+                </p>
               </div>
 
               <div className="grid gap-3">
                 <Label htmlFor="follow-up">Follow up with CHW (optional)</Label>
-                <select id="follow-up" className="rounded-md border border-border bg-background px-3 py-2 text-sm" defaultValue="">
+                <select
+                  id="follow-up"
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={followUpAction}
+                  onChange={(event) => setFollowUpAction(event.target.value)}
+                >
                   <option value="" disabled>
                     Choose follow-up action
                   </option>
@@ -155,11 +296,11 @@ export default function SyncConflictResolverPage() {
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button type="submit" className="flex-1 gap-2 bg-amber-500 text-white hover:bg-amber-600">
-                  <ListChecks className="h-4 w-4" /> Apply resolution
+                <Button type="submit" className="flex-1 gap-2 bg-amber-500 text-white hover:bg-amber-600" disabled={isResolving || isQueueing}>
+                  <ListChecks className="h-4 w-4" /> {isResolving ? "Applying…" : "Apply resolution"}
                 </Button>
-                <Button type="button" variant="outline" className="flex-1 gap-2">
-                  <Upload className="h-4 w-4" /> Queue for HQ review
+                <Button type="button" variant="outline" className="flex-1 gap-2" onClick={handleQueue} disabled={isQueueing || isResolving}>
+                  <Upload className="h-4 w-4" /> {isQueueing ? "Queuing…" : "Queue for HQ review"}
                 </Button>
               </div>
             </form>
