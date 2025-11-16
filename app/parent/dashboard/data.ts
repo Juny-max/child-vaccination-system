@@ -20,6 +20,80 @@ export const childInfo: ChildInfo = {
   profilePhoto: "/images/demo-child-1.svg",
 }
 
+export type CertificateRecord = {
+  certificateId: string
+  childId: string
+  childName: string
+  issuedDate: string
+  issuedBy: string
+  completionStatus: "Complete" | "Partial"
+  qrPayload: string
+  vaccinesCompleted: string[]
+  lastVerified: string
+}
+
+export const certificateRecords: CertificateRecord[] = [
+  {
+    certificateId: "CERT-GH-2025-001234",
+    childId: childInfo.id,
+    childName: childInfo.name,
+    issuedDate: "October 12, 2025",
+    issuedBy: "Accra Central Health Center",
+    completionStatus: "Complete",
+    qrPayload: "CERT-GH-2025-001234|CHILD-001|Ama Asante|Complete",
+    vaccinesCompleted: [
+      "BCG",
+      "OPV0",
+      "OPV1",
+      "OPV2",
+      "DPT1",
+      "DPT2",
+      "DPT3",
+      "MR1",
+      "Yellow Fever",
+    ],
+    lastVerified: "Nov 15, 2025 · 14:22 GMT",
+  },
+  {
+    certificateId: "CERT-GH-2025-001567",
+    childId: "CHILD-002",
+    childName: "Kojo Asante",
+    issuedDate: "September 02, 2025",
+    issuedBy: "Accra Central Health Center",
+    completionStatus: "Partial",
+    qrPayload: "CERT-GH-2025-001567|CHILD-002|Kojo Asante|Partial",
+    vaccinesCompleted: [
+      "BCG",
+      "OPV0",
+      "OPV1",
+      "DPT1",
+      "DPT2",
+    ],
+    lastVerified: "Awaiting completion",
+  },
+  {
+    certificateId: "CERT-GH-2025-002045",
+    childId: "CHILD-003",
+    childName: "Zara Asante",
+    issuedDate: "August 20, 2025",
+    issuedBy: "Madina Community Clinic",
+    completionStatus: "Complete",
+    qrPayload: "CERT-GH-2025-002045|CHILD-003|Zara Asante|Complete",
+    vaccinesCompleted: [
+      "BCG",
+      "OPV0",
+      "OPV1",
+      "OPV2",
+      "DPT1",
+      "DPT2",
+      "DPT3",
+      "PCV",
+      "MR1",
+    ],
+    lastVerified: "Oct 28, 2025 · 09:10 GMT",
+  },
+]
+
 export type ChildProfile = ChildInfo & {
   relationship: string
   dateOfBirth: string
@@ -29,33 +103,45 @@ export const childProfiles: ChildProfile[] = [
   {
     id: "CHILD-001",
     name: "Ama Asante",
-  age: "18 months",
-  height: "78 cm",
+    age: "18 months",
+    height: "78 cm",
     dateOfBirth: "2023-05-10",
     relationship: "First daughter",
     birthWeight: "3.2 kg",
     bloodType: "O+",
     primaryFacility: "Accra Central Health Center",
-  profilePhoto: "/images/demo-child-1.svg",
+    profilePhoto: "/images/demo-child-1.svg",
   },
   {
     id: "CHILD-002",
     name: "Kojo Asante",
-  age: "6 months",
-  height: "66 cm",
+    age: "6 months",
+    height: "66 cm",
     dateOfBirth: "2024-04-21",
     relationship: "Second son",
     birthWeight: "3.0 kg",
     bloodType: "A+",
     primaryFacility: "Accra Central Health Center",
-  profilePhoto: "/images/demo-child-2.svg",
+    profilePhoto: "/images/demo-child-2.svg",
+  },
+  {
+    id: "CHILD-003",
+    name: "Zara Asante",
+    age: "3 years",
+    height: "96 cm",
+    dateOfBirth: "2022-01-14",
+    relationship: "Eldest daughter",
+    birthWeight: "3.4 kg",
+    bloodType: "B+",
+    primaryFacility: "Madina Community Clinic",
+    profilePhoto: "/images/demo-child-1.svg",
   },
 ]
 
 export const healthReminders: string[] = [
-  "Keep Ama hydrated and observe for any reactions within 24 hours after each shot.",
+  "Keep your child hydrated and observe for any reactions within 24 hours after each shot.",
   "Carry the child health record booklet to every visit.",
-  "Update the nurse if Ama shows signs of fever lasting more than 48 hours.",
+  "Update the nurse if your child shows signs of fever lasting more than 48 hours.",
 ]
 
 export type VaccinationStatus = "Complete" | "On Track" | "Upcoming"
@@ -108,7 +194,7 @@ export const appointments: Appointment[] = [
     date: "April 18, 2025",
     time: "9:30 AM",
     location: "Accra Central Health Center",
-    notes: "Discuss Ama's dietary plan and growth chart with the nutritionist.",
+    notes: "Discuss your child's dietary plan and growth chart with the nutritionist.",
   },
 ]
 
@@ -174,5 +260,5 @@ export const emergencyContactsTemplate: EmergencyContact[] = [
 export const chatbotPrompts: string[] = [
   '"What should I expect after the MMR shot?"',
   '"Send me a reminder three days before the next vaccine."',
-  '"How do I update Ama\'s allergy information?"',
+  '"How do I update my child\'s allergy information?"',
 ]

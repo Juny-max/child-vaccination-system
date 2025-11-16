@@ -553,7 +553,7 @@ export default function MotherDetailsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Emergency contacts</CardTitle>
-          <CardDescription>Add trusted contacts who can bring Ama for appointments when needed.</CardDescription>
+          <CardDescription>Add trusted contacts who can bring your child for appointments when needed.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {contactStatus ? (
@@ -567,7 +567,7 @@ export default function MotherDetailsPage() {
           {emergencyContacts.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border bg-background/60 p-4 text-sm text-muted-foreground">
               <p className="text-base font-semibold text-foreground">No emergency contacts yet</p>
-              <p>Add at least one trusted family member or neighbor who can accompany Ama to appointments.</p>
+              <p>Add at least one trusted family member or neighbor who can accompany your child to appointments.</p>
             </div>
           ) : (
             <div className="space-y-3">

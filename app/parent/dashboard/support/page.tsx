@@ -49,7 +49,7 @@ export default function SupportPage() {
               <MessageCircle className="size-6" /> Vaccination assistant
             </CardTitle>
             <CardDescription>
-              Ask questions, request reminders, and get help planning Ama&apos;s vaccination journey.
+              Ask questions, request reminders, and get help planning your child&apos;s vaccination journey.
             </CardDescription>
           </div>
           <Button variant="secondary" size="sm" className="gap-2" onClick={handleLaunchChatbot}>
@@ -89,7 +89,7 @@ export default function SupportPage() {
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="Ask the assistant about Ama's care..."
+                placeholder="Ask the assistant about your child&apos;s care..."
                 className="min-h-[60px] flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
               <Button className="gap-2" onClick={handleSendMessage}>
@@ -107,7 +107,7 @@ export default function SupportPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">How the assistant helps</CardTitle>
-            <CardDescription>Get tailored guidance for Ama&apos;s health needs.</CardDescription>
+            <CardDescription>Get tailored guidance for your child&apos;s health needs.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <div className="rounded-lg border border-border bg-background p-4">
@@ -120,7 +120,7 @@ export default function SupportPage() {
             </div>
             <div className="rounded-lg border border-border bg-background p-4">
               <p className="font-semibold text-foreground">Profile updates</p>
-              <p>Ask how to update Ama&apos;s allergy information, caregiver contacts, and facility preferences.</p>
+              <p>Ask how to update your child&apos;s allergy information, caregiver contacts, and facility preferences.</p>
             </div>
           </CardContent>
         </Card>
@@ -171,7 +171,7 @@ const initialMessages: ChatMessage[] = [
   {
     id: 1,
     sender: "assistant",
-    text: "Hello Ama's caregiver! I'm here to help with vaccination schedules, reminders, and post-care guidance.",
+    text: "Hello caregiver! I'm here to help with your child's vaccination schedules, reminders, and post-care guidance.",
   },
   {
     id: 2,

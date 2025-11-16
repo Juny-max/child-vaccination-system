@@ -46,7 +46,7 @@ export default function VaccinationStatusPage() {
           <CardTitle className="flex items-center gap-2 text-xl">
             <Syringe className="size-5" /> Vaccination timeline
           </CardTitle>
-          <CardDescription>Review Ama&apos;s completed, ongoing, and upcoming vaccinations.</CardDescription>
+          <CardDescription>Review your child&apos;s completed, ongoing, and upcoming vaccinations.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <Stats label="Completed" value={`${complete.length}`} icon={<CheckCircle2 className="size-5 text-primary" />} />
@@ -86,12 +86,12 @@ export default function VaccinationStatusPage() {
           <CardTitle className="flex items-center gap-2 text-lg text-destructive">
             <AlertTriangle className="size-5" /> Upcoming dose notice
           </CardTitle>
-          <CardDescription>Make sure Ama receives the pending MMR dose to unlock the digital certificate.</CardDescription>
+          <CardDescription>Make sure your child receives the pending MMR dose to unlock the digital certificate.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm text-muted-foreground">
-              MMR (Dose 1/2) is still pending. Schedule an appointment or inform your nurse if Ama is unwell.
+              MMR (Dose 1/2) is still pending. Schedule an appointment or inform your nurse if your child is unwell.
             </p>
           </div>
           <Button className="gap-2" variant="secondary" onClick={handleLaunchBooking}>

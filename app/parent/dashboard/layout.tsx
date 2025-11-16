@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import {
   AlertTriangle,
+  Award,
   Baby,
   CalendarDays,
   Home,
@@ -36,6 +37,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { label: "Overview", href: "/parent/dashboard", icon: Home },
+  { label: "Certificates", href: "/parent/dashboard/certificates", icon: Award },
   { label: "Vaccination status", href: "/parent/dashboard/vaccination-status", icon: Syringe },
   { label: "Missed vaccinations", href: "/parent/dashboard/missed-vaccinations", icon: AlertTriangle, badge: "Alert" },
   { label: "Child details", href: "/parent/dashboard/child-details", icon: Baby },
@@ -114,7 +116,7 @@ export default function ParentDashboardLayout({ children }: DashboardLayoutProps
                 <h1 className="text-xl font-semibold">
                   {greeting}, {userName}
                 </h1>
-                <p className="text-sm text-muted-foreground">Manage Ama&apos;s vaccinations, appointments, and support tools.</p>
+                <p className="text-sm text-muted-foreground">Manage your children&apos;s vaccinations, appointments, and support tools.</p>
               </div>
             </div>
             <div className="flex items-center gap-3">

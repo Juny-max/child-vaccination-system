@@ -14,7 +14,7 @@ export default function AppointmentsPage() {
             <CardTitle className="flex items-center gap-2 text-xl">
               <CalendarDays className="size-5" /> Appointments
             </CardTitle>
-            <CardDescription>Review upcoming and past appointments for Ama.</CardDescription>
+            <CardDescription>Review upcoming and past appointments for your child.</CardDescription>
           </div>
           <Button variant="secondary" size="sm" className="gap-2">
             <PlusCircle className="size-4" /> Book new appointment
@@ -58,7 +58,7 @@ export default function AppointmentsPage() {
             "Carry the child health record booklet",
             "Pack extra diapers and a change of clothes",
             "Note any reactions since the previous dose",
-            "Ensure Ama eats a light meal before the visit",
+            "Ensure your child eats a light meal before the visit",
           ].map((item) => (
             <div key={item} className="rounded-lg border border-border bg-background p-4">
               {item}

@@ -1,13 +1,17 @@
 "use client"
 
+import { useCallback, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { QRCodeCanvas } from "qrcode.react"
+import { toast } from "sonner"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useParentDashboard } from "./dashboard-context"
-import { appointments, missedVaccinations, vaccinationRecords } from "./data"
-import type { VaccinationStatus } from "./data"
-import { AlertTriangle, CalendarDays, ChevronRight, Clock3, MessageCircle, Sparkles, Syringe } from "lucide-react"
+import { appointments, certificateRecords, missedVaccinations, vaccinationRecords } from "./data"
+import type { VaccinationStatus, CertificateRecord } from "./data"
+import { AlertTriangle, Award, CalendarDays, ChevronRight, Clock3, FileDown, QrCode, MessageCircle, Sparkles, Syringe } from "lucide-react"
+import { generateCertificatePdf } from "@/lib/certificate-pdf"
 
 export default function ParentDashboardOverview() {
   const { userName } = useParentDashboard()
@@ -18,6 +22,62 @@ export default function ParentDashboardOverview() {
   const upcomingVaccines = vaccinationRecords.filter((record) => record.status === "Upcoming").length
   const onTrackVaccines = vaccinationRecords.filter((record) => record.status === "On Track").length
   const completionPercentage = totalVaccines ? Math.round((completedVaccines / totalVaccines) * 100) : 0
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const logoDataUrlRef = useRef<string | null>(null)
+
+  const completedCertificates = useMemo(() => {
+    return [...certificateRecords]
+      .filter((record) => record.completionStatus === "Complete")
+      .sort((a, b) => new Date(b.issuedDate).getTime() - new Date(a.issuedDate).getTime())
+  }, [])
+
+  const latestCertificate = completedCertificates[0]
+  const certificateDetails = latestCertificate
+    ? [
+        { label: "Certificate ID", value: latestCertificate.certificateId },
+        { label: "Child", value: `${latestCertificate.childName} (${latestCertificate.childId})` },
+        { label: "Issued", value: latestCertificate.issuedDate },
+        { label: "Facility", value: latestCertificate.issuedBy },
+      ]
+    : []
+
+
+  const fetchLogoDataUrl = useCallback(async () => {
+    if (logoDataUrlRef.current) return logoDataUrlRef.current
+    try {
+      const response = await fetch("/images/cvcc-logo.png")
+      if (!response.ok) throw new Error("Logo fetch failed")
+      const blob = await response.blob()
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.onerror = () => reject(new Error("Failed to read logo"))
+        reader.readAsDataURL(blob)
+      })
+      logoDataUrlRef.current = dataUrl
+      return dataUrl
+    } catch (error) {
+      console.error("Logo load error", error)
+      return null
+    }
+  }, [])
+
+  const handleDownloadCertificate = useCallback(async (record: CertificateRecord) => {
+    if (!record) return
+    setIsGeneratingPdf(true)
+    try {
+      const logoDataUrl = await fetchLogoDataUrl()
+      const qrDataUrl = qrCanvasRef.current?.toDataURL("image/png")
+      await generateCertificatePdf(record, { logoDataUrl, qrDataUrl })
+      toast.success("Certificate PDF downloaded")
+    } catch (error) {
+      console.error("Certificate PDF error", error)
+      toast.error("Unable to generate certificate PDF. Please try again.")
+    } finally {
+      setIsGeneratingPdf(false)
+    }
+  }, [fetchLogoDataUrl])
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -28,7 +88,7 @@ export default function ParentDashboardOverview() {
               <Badge variant="secondary" className="mb-3 inline-flex items-center gap-1">
                 <Sparkles className="size-3" /> Personalized overview
               </Badge>
-              <CardTitle className="text-2xl lg:text-3xl">Hello {userName}, here&apos;s Ama&apos;s progress</CardTitle>
+              <CardTitle className="text-2xl lg:text-3xl">Hello {userName}, here&apos;s your child&apos;s progress</CardTitle>
               <CardDescription className="mt-2 text-base">
                 Keep track of completed vaccinations, upcoming appointments, and areas that need your attention.
               </CardDescription>
@@ -42,11 +102,122 @@ export default function ParentDashboardOverview() {
           <CardContent className="pt-0">
             <div className="rounded-md bg-background/80 p-4 text-sm text-muted-foreground">
               <p>
-                Ama has completed <span className="font-semibold text-foreground">{completionPercentage}%</span> of the recommended
-                vaccine schedule. Review the full timeline or schedule make-up visits any time.
+                Your child has completed <span className="font-semibold text-foreground">{completionPercentage}%</span> of the
+                recommended vaccine schedule. Review the full timeline or schedule make-up visits any time.
               </p>
             </div>
           </CardContent>
+        </Card>
+      </section>
+
+      <section>
+        <Card className="border-primary/30 bg-gradient-to-br from-primary/5 via-background to-background shadow-lg">
+          {latestCertificate ? (
+            <>
+              <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="space-y-1">
+                  <Badge variant="outline" className="inline-flex items-center gap-1 border-primary/40 text-primary">
+                    <Award className="size-4" /> Latest completed certificate
+                  </Badge>
+                  <CardTitle className="text-2xl">Digital certificate for {latestCertificate.childName}</CardTitle>
+                  <CardDescription>Show this on your phone or download a PDF copy for official checks.</CardDescription>
+                </div>
+                <div className="text-right text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">Last verified</p>
+                  <p>{latestCertificate.lastVerified}</p>
+                </div>
+              </CardHeader>
+              <CardContent className="grid gap-6 lg:grid-cols-[3fr,2fr]">
+                <div className="space-y-5">
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary" className="gap-1 bg-primary/10 text-primary">
+                      ID: {latestCertificate.certificateId}
+                    </Badge>
+                    <Badge variant="outline" className="gap-1 border-emerald-300 bg-emerald-50 text-emerald-700">
+                      {latestCertificate.completionStatus}
+                    </Badge>
+                  </div>
+                  <dl className="grid gap-4 text-sm sm:grid-cols-2">
+                    {certificateDetails.map((detail) => (
+                      <div key={detail.label}>
+                        <dt className="text-muted-foreground">{detail.label}</dt>
+                        <dd className="font-semibold text-foreground">{detail.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vaccines recorded</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {latestCertificate.vaccinesCompleted.map((vaccine) => (
+                        <Badge key={vaccine} variant="outline" className="border-primary/30 bg-primary/5 text-primary">
+                          {vaccine}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      onClick={() => handleDownloadCertificate(latestCertificate)}
+                      className="gap-2"
+                      disabled={isGeneratingPdf}
+                    >
+                      <FileDown className="size-4" />
+                      {isGeneratingPdf ? "Generating PDF..." : "Download PDF"}
+                    </Button>
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link href="/parent/dashboard/certificates">
+                        View all certificates
+                        <ChevronRight className="size-4" />
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-primary/40 bg-background/80 p-6 text-center">
+                  <Badge variant="secondary" className="mb-3 gap-1 bg-primary/10 text-primary">
+                    <QrCode className="size-4" /> Scan-ready QR
+                  </Badge>
+                  <div className="rounded-xl border border-border bg-white p-4 shadow-inner">
+                    <QRCodeCanvas
+                      value={latestCertificate.qrPayload}
+                      size={180}
+                      includeMargin
+                      ref={qrCanvasRef}
+                      bgColor="#ffffff"
+                      fgColor="#111318"
+                    />
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Public Health Authorities can scan this QR directly from your device to confirm authenticity.
+                  </p>
+                </div>
+              </CardContent>
+            </>
+          ) : (
+            <CardContent className="flex flex-col gap-4">
+              <Badge variant="outline" className="w-fit gap-1 border-amber-300 text-amber-700">
+                <Award className="size-4" /> Certificates locked
+              </Badge>
+              <CardTitle className="text-2xl">Complete a schedule to unlock certificates</CardTitle>
+              <CardDescription>
+                Finish at least one child&apos;s vaccination journey to generate the official certificate. You can still see progress for
+                each child below.
+              </CardDescription>
+              <div className="flex flex-wrap gap-3">
+                <Button asChild className="gap-2">
+                  <Link href="/parent/dashboard/vaccination-status">
+                    Go to vaccination status
+                    <ChevronRight className="size-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="gap-2">
+                  <Link href="/parent/dashboard/certificates">
+                    View certificate tracker
+                    <ChevronRight className="size-4" />
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          )}
         </Card>
       </section>
 
@@ -57,7 +228,7 @@ export default function ParentDashboardOverview() {
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Syringe className="size-5" /> Recent vaccinations
               </CardTitle>
-              <CardDescription>Summary of Ama&apos;s latest vaccine activity</CardDescription>
+              <CardDescription>Summary of your child&apos;s latest vaccine activity</CardDescription>
             </div>
             <Button asChild variant="ghost" size="sm" className="gap-1">
               <Link href="/parent/dashboard/vaccination-status">
@@ -151,13 +322,13 @@ export default function ParentDashboardOverview() {
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">
             <p>
-              Get quick answers about post-vaccination care, fever management, upcoming appointments, and how to update Ama&apos;s
+              Get quick answers about post-vaccination care, fever management, upcoming appointments, and how to update your child&apos;s
               information.
             </p>
             <div className="space-y-2 rounded-lg bg-muted/60 p-4">
-              <p>• "What should I expect after the MMR shot?"</p>
-              <p>• "Send me a reminder three days before the next vaccine."</p>
-              <p>• "How do I update Ama&apos;s allergy information?"</p>
+              <p>• &ldquo;What should I expect after the MMR shot?&rdquo;</p>
+              <p>• &ldquo;Send me a reminder three days before the next vaccine.&rdquo;</p>
+              <p>• &ldquo;How do I update my child&apos;s allergy information?&rdquo;</p>
             </div>
             <Button asChild className="gap-2">
               <Link href="/parent/dashboard/support">
