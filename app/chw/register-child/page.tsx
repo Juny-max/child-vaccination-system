@@ -205,7 +205,7 @@ export default function ChwRegisterChildPage() {
               {step === 1 ? (
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="mother-name">Mother's full name</Label>
+                    <Label htmlFor="mother-name">Mother&apos;s full name</Label>
                     <Input
                       id="mother-name"
                       value={form.motherName}
@@ -220,7 +220,7 @@ export default function ChwRegisterChildPage() {
                     )}
                   </div>
                   <div>
-                    <Label htmlFor="mother-phone">Mother's phone number</Label>
+                    <Label htmlFor="mother-phone">Mother&apos;s phone number</Label>
                     <Input
                       id="mother-phone"
                       value={form.motherPhone}
@@ -246,7 +246,7 @@ export default function ChwRegisterChildPage() {
               {step === 2 ? (
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="child-name">Child's full name</Label>
+                    <Label htmlFor="child-name">Child&apos;s full name</Label>
                     <Input
                       id="child-name"
                       value={form.childName}

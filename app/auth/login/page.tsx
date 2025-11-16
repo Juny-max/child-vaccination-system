@@ -71,7 +71,7 @@ const ROLE_ROUTES: Record<DemoAccount["role"], string> = {
   "facility-nurse": "/facility/dashboard",
   chw: "/chw/dashboard",
   "data-officer": "/dashboard",
-  pha: "/dashboard",
+  pha: "/pha/dashboard",
 }
 
 export default function UnifiedLoginPage() {

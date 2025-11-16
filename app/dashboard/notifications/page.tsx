@@ -134,9 +134,8 @@ export default function NotificationAuditLogPage() {
       })),
     }
 
-    // TODO: Replace with export API call
-    // Example: POST /api/notifications/export with exportPayload
-    // eslint-disable-next-line no-console
+  // TODO: Replace with export API call
+  // Example: POST /api/notifications/export with exportPayload
     console.log("Exporting notification log", exportPayload)
 
     try {

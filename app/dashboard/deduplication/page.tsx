@@ -101,8 +101,7 @@ export default function DeduplicationQueuePage() {
       timestamp: new Date().toISOString(),
     }
 
-    // TODO: Replace with merge API call
-    // eslint-disable-next-line no-console
+  // TODO: Replace with merge API call
     console.log("Merging duplicate records", payload)
 
     try {
@@ -133,8 +132,7 @@ export default function DeduplicationQueuePage() {
       timestamp: new Date().toISOString(),
     }
 
-    // TODO: Replace with dismiss API call
-    // eslint-disable-next-line no-console
+  // TODO: Replace with dismiss API call
     console.log("Dismissing duplicate pair as false positive", payload)
 
     try {

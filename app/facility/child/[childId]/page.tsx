@@ -269,7 +269,7 @@ export default function ChildPatientChartPage() {
     setMeasurements(sampleMeasurements[childId] ?? [])
     setMeasurementForm(createEmptyMeasurementForm(userName))
     setMeasurementErrors({})
-  }, [childId])
+  }, [childId, userName])
 
   useEffect(() => {
     if (!userName) return

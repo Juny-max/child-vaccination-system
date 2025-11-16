@@ -128,8 +128,7 @@ export default function Reports() {
       exportFormat,
     }
 
-    // TODO: Replace with API integration
-    // eslint-disable-next-line no-console
+  // TODO: Replace with API integration
     console.log("Staging configuration save", payload)
 
     try {
@@ -150,8 +149,7 @@ export default function Reports() {
       rowCount: previewRows.length,
     }
 
-    // TODO: Replace with real export trigger
-    // eslint-disable-next-line no-console
+  // TODO: Replace with real export trigger
     console.log("Preparing export", payload)
 
     try {

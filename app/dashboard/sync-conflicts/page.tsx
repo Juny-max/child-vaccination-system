@@ -90,8 +90,7 @@ export default function SyncConflictResolverPage() {
       attachmentName: attachment?.name ?? null,
     }
 
-    // TODO: Replace with conflict resolution API call
-    // eslint-disable-next-line no-console
+  // TODO: Replace with conflict resolution API call
     console.log("Submitting conflict resolution", payload)
 
     try {
@@ -121,8 +120,7 @@ export default function SyncConflictResolverPage() {
       attachmentName: attachment?.name ?? null,
     }
 
-    // TODO: Replace with HQ escalation API call
-    // eslint-disable-next-line no-console
+  // TODO: Replace with HQ escalation API call
     console.log("Queueing conflict for HQ review", payload)
 
     try {

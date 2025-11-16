@@ -358,12 +358,12 @@ export default function HqDashboardPage() {
       const parsed = JSON.parse(rawQueue) as
         | Array<{
             conflict: { id: string; originator: string; location: string; payloadSummary: string }
-            payload: { reason: string; attachmentName?: string | null }
+            payload: { reason: string; linkedChildId?: string | null; followUp?: string | null; attachmentName?: string | null }
             queuedAt: string
           }>
         | {
             conflict: { id: string; originator: string; location: string; payloadSummary: string }
-            payload: { reason: string; attachmentName?: string | null }
+            payload: { reason: string; linkedChildId?: string | null; followUp?: string | null; attachmentName?: string | null }
             queuedAt: string
           }
 
@@ -617,8 +617,7 @@ export default function HqDashboardPage() {
   }
 
   const acknowledgeReviewItem = (item: ReviewQueueItem) => {
-    // TODO: Replace with backend acknowledgement API
-    // eslint-disable-next-line no-console
+  // TODO: Replace with backend acknowledgement API
     console.log("Acknowledging HQ review item", item)
     resolveReviewItem(item.conflictId)
     setSystemMessage(`${item.conflictId} acknowledged. Follow up with data officer.`)

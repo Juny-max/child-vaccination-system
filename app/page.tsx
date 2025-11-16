@@ -419,7 +419,7 @@ export default function Home() {
   <div className="mx-auto flex max-w-5xl flex-col items-center gap-6 rounded-3xl border border-border bg-linear-to-r from-primary/85 via-primary/70 to-primary/80 px-6 py-12 text-center text-primary-foreground shadow-lg sm:px-8 sm:py-14">
           <p className="text-sm uppercase tracking-[0.3em]">Unified national rollout</p>
           <h2 className="max-w-3xl text-balance text-3xl font-semibold md:text-4xl">
-            Ready to accelerate Ghana's child immunisation outcomes?
+            Ready to accelerate Ghana&apos;s child immunisation outcomes?
           </h2>
           <p className="max-w-2xl text-base md:text-lg">
             Deploy within weeks, equip every branch and CHW with the same intelligent toolkit, and deliver verified

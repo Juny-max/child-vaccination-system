@@ -478,7 +478,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p>Select a data source, choose columns, apply filters, then export as CSV, Excel, or PDF.</p>
-              <p className="text-xs text-muted-foreground">Common saved report: “Accra North · Measles 1 backlog · Last 14 days”.</p>
+              <p className="text-xs text-muted-foreground">Common saved report: &ldquo;Accra North · Measles 1 backlog · Last 14 days&rdquo;.</p>
               <Link href="/dashboard/reports" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
                 <LayoutList className="h-4 w-4" /> Launch report generator
               </Link>
@@ -511,7 +511,7 @@ export default function Dashboard() {
                   </div>
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">Work with HQ security to close items marked "Investigating" before close of business.</p>
+              <p className="text-xs text-muted-foreground">Work with HQ security to close items marked &ldquo;Investigating&rdquo; before close of business.</p>
             </CardContent>
           </Card>
 
@@ -534,7 +534,7 @@ export default function Dashboard() {
                   <p className="mt-1 text-xs text-muted-foreground">{signal.detail}</p>
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">If a service is "offline", sync with IT operations and post an advisory to branches.</p>
+              <p className="text-xs text-muted-foreground">If a service is &ldquo;offline&rdquo;, sync with IT operations and post an advisory to branches.</p>
             </CardContent>
           </Card>
         </section>
