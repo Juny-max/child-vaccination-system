@@ -35,7 +35,7 @@ type VisitTask = {
 const mockVisitList: VisitTask[] = [
   {
     id: "VIS-1101",
-    childName: "Ama Kwesi",
+    childName: "Child Kwesi",
     vaccineDue: "Penta 3",
     householdLocation: "Kpalbusi Junction",
     distanceKm: 1.2,

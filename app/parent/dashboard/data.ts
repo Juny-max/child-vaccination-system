@@ -10,7 +10,7 @@ export type ChildInfo = {
 }
 
 export const childInfo: ChildInfo = {
-  name: "Ama Asante",
+  name: "Esi Boadu",
   id: "CHILD-001",
   age: "18 months",
   height: "78 cm",
@@ -40,7 +40,7 @@ export const certificateRecords: CertificateRecord[] = [
     issuedDate: "October 12, 2025",
     issuedBy: "Accra Central Health Center",
     completionStatus: "Complete",
-    qrPayload: "CERT-GH-2025-001234|CHILD-001|Ama Asante|Complete",
+    qrPayload: "CERT-GH-2025-001234|CHILD-001|Esi Boadu|Complete",
     vaccinesCompleted: [
       "BCG",
       "OPV0",
@@ -102,7 +102,7 @@ export type ChildProfile = ChildInfo & {
 export const childProfiles: ChildProfile[] = [
   {
     id: "CHILD-001",
-    name: "Ama Asante",
+    name: "Esi Boadu",
     age: "18 months",
     height: "78 cm",
     dateOfBirth: "2023-05-10",
@@ -250,7 +250,7 @@ export const emergencyContactsTemplate: EmergencyContact[] = [
   },
   {
     id: "CONTACT-002",
-    name: "Ama Serwaa",
+    name: "Akua Serwaa",
     relationship: "Sister",
     phone: "+233 20 111 2233",
     isPrimary: false,

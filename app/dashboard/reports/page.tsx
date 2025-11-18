@@ -49,7 +49,7 @@ const filterPresets = [
 const previewRows = [
   {
     childId: "CH-5531",
-    name: "Ama Mensah",
+    name: "Esi Mensah",
     facility: "Accra Central",
     district: "Accra Metro",
     vaccine: "MR1",

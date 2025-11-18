@@ -38,7 +38,7 @@ const appointments = [
   {
     id: "APT-002",
     childName: "Efua Agyeman",
-    caregiver: "Ama Agyeman",
+    caregiver: "Demo Agyeman",
     scheduledTime: "09:15",
     vaccine: "Measles-Rubella 1",
     contact: "+233 201 114 532",
@@ -81,7 +81,7 @@ const clinicChildrenRecords = [
   {
     id: "CH-2025-002",
     name: "Efua Agyeman",
-    caregiver: "Ama Agyeman",
+    caregiver: "Demo Agyeman",
     lastVisit: "27 Oct 2025",
     contact: "+233 201 114 532",
   },
@@ -289,7 +289,7 @@ export default function FacilityDashboardPage() {
                     <Input
                       id="search"
                       type="search"
-                      placeholder="e.g. Ama Mensah, +233245001100, CH-2025-001"
+                      placeholder="e.g. Child Mensah, +233245001100, CH-2025-001"
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
                       className="h-14 rounded-lg border-primary/30 pl-11 text-base"

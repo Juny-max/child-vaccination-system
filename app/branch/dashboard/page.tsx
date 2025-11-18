@@ -101,7 +101,7 @@ const stockAlerts: StockAlert[] = [
 ]
 
 const overdueVaccinations: AlertItem[] = [
-  { id: "OV-112", child: "Ama Agyeman", detail: "DPT-3 overdue by 5 days", timestamp: "10 mins ago" },
+  { id: "OV-112", child: "Demo Agyeman", detail: "DPT-3 overdue by 5 days", timestamp: "10 mins ago" },
   { id: "OV-108", child: "Yaw Mensah", detail: "Measles overdue by 2 days", timestamp: "25 mins ago" },
   { id: "OV-099", child: "Efua Arhin", detail: "OPV-3 overdue by 1 day", timestamp: "1 hr ago" },
 ]
@@ -112,7 +112,7 @@ const aefiEvents: AlertItem[] = [
 ]
 
 const syncErrors: AlertItem[] = [
-  { id: "SYNC-21", child: "N/A", detail: "Data conflict on outreach form (CHW: Ama Aidoo)", timestamp: "12 mins ago" },
+  { id: "SYNC-21", child: "N/A", detail: "Data conflict on outreach form (CHW: Demo Aidoo)", timestamp: "12 mins ago" },
   { id: "SYNC-17", child: "N/A", detail: "Offline form failed to upload (CHW: Kwesi Antwi)", timestamp: "1 hr ago" },
 ]
 
@@ -122,7 +122,7 @@ const notificationFailures: AlertItem[] = [
 ]
 
 const staffRoster: StaffMember[] = [
-  { id: "STF-201", name: "Ama Aidoo", role: "Nurse", lastActive: "Today · 09:45" },
+  { id: "STF-201", name: "Demo Aidoo", role: "Nurse", lastActive: "Today · 09:45" },
   { id: "STF-238", name: "Kwesi Antwi", role: "CHW", catchment: "Jakpa North", lastActive: "Today · 08:58" },
   { id: "STF-244", name: "Mabel Owusu", role: "CHW", catchment: "Jakpa South", lastActive: "Yesterday · 18:12" },
   { id: "STF-259", name: "Yaw Mensah", role: "Nurse", lastActive: "Today · 07:30" },

@@ -6,11 +6,14 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AlertCircle, ArrowLeft, Check, Eye, EyeOff, KeyRound, ShieldCheck, User } from "lucide-react"
 
+import Lottie from "lottie-react"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import loadingAnimation from "@/public/animations/loading.json"
 
 type DemoAccount = {
   email: string
@@ -94,10 +97,12 @@ export default function UnifiedLoginPage() {
     setIsSubmitting(true)
 
     try {
+      // Mimic a short network round trip so the loading state is visible.
+      await new Promise((resolve) => setTimeout(resolve, 900))
       const matchedAccount = DEMO_ACCOUNTS.find((account) => account.email.toLowerCase() === email.toLowerCase())
-  const roleDetail = matchedAccount?.role ?? "parent"
-  const route = ROLE_ROUTES[roleDetail] ?? "/dashboard"
-  const storedRole = roleDetail === "parent" ? "parent" : "staff"
+      const roleDetail = matchedAccount?.role ?? "parent"
+      const route = ROLE_ROUTES[roleDetail] ?? "/dashboard"
+      const storedRole = roleDetail === "parent" ? "parent" : "staff"
       const displayName = matchedAccount?.display ?? email.split("@")[0]
 
       localStorage.setItem("authToken", "mock-jwt-token")
@@ -106,8 +111,10 @@ export default function UnifiedLoginPage() {
       localStorage.setItem("userName", displayName)
 
       router.push(route)
-    } finally {
+    } catch (pushError) {
+      console.error("Login navigation failed", pushError)
       setIsSubmitting(false)
+      setError("Could not complete sign in. Please try again.")
     }
   }
 
@@ -189,7 +196,7 @@ export default function UnifiedLoginPage() {
         </section>
 
         <section className="flex w-full flex-1 items-center justify-center">
-          <Card className="w-full max-w-lg border-border shadow-sm">
+          <Card className="relative w-full max-w-lg border-border shadow-sm">
             <CardHeader className="space-y-2 text-center">
               <CardTitle className="text-2xl">Sign in to continue</CardTitle>
               <CardDescription>Use your clinic-issued email or the demo accounts to explore the system.</CardDescription>
@@ -202,7 +209,7 @@ export default function UnifiedLoginPage() {
                 </Alert>
               ) : null}
 
-              <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+              <form className="space-y-4" onSubmit={handleSubmit} noValidate aria-busy={isSubmitting}>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email address</Label>
                   <Input
@@ -240,7 +247,7 @@ export default function UnifiedLoginPage() {
                   </div>
                 </div>
 
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                <Button type="submit" className="w-full" disabled={isSubmitting} aria-busy={isSubmitting}>
                   {isSubmitting ? "Signing in..." : "Sign in"}
                 </Button>
               </form>
@@ -257,6 +264,14 @@ export default function UnifiedLoginPage() {
           </Card>
         </section>
       </main>
+      {isSubmitting ? (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur">
+          <Lottie animationData={loadingAnimation} loop className="h-36 w-36" aria-hidden />
+          <p className="text-base font-semibold text-muted-foreground" role="status" aria-live="polite">
+            Signing you in...
+          </p>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -96,7 +96,7 @@ const sampleChildren: Record<string, ChildRecord> = {
     age: "9 months 8 days",
     gender: "Female",
     guardian: {
-      name: "Ama Agyeman",
+      name: "Akua Agyeman",
       phone: "+233 201 114 532",
       address: "Compound 8, Jakpa South",
       preferredContact: "email",
@@ -163,7 +163,7 @@ const sampleMeasurements: Record<string, AnthropometricMeasurement[]> = {
       headCircumferenceCm: 44.1,
       muacCm: 14.2,
       temperatureC: 36.7,
-      recordedBy: "Nurse Ama Mensah",
+  recordedBy: "Nurse Akosua Mensah",
       notes: "Stable growth curve. Mild cough reported overnight.",
     },
     {
@@ -186,7 +186,7 @@ const sampleMeasurements: Record<string, AnthropometricMeasurement[]> = {
       headCircumferenceCm: 45.3,
       muacCm: 14.5,
       temperatureC: 36.8,
-      recordedBy: "Nurse Ama Mensah",
+  recordedBy: "Nurse Akosua Mensah",
       notes: "Slight weight gain post illness recovery.",
     },
     {
@@ -197,7 +197,7 @@ const sampleMeasurements: Record<string, AnthropometricMeasurement[]> = {
       headCircumferenceCm: 45,
       muacCm: 14.2,
       temperatureC: 36.5,
-      recordedBy: "Nurse Ama Mensah",
+  recordedBy: "Nurse Akosua Mensah",
     },
   ],
 }

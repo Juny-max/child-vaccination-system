@@ -134,8 +134,8 @@ const initialBranches: Branch[] = [
 const initialUsers: UserRecord[] = [
   {
     id: "USR-101",
-    name: "Ama Aidoo",
-    email: "ama.aidoo@health.gov.gh",
+    name: "Akua Aidoo",
+    email: "akua.aidoo@health.gov.gh",
     role: "Branch Manager",
     branch: "Accra Central Hospital",
     status: "active",
@@ -228,7 +228,7 @@ const initialAuditLogs: AuditLog[] = [
   },
   {
     id: "LOG-9904",
-    actor: "Ama Aidoo",
+    actor: "Akua Aidoo",
     action: "Created branch profile for Kasoa Polyclinic",
     timestamp: "2025-11-09 15:21",
     category: "Branch",
@@ -256,7 +256,7 @@ const chwProductivityData = [
 const aefiFeed = [
   {
     id: "AEFI-221",
-    child: "Ama Asare",
+    child: "Esi Asare",
     vaccine: "DPT-2",
     branch: "Tema Polyclinic",
     reportedAt: "5 mins ago",
@@ -324,6 +324,22 @@ export default function HqDashboardPage() {
   const [activeChwBranchId, setActiveChwBranchId] = useState<string | null>(null)
   const [chwFormNames, setChwFormNames] = useState("")
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([])
+
+  const appendAuditLog = useCallback(
+    ({ action, category }: { action: string; category: string }) => {
+      setAuditLogs((previous) => [
+        {
+          id: `LOG-${Math.floor(Math.random() * 9000 + 1000)}`,
+          actor: userName || "HQ Admin",
+          action,
+          timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
+          category,
+        },
+        ...previous,
+      ])
+    },
+    [userName],
+  )
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -460,7 +476,11 @@ export default function HqDashboardPage() {
     )
 
     if (targetName) {
-      setSystemMessage(`Branch “${targetName}” ${resultingStatus === "active" ? "re-activated" : "deactivated"}.`)
+      setSystemMessage(`Branch "${targetName}" ${resultingStatus === "active" ? "re-activated" : "deactivated"}.`)
+      appendAuditLog({
+        action: `${resultingStatus === "active" ? "Reactivated" : "Deactivated"} branch ${targetName}`,
+        category: "Branch",
+      })
     }
 
     cancelBranchEditing()
@@ -499,6 +519,7 @@ export default function HqDashboardPage() {
 
     if (targetName) {
       setSystemMessage(`Assigned ${normalized.length} CHW${normalized.length === 1 ? "" : "s"} to ${targetName}.`)
+      appendAuditLog({ action: `Updated CHW assignment for ${targetName}`, category: "Branch" })
     }
 
     cancelChwAssignment()
@@ -527,7 +548,9 @@ export default function HqDashboardPage() {
             : branch,
         ),
       )
-      setSystemMessage(`Branch “${branchForm.name.trim()}” updated.`)
+      const updatedName = branchForm.name.trim()
+      setSystemMessage(`Branch "${updatedName}" updated.`)
+      appendAuditLog({ action: `Updated branch ${updatedName}`, category: "Branch" })
     } else {
       const nextBranch: Branch = {
         id: `BR-${Math.floor(Math.random() * 900 + 100)}`,
@@ -539,7 +562,8 @@ export default function HqDashboardPage() {
         assignedChws: [],
       }
       setBranches((previous) => [nextBranch, ...previous])
-      setSystemMessage(`Branch “${nextBranch.name}” registered.`)
+      setSystemMessage(`Branch "${nextBranch.name}" registered.`)
+      appendAuditLog({ action: `Registered branch ${nextBranch.name}`, category: "Branch" })
     }
 
     setBranchForm({ name: "", region: "", manager: "", catchmentAreas: "" })
@@ -559,9 +583,10 @@ export default function HqDashboardPage() {
       status: "active",
     }
 
-    setUsers((previous) => [nextUser, ...previous])
-    setUserForm({ name: "", email: "", role: "Branch Manager", branch: "" })
-    setSystemMessage(`User “${nextUser.name}” created.`)
+  setUsers((previous) => [nextUser, ...previous])
+  setUserForm({ name: "", email: "", role: "Branch Manager", branch: "" })
+  setSystemMessage(`User "${nextUser.name}" created.`)
+    appendAuditLog({ action: `Provisioned user ${nextUser.name}`, category: "User" })
   }
 
   const handleAddVaccine = (event: React.FormEvent<HTMLFormElement>) => {
@@ -577,9 +602,9 @@ export default function HqDashboardPage() {
       status: "active",
     }
 
-    setVaccines((previous) => [nextVaccine, ...previous])
-    setVaccineForm({ name: "", schedule: "", dueDays: "" })
-    setSystemMessage(`Vaccine “${nextVaccine.name}” added to master list.`)
+  setVaccines((previous) => [nextVaccine, ...previous])
+  setVaccineForm({ name: "", schedule: "", dueDays: "" })
+  setSystemMessage(`Vaccine "${nextVaccine.name}" added to master list.`)
   }
 
   const handleTemplateUpdate = () => {
@@ -596,20 +621,89 @@ export default function HqDashboardPage() {
       ),
     )
     setSystemMessage(`${activeTemplate.label} template saved.`)
+    appendAuditLog({ action: `Updated notification template ${activeTemplate.label}`, category: "Notifications" })
   }
 
   const handleBackup = () => {
-    setSystemMessage("Backup job queued. You’ll receive an email when complete.")
-    setAuditLogs((previous) => [
-      {
-        id: `LOG-${Math.floor(Math.random() * 9000 + 1000)}`,
-        actor: userName || "HQ Admin",
-        action: "Triggered manual system backup",
-        timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
-        category: "System",
-      },
-      ...previous,
-    ])
+  setSystemMessage("Backup job queued. You'll receive an email when complete.")
+    appendAuditLog({ action: "Triggered manual system backup", category: "System" })
+  }
+
+  const handleBackupDownload = () => {
+    setSystemMessage("Encrypted backup download will start once backend endpoints are wired.")
+    appendAuditLog({ action: "Requested latest backup download", category: "System" })
+  }
+
+  const handleCoverageExport = () => {
+    setSystemMessage("Coverage report export queued. You'll receive a download link shortly.")
+    appendAuditLog({ action: "Queued coverage report export", category: "Reporting" })
+  }
+
+  const handleAuditExport = () => {
+    setSystemMessage("Audit log export queued. Watch for the download notification.")
+    appendAuditLog({ action: "Queued audit log export", category: "System" })
+  }
+
+  const handleTemplatePreview = () => {
+    if (!activeTemplate) return
+    setSystemMessage(`Preview for ${activeTemplate.label} will open once the messaging sandbox is connected.`)
+    appendAuditLog({ action: `Previewed notification template ${activeTemplate.label}`, category: "Notifications" })
+  }
+
+  const handleUserResetPassword = (user: UserRecord) => {
+    setSystemMessage(`Password reset link queued for ${user.email}.`)
+    appendAuditLog({ action: `Initiated password reset for ${user.name}`, category: "User" })
+  }
+
+  const handleUserEditRoles = (user: UserRecord) => {
+    setSystemMessage(`Role editor for ${user.name} will open after backend integration.`)
+    appendAuditLog({ action: `Opened role editor for ${user.name}`, category: "User" })
+  }
+
+  const handleUserStatusToggle = (userId: string) => {
+    let targetName = ""
+    let resultingStatus: UserRecord["status"] = "active"
+
+    setUsers((previous) =>
+      previous.map((user) => {
+        if (user.id !== userId) return user
+        const nextStatus = user.status === "active" ? "inactive" : "active"
+        targetName = user.name
+        resultingStatus = nextStatus
+        return { ...user, status: nextStatus }
+      }),
+    )
+
+    if (targetName) {
+      setSystemMessage(`User "${targetName}" ${resultingStatus === "active" ? "re-activated" : "deactivated"}.`)
+      appendAuditLog({ action: `${resultingStatus === "active" ? "Reactivated" : "Deactivated"} user ${targetName}`, category: "User" })
+    }
+  }
+
+  const handleVaccineEdit = (vaccine: VaccineConfig) => {
+    setSystemMessage(`Schedule editor for ${vaccine.name} will open once the API is connected.`)
+    appendAuditLog({ action: `Opened schedule editor for ${vaccine.name}`, category: "Schedule" })
+  }
+
+  const handleVaccineArchiveToggle = (vaccineId: string) => {
+    let targetName = ""
+    let resultingStatus: VaccineConfig["status"] = "active"
+
+    setVaccines((previous) =>
+      previous.map((vaccine) => {
+        if (vaccine.id !== vaccineId) return vaccine
+        const nextStatus = vaccine.status === "active" ? "archived" : "active"
+        targetName = vaccine.name
+        resultingStatus = nextStatus
+        return { ...vaccine, status: nextStatus }
+      }),
+    )
+
+    if (targetName) {
+      const action = resultingStatus === "active" ? "Restored" : "Archived"
+      setSystemMessage(`Vaccine "${targetName}" ${resultingStatus === "active" ? "restored to" : "removed from"} the active schedule.`)
+      appendAuditLog({ action: `${action} vaccine ${targetName}`, category: "Schedule" })
+    }
   }
 
   const resolveReviewItem = (conflictId: string) => {
@@ -968,7 +1062,7 @@ export default function HqDashboardPage() {
                 rows={4}
                 value={chwFormNames}
                 onChange={(event) => setChwFormNames(event.target.value)}
-                placeholder="e.g. Ama Aidoo, Kofi Antwi"
+                placeholder="e.g. Akua Aidoo, Kofi Antwi"
               />
               <p className="text-xs text-muted-foreground">These names will appear in branch dashboards and sync rosters.</p>
             </div>
@@ -1001,7 +1095,7 @@ export default function HqDashboardPage() {
               <Label htmlFor="userName">Full name</Label>
               <Input
                 id="userName"
-                placeholder="Ama Aidoo"
+                placeholder="Akua Aidoo"
                 value={userForm.name}
                 onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
                 required
@@ -1075,9 +1169,18 @@ export default function HqDashboardPage() {
                 </p>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" variant="outline">Reset password</Button>
-                <Button size="sm" variant="outline">Edit roles</Button>
-                <Button size="sm" variant="ghost" className="text-destructive">
+                <Button size="sm" variant="outline" onClick={() => handleUserResetPassword(user)}>
+                  Reset password
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => handleUserEditRoles(user)}>
+                  Edit roles
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={user.status === "active" ? "text-destructive" : "text-emerald-600"}
+                  onClick={() => handleUserStatusToggle(user.id)}
+                >
                   {user.status === "active" ? "Deactivate" : "Activate"}
                 </Button>
               </div>
@@ -1145,21 +1248,35 @@ export default function HqDashboardPage() {
           <CardDescription>Active vaccines synchronised to branch systems.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {vaccines.map((vaccine) => (
-            <div key={vaccine.id} className="rounded-lg border border-border bg-background p-4">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-base font-semibold text-foreground">{vaccine.name}</p>
-                  <p className="text-sm text-muted-foreground">{vaccine.schedule}</p>
+          {vaccines.map((vaccine) => {
+            const isArchived = vaccine.status === "archived"
+            return (
+              <div key={vaccine.id} className="rounded-lg border border-border bg-background p-4">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-base font-semibold text-foreground">{vaccine.name}</p>
+                    <p className="text-sm text-muted-foreground">{vaccine.schedule}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary">Due {vaccine.dueDays} days post birth</Badge>
+                    <Badge variant={isArchived ? "outline" : "secondary"}>{isArchived ? "Archived" : "Active"}</Badge>
+                  </div>
                 </div>
-                <Badge variant="secondary">Due {vaccine.dueDays} days post birth</Badge>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => handleVaccineEdit(vaccine)} disabled={isArchived}>
+                    Edit timing
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={isArchived ? "ghost" : "outline"}
+                    onClick={() => handleVaccineArchiveToggle(vaccine.id)}
+                  >
+                    {isArchived ? "Restore" : "Archive"}
+                  </Button>
+                </div>
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" variant="outline">Edit timing</Button>
-                <Button size="sm" variant="outline">Archive</Button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </CardContent>
       </Card>
     </div>
@@ -1204,7 +1321,7 @@ export default function HqDashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={handleCoverageExport}>
             <ArrowDownToLine className="h-4 w-4" /> Export coverage report (CSV)
           </Button>
         </CardContent>
@@ -1311,7 +1428,7 @@ export default function HqDashboardPage() {
                   />
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" className="gap-2">
+                  <Button type="button" variant="outline" className="gap-2" onClick={handleTemplatePreview}>
                     <ListChecks className="h-4 w-4" /> Preview delivery
                   </Button>
                   <Button type="button" onClick={handleTemplateUpdate} className="gap-2">
@@ -1380,7 +1497,7 @@ export default function HqDashboardPage() {
               <p className="mt-2 text-xs text-muted-foreground">{log.timestamp}</p>
             </div>
           ))}
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={handleAuditExport}>
             <ArrowDownToLine className="h-4 w-4" /> Export audit log
           </Button>
         </CardContent>
@@ -1396,7 +1513,7 @@ export default function HqDashboardPage() {
             Last successful backup completed <span className="font-medium text-foreground">2 hours ago</span>. Secure vault storage available for manual download.
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="gap-2">
+            <Button variant="outline" className="gap-2" onClick={handleBackupDownload}>
               <ArrowDownToLine className="h-4 w-4" /> Download latest backup
             </Button>
             <Button className="gap-2" onClick={handleBackup}>

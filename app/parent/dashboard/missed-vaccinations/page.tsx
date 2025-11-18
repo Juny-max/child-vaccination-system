@@ -12,12 +12,6 @@ type VisitPreference = "facility" | "chw"
 
 export default function MissedVaccinationsPage() {
   const primaryChild = childProfiles[0]
-  const childName = primaryChild?.name ?? "your child"
-  const childFirstName = useMemo(() => {
-    const candidate = childName.trim()
-    const segments = candidate.split(/\s+/)
-    return segments[0] || candidate
-  }, [childName])
 
   const monthsOld = useMemo(() => calculateMonthsOld(primaryChild?.dateOfBirth), [primaryChild?.dateOfBirth])
   const isCHWRecommended = monthsOld !== null && monthsOld <= 24
@@ -58,7 +52,7 @@ export default function MissedVaccinationsPage() {
     window.setTimeout(() => {
       setIsSubmitting(false)
       setConfirmation(
-        `${childName}'s ${selectedVaccine.vaccine} make-up dose request has been sent to ${
+        `Your child's ${selectedVaccine.vaccine} make-up dose request has been sent to ${
           visitPreference === "facility" ? preferredFacility : "the community health outreach coordinator"
         }. We will confirm the schedule via SMS once a nurse reviews it.`,
       )
@@ -73,7 +67,7 @@ export default function MissedVaccinationsPage() {
             <AlertTriangle className="size-5" /> Missed vaccinations
           </CardTitle>
           <CardDescription>
-            These vaccines are overdue. Please schedule a visit as soon as possible to keep {childName} fully protected.
+            These vaccines are overdue. Please schedule a visit as soon as possible to keep your child fully protected.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -91,16 +85,18 @@ export default function MissedVaccinationsPage() {
                 <span className="text-xs text-muted-foreground">Notify your nurse</span>
               </div>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>• Ensure {childFirstName} is not running a fever before the make-up dose.</p>
+                <p>• Ensure your child is not running a fever before the make-up dose.</p>
                 <p>• Bring the child health record booklet for updates.</p>
-                <p>• Notify staff if {childFirstName} had a reaction to previous doses.</p>
+                <p>• Notify staff if your child had a reaction to previous doses.</p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button className="gap-2" variant="secondary" onClick={() => setSelectedVaccine(item)}>
                   <CalendarDays className="size-4" /> Schedule visit
                 </Button>
-                <Button className="gap-2" variant="outline">
-                  <PhoneCall className="size-4" /> Call nurse
+                <Button asChild className="gap-2" variant="outline">
+                  <a href="tel:+233301234567" aria-label="Call your nurse">
+                    <PhoneCall className="size-4" /> Call nurse
+                  </a>
                 </Button>
               </div>
             </CardContent>
@@ -122,8 +118,8 @@ export default function MissedVaccinationsPage() {
               <div className="rounded-lg border border-border bg-background/80 p-4 text-sm text-muted-foreground">
                 {isCHWRecommended ? (
                   <p>
-                    {childFirstName} is {monthsOld} months old, so a community health worker (CHW) home visit is allowed for make-up
-                    doses. Choose the option that best suits your family.
+                    Your child is {monthsOld} months old, so a community health worker (CHW) home visit is allowed for make-up doses.
+                    Choose the option that best suits your family.
                   </p>
                 ) : (
                   <p>
@@ -274,7 +270,7 @@ export default function MissedVaccinationsPage() {
           <CardTitle className="flex items-center gap-2 text-lg">
             <ClipboardList className="size-5" /> How to catch up
           </CardTitle>
-          <CardDescription>Follow these steps to bring {childFirstName}&apos;s schedule back on track.</CardDescription>
+          <CardDescription>Follow these steps to bring your child&apos;s schedule back on track.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm text-muted-foreground md:grid-cols-2">
           <Step
@@ -284,14 +280,14 @@ export default function MissedVaccinationsPage() {
           />
           <Step
             number="02"
-            title={`Prepare ${childFirstName}`}
-            description={`Ensure ${childFirstName} is well rested, hydrated, and has eaten lightly.`}
+            title="Prepare your child"
+            description="Ensure your child is well rested, hydrated, and has eaten lightly."
           />
           <Step number="03" title="Bring documentation" description="Carry the health record booklet and any recent lab results." />
           <Step
             number="04"
             title="Monitor after the shot"
-            description={`Keep an eye on ${childFirstName} for 48 hours and follow the nurse's advice.`}
+            description="Keep an eye on your child for 48 hours and follow the nurse's advice."
           />
         </CardContent>
       </Card>

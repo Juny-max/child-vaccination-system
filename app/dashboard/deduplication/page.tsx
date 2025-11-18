@@ -19,14 +19,14 @@ const pairs = [
     similarityScore: "92%",
     childA: {
       id: "CH-558",
-      name: "Ama Mensah",
+      name: "Esi Mensah",
       dob: "12 Mar 2024",
       mother: "Akosua Mensah",
       lastVisit: "05 Nov 2025 · Dome Clinic",
     },
     childB: {
       id: "CH-991",
-      name: "Ama Mensah",
+      name: "Esi Mensah",
       dob: "14 Mar 2024",
       mother: "Akosua Mensah",
       lastVisit: "11 Nov 2025 · Outreach",

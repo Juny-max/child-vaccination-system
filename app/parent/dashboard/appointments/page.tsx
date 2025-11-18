@@ -1,11 +1,58 @@
-'use client'
+"use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useMemo, useState } from "react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { appointments } from "../data"
-import { CalendarDays, FileText, MapPin, PhoneCall, PlusCircle } from "lucide-react"
+import { CalendarDays, CheckCircle2, FileText, MapPin, PhoneCall, PlusCircle } from "lucide-react"
 
 export default function AppointmentsPage() {
+  const [isBookingOpen, setIsBookingOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [confirmation, setConfirmation] = useState<string | null>(null)
+  const [expandedAppointmentId, setExpandedAppointmentId] = useState<string | null>(null)
+
+  const facilityOptions = useMemo(() => {
+    const unique = new Set(appointments.map((appointment) => appointment.location))
+    unique.add("Any participating clinic")
+    return Array.from(unique)
+  }, [])
+
+  const toggleInstructions = (appointmentId: string) => {
+    setExpandedAppointmentId((previous) => (previous === appointmentId ? null : appointmentId))
+  }
+
+  const handleOpenBooking = () => {
+    setConfirmation(null)
+    setIsBookingOpen(true)
+  }
+
+  const handleCancelBooking = () => {
+    setIsBookingOpen(false)
+  }
+
+  const handleBookingSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    const formData = new FormData(formElement)
+    const preferredDate = formData.get("preferredDate")?.toString() ?? ""
+    const preferredTime = formData.get("preferredTime")?.toString() ?? ""
+    const selectedFacility = formData.get("facility")?.toString() ?? "the selected facility"
+
+    setIsSubmitting(true)
+
+    window.setTimeout(() => {
+      setIsSubmitting(false)
+      setIsBookingOpen(false)
+      setConfirmation(
+        `Appointment request sent for ${preferredDate || "your chosen date"} at ${preferredTime || "your chosen time"}. ${selectedFacility} will confirm via SMS shortly.`,
+      )
+      formElement.reset()
+    }, 700)
+  }
+
   return (
     <div className="space-y-6 lg:space-y-8">
       <Card className="border-primary/20 bg-primary/5">
@@ -16,36 +63,141 @@ export default function AppointmentsPage() {
             </CardTitle>
             <CardDescription>Review upcoming and past appointments for your child.</CardDescription>
           </div>
-          <Button variant="secondary" size="sm" className="gap-2">
+          <Button variant="secondary" size="sm" className="gap-2" onClick={handleOpenBooking}>
             <PlusCircle className="size-4" /> Book new appointment
           </Button>
         </CardHeader>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {appointments.map((appointment) => (
-          <Card key={`${appointment.title}-${appointment.date}`} className="border border-border">
-            <CardHeader>
-              <CardTitle className="text-lg">{appointment.title}</CardTitle>
-              <CardDescription>{appointment.date} at {appointment.time}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2 text-foreground">
-                <MapPin className="size-4 text-primary" />
-                {appointment.location}
+      {confirmation ? (
+        <Alert role="status" className="border-primary/40 bg-primary/10 text-primary-foreground">
+          <CheckCircle2 className="size-5 text-primary" />
+          <AlertTitle className="text-foreground">Request received</AlertTitle>
+          <AlertDescription className="text-foreground/80">{confirmation}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {isBookingOpen ? (
+        <Card className="border-primary/40">
+          <CardHeader>
+            <CardTitle className="text-lg">Request a new appointment</CardTitle>
+            <CardDescription>Share your preferred schedule and we&apos;ll notify the clinic instantly.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-5" onSubmit={handleBookingSubmit}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground" htmlFor="preferredDate">
+                    Preferred date
+                  </label>
+                  <Input id="preferredDate" name="preferredDate" type="date" required />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground" htmlFor="preferredTime">
+                    Preferred time
+                  </label>
+                  <Input id="preferredTime" name="preferredTime" type="time" required />
+                </div>
               </div>
-              <p>{appointment.notes}</p>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground" htmlFor="facility">
+                  Facility
+                </label>
+                <select
+                  id="facility"
+                  name="facility"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  defaultValue={facilityOptions[0]}
+                >
+                  {facilityOptions.map((facility) => (
+                    <option key={facility} value={facility}>
+                      {facility}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground" htmlFor="contactNumber">
+                  Reachable phone number
+                </label>
+                <Input id="contactNumber" name="contactNumber" type="tel" placeholder="e.g. +233 24 123 4567" required />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground" htmlFor="notes">
+                  Notes for the nurse (optional)
+                </label>
+                <textarea
+                  id="notes"
+                  name="notes"
+                  rows={3}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  placeholder="Share recent symptoms or preferred visit window"
+                />
+              </div>
+
               <div className="flex flex-col gap-2 sm:flex-row">
-                <Button variant="outline" size="sm" className="gap-2">
-                  <FileText className="size-4" /> View instructions
+                <Button type="submit" className="gap-2" disabled={isSubmitting}>
+                  <CalendarDays className="size-4" /> {isSubmitting ? "Submitting..." : "Submit request"}
                 </Button>
-                <Button variant="secondary" size="sm" className="gap-2">
-                  <PhoneCall className="size-4" /> Contact facility
+                <Button type="button" variant="ghost" onClick={handleCancelBooking}>
+                  Cancel
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {appointments.map((appointment) => {
+          const appointmentId = `${appointment.title}-${appointment.date}`
+          const isExpanded = expandedAppointmentId === appointmentId
+
+          return (
+            <Card key={appointmentId} className="border border-border">
+              <CardHeader>
+                <CardTitle className="text-lg">{appointment.title}</CardTitle>
+                <CardDescription>
+                  {appointment.date} at {appointment.time}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 text-foreground">
+                  <MapPin className="size-4 text-primary" />
+                  {appointment.location}
+                </div>
+                {isExpanded ? (
+                  <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-foreground">
+                    <p className="font-semibold">Preparation checklist</p>
+                    <p className="text-sm text-muted-foreground">{appointment.notes}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Detailed instructions will sync here once the clinic publishes them in the backend system.
+                    </p>
+                  </div>
+                ) : null}
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => toggleInstructions(appointmentId)}
+                    aria-expanded={isExpanded}
+                  >
+                    <FileText className="size-4" /> {isExpanded ? "Hide instructions" : "View instructions"}
+                  </Button>
+                  <Button asChild variant="secondary" size="sm" className="gap-2">
+                    <a href="tel:+233301234567" aria-label="Call the facility">
+                      <PhoneCall className="size-4" /> Contact facility
+                    </a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       <Card>

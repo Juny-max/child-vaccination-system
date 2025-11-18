@@ -152,8 +152,10 @@ export default function SupportPage() {
             <p className="text-base font-semibold text-foreground">Accra Central Health Center</p>
             <p>Support line: +233 30 123 4567 (Mon – Fri, 8:00 AM – 5:00 PM)</p>
           </div>
-          <Button variant="outline" className="gap-2">
-            <PhoneCall className="size-4" /> Call the clinic
+          <Button asChild variant="outline" className="gap-2">
+            <a href="tel:+233301234567" aria-label="Call the clinic">
+              <PhoneCall className="size-4" /> Call the clinic
+            </a>
           </Button>
         </CardContent>
       </Card>

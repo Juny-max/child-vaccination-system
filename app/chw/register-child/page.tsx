@@ -210,7 +210,7 @@ export default function ChwRegisterChildPage() {
                       id="mother-name"
                       value={form.motherName}
                       onChange={(event) => updateForm("motherName", event.target.value)}
-                      placeholder="e.g. Ama Nyarko"
+                      placeholder="e.g. Child Nyarko"
                       aria-invalid={errors.motherName ? "true" : undefined}
                     />
                     {errors.motherName ? (

@@ -66,7 +66,7 @@ const offlineChildren: Record<string, ChildSnapshot> = {
     id: "CHW-0001",
     name: "Kofi Mensah",
     age: "9 months",
-    motherName: "Ama Mensah",
+    motherName: "Demo Mensah",
     motherPhone: "+233 240 110 221",
     village: "Nakwabi",
     outstandingVaccines: [
@@ -171,7 +171,7 @@ export default function ChwChildChartPage() {
       return
     }
 
-  if (role !== "staff" || detail !== "chw") {
+    if (role !== "staff" || detail !== "chw") {
       router.push("/chw/dashboard")
       return
     }

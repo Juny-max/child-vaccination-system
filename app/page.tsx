@@ -279,7 +279,7 @@ export default function Home() {
                   <p className="font-semibold text-primary">Next due vaccines</p>
                   <div className="mt-2 grid grid-cols-2 gap-3 text-muted-foreground">
                     <div>
-                      <p className="text-xs uppercase">Ama Asante</p>
+                      <p className="text-xs uppercase">Esi Asante</p>
                       <p className="text-sm font-medium text-foreground">MMR • 12 Feb 2025</p>
                     </div>
                     <div>

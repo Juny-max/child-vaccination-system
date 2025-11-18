@@ -4,6 +4,7 @@ import type { ComponentType } from "react"
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -16,7 +17,6 @@ import {
   LogOut,
   Menu,
   MessageCircle,
-  ShieldCheck,
   Syringe,
   User,
   X,
@@ -108,8 +108,15 @@ export default function ParentDashboardLayout({ children }: DashboardLayoutProps
         <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-start gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                <ShieldCheck className="size-5" />
+              <div className="relative size-10 overflow-hidden rounded-lg border border-border bg-background shadow-sm">
+                <Image
+                  src="/images/cvcc-logo.png"
+                  alt="Child Vaccination Command Center logo"
+                  fill
+                  sizes="40px"
+                  className="object-contain p-1"
+                  priority
+                />
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Mother dashboard</p>
@@ -150,8 +157,14 @@ export default function ParentDashboardLayout({ children }: DashboardLayoutProps
             <div className="fixed inset-y-0 right-0 z-50 flex w-80 max-w-[85vw] flex-col border-l border-border bg-background shadow-xl">
               <div className="flex items-center justify-between border-b border-border px-4 py-4">
                 <div className="flex items-center gap-2 text-sm">
-                  <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                    <ShieldCheck className="size-4" />
+                  <div className="relative size-9 overflow-hidden rounded-md border border-border bg-background">
+                    <Image
+                      src="/images/cvcc-logo.png"
+                      alt="Child Vaccination Command Center logo"
+                      fill
+                      sizes="36px"
+                      className="object-contain p-1.5"
+                    />
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Parent dashboard</p>

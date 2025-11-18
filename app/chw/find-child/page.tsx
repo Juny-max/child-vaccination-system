@@ -26,7 +26,7 @@ const localChildren: LocalChildRecord[] = [
   {
     id: "CHW-0001",
     childName: "Kofi Mensah",
-    motherName: "Ama Mensah",
+    motherName: "Demo Mensah",
     motherPhone: "+233 240 110 221",
     nextVaccine: "Measles-Rubella 1",
     village: "Nakwabi",
@@ -76,7 +76,7 @@ export default function ChwFindChildPage() {
       return
     }
 
-  if (role !== "staff" || detail !== "chw") {
+    if (role !== "staff" || detail !== "chw") {
       router.push("/chw/dashboard")
       return
     }

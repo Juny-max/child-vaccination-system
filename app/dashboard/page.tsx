@@ -125,7 +125,7 @@ export default function Dashboard() {
 
   const duplicatePreview = useMemo(
     () => [
-      { id: "DQ-4472", childName: "Ama Mensah", similarity: "92% match", fields: "DOB + Mother Phone" },
+  { id: "DQ-4472", childName: "Esi Mensah", similarity: "92% match", fields: "DOB + Mother Phone" },
       { id: "DQ-4473", childName: "Kojo Mensima", similarity: "88% match", fields: "Name + CHW catchment" },
       { id: "DQ-4474", childName: "Afia Nyarko", similarity: "83% match", fields: "Mother name" },
     ],
@@ -143,7 +143,7 @@ export default function Dashboard() {
       {
         id: "SC-976",
         headline: "Deleted child reference",
-        detail: "Field upload references child CH-702 removed by Nurse Ama",
+  detail: "Field upload references child CH-702 removed by Nurse Addo",
         recommended: "Review before discard",
       },
     ],
