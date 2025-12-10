@@ -51,7 +51,7 @@
     "leaflet": "^1.9.4",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.454.0",
-    "next": "16.0.0",
+    "next": "16.0.7",
     "next-themes": "latest",
     "qrcode.react": "^4.2.0",
     "react": "19.2.0",
