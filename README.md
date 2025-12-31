@@ -140,6 +140,43 @@ Current implementation uses mock data. To integrate with real backend:
 
 Add this to the backend implementation checklist so the appointment flow does not cause integration errors when the backend is started.
 
+## Backend & Database Choice
+
+- **Database (recommended):** PostgreSQL via Supabase — managed Postgres with built-in Auth, Storage, Realtime, REST/GraphQL endpoints, and an approachable free tier suitable for a Final Year Project. Supabase reduces backend plumbing so the team can focus on domain logic and the front-end UX.
+
+- **Why Supabase:** rapid integration with Next.js, client SDKs for auth/storage, built-in realtime and row-level security (RLS) support, easy hosting and backups. It is optional (you can self-host Postgres or use other managed providers), but it accelerates development and reduces ops burden.
+
+- **Backend framework (recommended):** NestJS (Node.js + TypeScript) — provides a scalable, modular architecture, dependency injection, decorators, and excellent TypeScript support which lets you share types/interfaces with the Next.js frontend for stronger end-to-end safety.
+
+- **Why NestJS over PHP/Laravel for this project:** Laravel is mature and great for CRUD applications, but NestJS offers:
+    - End-to-end TypeScript consistency with your Next.js frontend (shared DTOs/interfaces).
+    - Modern async-first patterns and easy integration with Prisma, Supabase, and serverless platforms.
+    - A structured architecture that scales well for growing features and team collaboration.
+
+- **When to use Laravel:** choose Laravel if your backend devs are strongly experienced in PHP, existing infra requires PHP, or you prefer Laravel's ecosystem. It is a valid alternative but gives up the TypeScript DX benefits.
+
+- **Recommended stack for this project:** Next.js (frontend) + NestJS (backend) + Supabase (Postgres) + Prisma ORM (optional) — or use Supabase client directly for rapid prototypes.
+
+- **Operational notes for backend devs:** store Supabase URL/KEY in env vars, enable RLS and write clear policies, use migrations (Prisma or Supabase SQL), prefer JWT/OAuth for auth flows, and consider using Supabase Auth for quick prototypes or integrate with NestJS auth modules for custom flows.
+
+## Redis & BullMQ (Background Jobs)
+
+- **What they are (plain language):** Redis is a very fast in-memory database used for short-lived data like caches and session info. BullMQ is a job queue library for Node.js that uses Redis to run background tasks (for example: sending SMS, creating PDF certificates, or processing offline syncs).
+
+- **Why we use them:** they let the app perform heavy or slow work outside the main web request so the UI stays fast and reliable. For example, when a nurse uploads many records or when the system generates a PDF vaccination certificate, a background job can handle that without blocking the user.
+
+- **Do you need extra software?** Yes — BullMQ requires a running Redis server. BullMQ itself is a library you include in your backend (NestJS) and you run worker processes that consume jobs from Redis.
+
+- **Quick local setup:** run Redis in Docker for development:
+
+```powershell
+docker run -p 6379:6379 --name redis -d redis:7
+```
+
+- **Monitoring and admin:** use RedisInsight to inspect Redis, and use Bull Board (or Arena) to view job queues, retries, and failures. These are optional but very helpful during development and demos.
+
+- **Presentation note:** if we deploy the backend and database (Supabase + Redis) to managed services before the demo, you will not need to run them locally — simply open the deployed URL during the presentation. For development or testing, run Redis locally via Docker or use a low-cost managed Redis (Upstash / Redis Cloud / AWS ElastiCache).
+
 ## Deployment
 
 ### Vercel (Recommended)
