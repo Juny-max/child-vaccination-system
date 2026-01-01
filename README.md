@@ -89,10 +89,14 @@ The Supabase connection details are already configured in `.env.local`:
 
 \`\`\`env
 NEXT_PUBLIC_SUPABASE_URL=https://pvzatstzlvtaequsqhec.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...truncated (see .env.local file)
 \`\`\`
 
-**⚠️ Do NOT commit `.env.local` to Git!** It's already in `.gitignore`.
+**🔒 Security Note:**
+- The `.env.local` file contains the full anon key
+- **DO NOT commit `.env.local` to Git!** (It's already in `.gitignore`)
+- The anon key is safe for client-side use (protected by Row Level Security)
+- **Julius:** Ask Juny for the full key value if you need it for backend
 
 ### Database Schema
 
@@ -182,9 +186,8 @@ const { data, error } = await supabase
 
 ## 🏗️ Backend Development (NestJS)
 
-### Your Assigned Modules
+### Julius's Assigned Modules
 
-You are responsible for building these backend modules:
 
 #### 1. **HQ Admin Module**
 - Branch management (CRUD operations for facilities)
@@ -264,22 +267,22 @@ pnpm add class-validator class-transformer
 pnpm add -D @types/passport-jwt
 \`\`\`
 
-### Backend Folder Structure
+### Backend Folder Structure (Julius's Part Only)
 
 \`\`\`
 backend/
 ├── src/
-│   ├── auth/                 # Authentication module
-│   ├── hq-admin/             # YOUR MODULE: HQ Admin endpoints
+│   ├── auth/                 # Authentication module (Juny will handle)
+│   ├── hq-admin/             # JULIUS: HQ Admin endpoints
 │   │   ├── hq-admin.controller.ts
 │   │   ├── hq-admin.service.ts
 │   │   ├── hq-admin.module.ts
 │   │   └── dto/              # Data Transfer Objects
-│   ├── branch-manager/       # YOUR MODULE: Branch Manager endpoints
+│   ├── branch-manager/       # JULIUS: Branch Manager endpoints
 │   │   ├── branch-manager.controller.ts
 │   │   ├── branch-manager.service.ts
 │   │   └── branch-manager.module.ts
-│   ├── data-officer/         # YOUR MODULE: Data Officer endpoints
+│   ├── data-officer/         # JULIUS: Data Officer endpoints
 │   │   ├── data-officer.controller.ts
 │   │   ├── data-officer.service.ts
 │   │   └── data-officer.module.ts
@@ -287,6 +290,10 @@ backend/
 │   │   ├── guards/           # Role-based auth guards
 │   │   ├── decorators/       # Custom decorators
 │   │   └── database.service.ts  # Supabase client wrapper
+│   ├── parent/               # Juny will create this
+│   ├── facility-nurse/       # Juny will create this
+│   ├── chw/                  # Juny will create this
+│   ├── pha/                  # Juny will create this
 │   └── main.ts
 ├── .env                      # Backend environment variables
 └── package.json
@@ -294,15 +301,17 @@ backend/
 
 ### Backend Environment Setup
 
-Create `backend/.env`:
+**Julius, create `backend/.env` for your 3 modules:**
 
 \`\`\`env
 SUPABASE_URL=https://pvzatstzlvtaequsqhec.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_KEY=<ask for service key if needed>
+SUPABASE_ANON_KEY=<copy from .env.local in project root>
+SUPABASE_SERVICE_KEY=<ask Juny if needed>
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
 PORT=3001
 \`\`\`
+
+**Note:** Copy the full `NEXT_PUBLIC_SUPABASE_ANON_KEY` value from the `.env.local` file (not the truncated version shown above).
 
 ### Example: Creating Your First Module
 
@@ -684,10 +693,16 @@ git commit -m "feat: added HQ admin branch management endpoints"
 git push origin backend
 \`\`\`
 
-### Your Modules
+### Julius's 3 Modules (Your Responsibility)
 1. **HQ Admin** (`backend/src/hq-admin/`)
 2. **Branch Manager** (`backend/src/branch-manager/`)
 3. **Data Officer** (`backend/src/data-officer/`)
+
+### Juny's 4 Modules (Juny will handle)
+1. **Parent Portal** (`backend/src/parent/`)
+2. **Facility Nurse** (`backend/src/facility-nurse/`)
+3. **Community Health Worker** (`backend/src/chw/`)
+4. **Public Health Authority** (`backend/src/pha/`)
 
 Good luck! 🚀
 
