@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import loadingAnimation from "@/public/animations/loading.json"
+import { login } from "@/lib/api/auth"
 
 type DemoAccount = {
   email: string
@@ -97,18 +98,43 @@ export default function UnifiedLoginPage() {
     setIsSubmitting(true)
 
     try {
-      // Mimic a short network round trip so the loading state is visible.
-      await new Promise((resolve) => setTimeout(resolve, 900))
+      // Determine user type from email
       const matchedAccount = DEMO_ACCOUNTS.find((account) => account.email.toLowerCase() === email.toLowerCase())
+      const userType = matchedAccount?.role ?? "parent"
+      
+      // Try to login via the backend API
+      try {
+        const response = await login({
+          email,
+          password,
+          userType,
+        })
+        
+        // Store additional role info
+        const storedRole = response.user.role === "parent" ? "parent" : "staff"
+        localStorage.setItem("userRole", storedRole)
+        localStorage.setItem("userRoleDetail", response.user.role)
+        
+        // Navigate to the appropriate dashboard
+        const route = ROLE_ROUTES[userType] ?? "/dashboard"
+        router.push(route)
+        return
+      } catch (apiError) {
+        console.warn("Backend login failed, falling back to demo mode:", apiError)
+        // Fall through to demo mode
+      }
+      
+      // Demo mode fallback (when backend is unavailable or for non-parent users)
       const roleDetail = matchedAccount?.role ?? "parent"
       const route = ROLE_ROUTES[roleDetail] ?? "/dashboard"
       const storedRole = roleDetail === "parent" ? "parent" : "staff"
       const displayName = matchedAccount?.display ?? email.split("@")[0]
 
-      localStorage.setItem("authToken", "mock-jwt-token")
+      localStorage.setItem("authToken", "demo-mode-token")
       localStorage.setItem("userRole", storedRole)
       localStorage.setItem("userRoleDetail", roleDetail)
       localStorage.setItem("userName", displayName)
+      localStorage.setItem("userId", "demo-user-id")
 
       router.push(route)
     } catch (pushError) {

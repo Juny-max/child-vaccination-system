@@ -8,37 +8,39 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useParentDashboard } from "./dashboard-context"
-import { appointments, certificateRecords, missedVaccinations, vaccinationRecords } from "./data"
-import type { VaccinationStatus, CertificateRecord } from "./data"
+import type { Certificate } from "@/lib/api/parent"
 import { AlertTriangle, Award, CalendarDays, ChevronRight, Clock3, FileDown, QrCode, MessageCircle, Sparkles, Syringe } from "lucide-react"
 import { generateCertificatePdf } from "@/lib/certificate-pdf"
 
 export default function ParentDashboardOverview() {
-  const { userName } = useParentDashboard()
+  const { userName, dashboard, appointments, certificates, missedVaccinations } = useParentDashboard()
+
+  // Calculate stats from dashboard data
+  const childrenData = dashboard?.children || []
+  const totalCompleted = childrenData.reduce((sum, child) => sum + child.vaccinationProgress.completed, 0)
+  const totalVaccines = childrenData.reduce((sum, child) => sum + child.vaccinationProgress.total, 0)
+  const upcomingCount = childrenData.filter((child) => child.nextVaccination).length
+  const onTrackCount = childrenData.filter((child) => !child.hasMissedVaccinations && child.vaccinationProgress.percentage > 0).length
+  const completionPercentage = totalVaccines ? Math.round((totalCompleted / totalVaccines) * 100) : 0
 
   const nextAppointment = appointments[0]
-  const completedVaccines = vaccinationRecords.filter((record) => record.status === "Complete").length
-  const totalVaccines = vaccinationRecords.length
-  const upcomingVaccines = vaccinationRecords.filter((record) => record.status === "Upcoming").length
-  const onTrackVaccines = vaccinationRecords.filter((record) => record.status === "On Track").length
-  const completionPercentage = totalVaccines ? Math.round((completedVaccines / totalVaccines) * 100) : 0
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const logoDataUrlRef = useRef<string | null>(null)
 
   const completedCertificates = useMemo(() => {
-    return [...certificateRecords]
+    return [...certificates]
       .filter((record) => record.completionStatus === "Complete")
-      .sort((a, b) => new Date(b.issuedDate).getTime() - new Date(a.issuedDate).getTime())
-  }, [])
+      .sort((a, b) => new Date(b.issuedDate || 0).getTime() - new Date(a.issuedDate || 0).getTime())
+  }, [certificates])
 
   const latestCertificate = completedCertificates[0]
   const certificateDetails = latestCertificate
     ? [
         { label: "Certificate ID", value: latestCertificate.certificateId },
         { label: "Child", value: `${latestCertificate.childName} (${latestCertificate.childId})` },
-        { label: "Issued", value: latestCertificate.issuedDate },
-        { label: "Facility", value: latestCertificate.issuedBy },
+        { label: "Issued", value: latestCertificate.issuedDate || "N/A" },
+        { label: "Facility", value: latestCertificate.issuedBy || "N/A" },
       ]
     : []
 
@@ -63,13 +65,26 @@ export default function ParentDashboardOverview() {
     }
   }, [])
 
-  const handleDownloadCertificate = useCallback(async (record: CertificateRecord) => {
+  const handleDownloadCertificate = useCallback(async (record: Certificate) => {
     if (!record) return
     setIsGeneratingPdf(true)
     try {
       const logoDataUrl = await fetchLogoDataUrl()
       const qrDataUrl = qrCanvasRef.current?.toDataURL("image/png")
-      await generateCertificatePdf(record, { logoDataUrl, qrDataUrl })
+      // Convert API Certificate to the format expected by generateCertificatePdf
+      const certRecord = {
+        certificateId: record.certificateId,
+        childId: record.childId,
+        childName: record.childName,
+        completionStatus: record.completionStatus as "Complete" | "Partial",
+        issuedDate: record.issuedDate || "",
+        validUntil: record.validUntil || "",
+        issuedBy: record.issuedBy || "",
+        vaccinesCompleted: record.vaccines,
+        qrPayload: record.qrPayload || "",
+        lastVerified: new Date().toLocaleDateString(),
+      }
+      await generateCertificatePdf(certRecord, { logoDataUrl, qrDataUrl })
       toast.success("Certificate PDF downloaded")
     } catch (error) {
       console.error("Certificate PDF error", error)
@@ -94,9 +109,9 @@ export default function ParentDashboardOverview() {
               </CardDescription>
             </div>
             <div className="grid grid-cols-3 gap-3 text-center">
-              <OverviewStat label="Completed" value={completedVaccines} />
-              <OverviewStat label="On track" value={onTrackVaccines} />
-              <OverviewStat label="Upcoming" value={upcomingVaccines} />
+              <OverviewStat label="Completed" value={totalCompleted} />
+              <OverviewStat label="On track" value={onTrackCount} />
+              <OverviewStat label="Upcoming" value={upcomingCount} />
             </div>
           </CardHeader>
           <CardContent className="pt-0">
@@ -123,8 +138,8 @@ export default function ParentDashboardOverview() {
                   <CardDescription>Show this on your phone or download a PDF copy for official checks.</CardDescription>
                 </div>
                 <div className="text-right text-sm text-muted-foreground">
-                  <p className="font-medium text-foreground">Last verified</p>
-                  <p>{latestCertificate.lastVerified}</p>
+                  <p className="font-medium text-foreground">Issued</p>
+                  <p>{latestCertificate.issuedDate || "N/A"}</p>
                 </div>
               </CardHeader>
               <CardContent className="grid gap-6 lg:grid-cols-[3fr,2fr]">
@@ -148,7 +163,7 @@ export default function ParentDashboardOverview() {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vaccines recorded</p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {latestCertificate.vaccinesCompleted.map((vaccine) => (
+                      {latestCertificate.vaccines.map((vaccine) => (
                         <Badge key={vaccine} variant="outline" className="border-primary/30 bg-primary/5 text-primary">
                           {vaccine}
                         </Badge>
@@ -178,7 +193,7 @@ export default function ParentDashboardOverview() {
                   </Badge>
                   <div className="rounded-xl border border-border bg-white p-4 shadow-inner">
                     <QRCodeCanvas
-                      value={latestCertificate.qrPayload}
+                      value={latestCertificate.qrPayload || latestCertificate.certificateId}
                       size={180}
                       includeMargin
                       ref={qrCanvasRef}
@@ -238,21 +253,27 @@ export default function ParentDashboardOverview() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
-            {vaccinationRecords.slice(0, 4).map((record) => (
-              <div
-                key={`${record.vaccine}-${record.dose}`}
-                className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3"
-              >
-                <div>
-                  <p className="font-semibold">{record.vaccine}</p>
-                  <p className="text-xs text-muted-foreground">Dose {record.dose}</p>
+            {childrenData.length > 0 ? (
+              childrenData.slice(0, 4).map((child) => (
+                <div
+                  key={child.id}
+                  className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3"
+                >
+                  <div>
+                    <p className="font-semibold">{child.name}</p>
+                    <p className="text-xs text-muted-foreground">{child.age}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">{child.vaccinationProgress.completed}/{child.vaccinationProgress.total} vaccines</p>
+                    <Badge variant={child.vaccinationProgress.percentage >= 80 ? "default" : child.vaccinationProgress.percentage >= 50 ? "secondary" : "outline"}>
+                      {child.vaccinationProgress.percentage}% complete
+                    </Badge>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">{record.date}</p>
-                  <Badge variant={getStatusVariant(record.status)}>{record.status}</Badge>
-                </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No vaccination records found.</p>
+            )}
           </CardContent>
         </Card>
 
@@ -264,20 +285,24 @@ export default function ParentDashboardOverview() {
             <CardDescription>Action items that need your attention</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {missedVaccinations.map((item) => (
-              <div
-                key={item.vaccine}
-                className="rounded-xl border border-dashed border-destructive/40 bg-destructive/5 px-4 py-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">{item.vaccine}</p>
-                    <p className="text-xs text-muted-foreground">Due: {item.due}</p>
+            {missedVaccinations.length > 0 ? (
+              missedVaccinations.map((item, index) => (
+                <div
+                  key={`${item.childId}-${item.vaccine}-${index}`}
+                  className="rounded-xl border border-dashed border-destructive/40 bg-destructive/5 px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{item.vaccine}</p>
+                      <p className="text-xs text-muted-foreground">{item.childName} • Due: {item.dueDate}</p>
+                    </div>
+                    <Badge variant="destructive">{item.daysOverdue} days overdue</Badge>
                   </div>
-                  <Badge variant="destructive">{item.daysOverdue} days overdue</Badge>
                 </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No missed vaccinations. Great job!</p>
+            )}
             <Button asChild className="gap-2" variant="secondary">
               <Link href="/parent/dashboard/missed-vaccinations">
                 Review all missed doses
@@ -297,13 +322,19 @@ export default function ParentDashboardOverview() {
             <CardDescription>Stay prepared for the next visit</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
-              <p className="text-sm text-muted-foreground">Scheduled for</p>
-              <h3 className="text-lg font-semibold">{nextAppointment.date}</h3>
-              <p className="text-sm text-muted-foreground">{nextAppointment.time}</p>
-              <p className="text-sm text-muted-foreground">{nextAppointment.location}</p>
-            </div>
-            <p className="text-sm text-muted-foreground">{nextAppointment.notes}</p>
+            {nextAppointment ? (
+              <>
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+                  <p className="text-sm text-muted-foreground">Scheduled for</p>
+                  <h3 className="text-lg font-semibold">{nextAppointment.scheduledDate}</h3>
+                  <p className="text-sm text-muted-foreground">{nextAppointment.scheduledTime}</p>
+                  <p className="text-sm text-muted-foreground">{nextAppointment.facilityName}</p>
+                </div>
+                <p className="text-sm text-muted-foreground">{nextAppointment.purpose}</p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No upcoming appointments scheduled.</p>
+            )}
             <Button asChild variant="outline" className="gap-2">
               <Link href="/parent/dashboard/appointments">
                 Manage appointments
@@ -373,8 +404,6 @@ export default function ParentDashboardOverview() {
   )
 }
 
-type StatusVariant = "default" | "secondary" | "outline"
-
 function OverviewStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg bg-background/80 px-4 py-3 shadow-sm">
@@ -382,10 +411,4 @@ function OverviewStat({ label, value }: { label: string; value: number }) {
       <p className="text-xl font-semibold">{value}</p>
     </div>
   )
-}
-
-function getStatusVariant(status: VaccinationStatus): StatusVariant {
-  if (status === "Complete") return "default"
-  if (status === "On Track") return "secondary"
-  return "outline"
 }
