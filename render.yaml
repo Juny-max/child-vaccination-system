@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: child-vaccination-backend
+    runtime: node
+    region: oregon
+    rootDir: backend
+    buildCommand: pnpm install && pnpm run build
+    startCommand: pnpm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        value: https://cvcc-iota.vercel.app
