@@ -11,6 +11,7 @@ import {
   Camera,
   ChevronRight,
   FilePlus2,
+  Loader2,
   Phone,
   QrCode,
   Search,
@@ -25,6 +26,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import * as facilityApi from "@/lib/api/facility"
 
 const appointments = [
   {
@@ -101,15 +103,14 @@ const clinicChildrenRecords = [
   },
 ]
 
-type SearchResult = (typeof clinicChildrenRecords)[number]
-
 type CameraState = "idle" | "starting" | "active" | "error"
 
 export default function FacilityDashboardPage() {
   const router = useRouter()
   const [userName, setUserName] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [searchResults, setSearchResults] = useState<facilityApi.ChildSearchResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [cameraState, setCameraState] = useState<CameraState>("idle")
   const [cameraError, setCameraError] = useState<string | null>(null)
@@ -173,26 +174,34 @@ export default function FacilityDashboardPage() {
     }
   }, [])
 
-  const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const trimmed = searchTerm.trim().toLowerCase()
-    if (!trimmed) {
+    const trimmed = searchTerm.trim()
+    
+    if (!trimmed || trimmed.length < 2) {
       setSearchResults([])
-      setSystemMessage("Type a child name, phone number, or CVCC ID to search.")
+      setSystemMessage("Type at least 2 characters to search (child name, phone number, or CVCC ID).")
       return
     }
 
-    const results = clinicChildrenRecords.filter((record) => {
-      const haystack = `${record.name} ${record.caregiver} ${record.contact} ${record.id}`.toLowerCase()
-      return haystack.includes(trimmed)
-    })
+    setIsSearching(true)
+    setSystemMessage(null)
 
-    setSearchResults(results)
+    try {
+      const results = await facilityApi.searchChildren(trimmed)
+      setSearchResults(results)
 
-    if (results.length === 0) {
-      setSystemMessage("No matching child found. Confirm spelling or scan the QR code on the health passbook.")
-    } else {
-      setSystemMessage(`${results.length} result${results.length > 1 ? "s" : ""} ready. Select a child to open their chart.`)
+      if (results.length === 0) {
+        setSystemMessage("No matching child found. Confirm spelling or scan the QR code on the health passbook.")
+      } else {
+        setSystemMessage(`${results.length} result${results.length > 1 ? "s" : ""} ready. Select a child to open their chart.`)
+      }
+    } catch (error) {
+      console.error('Search failed:', error)
+      setSystemMessage("Search failed. Please try again.")
+      setSearchResults([])
+    } finally {
+      setIsSearching(false)
     }
   }
 
@@ -295,8 +304,16 @@ export default function FacilityDashboardPage() {
                       className="h-14 rounded-lg border-primary/30 pl-11 text-base"
                     />
                   </div>
-                  <Button type="submit" className="h-14 rounded-lg px-6 text-base">
-                    Find child
+                  <Button type="submit" disabled={isSearching} className="h-14 rounded-lg px-6 text-base">
+                    {isSearching ? (
+                      <>
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Searching...
+                      </>
+                    ) : (
+                      'Find child'
+                    )}
+                  </Button>
                   </Button>
                 </div>
               </form>
@@ -312,12 +329,34 @@ export default function FacilityDashboardPage() {
                           className="flex flex-col gap-3 rounded-lg border border-border bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between"
                         >
                           <div className="space-y-1">
-                            <p className="text-sm font-semibold text-foreground">{result.name}</p>
-                            <p className="text-xs text-muted-foreground">Guardian: {result.caregiver}</p>
-                            <p className="text-xs text-muted-foreground font-mono">{result.id}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-foreground">{result.name}</p>
+                              <Badge variant={
+                                result.vaccinationStatus === 'Complete' ? 'default' : 
+                                result.vaccinationStatus === 'Overdue' ? 'destructive' : 
+                                'secondary'
+                              }>
+                                {result.vaccinationStatus}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">Guardian: {result.guardianName} • {result.guardianPhone}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{result.childId} • {result.age}</p>
+                            {result.lastVisit && (
+                              <p className="text-xs text-muted-foreground">Last visit: {result.lastVisit}</p>
+                            )}
                           </div>
                           <div className="flex flex-col items-start gap-2 sm:items-end">
-                            <span className="text-xs text-muted-foreground">Last visit: {result.lastVisit}</span>
+                            {result.overdueVaccines > 0 && (
+                              <Badge variant="destructive" className="gap-1">
+                                <AlertTriangle className="size-3" />
+                                {result.overdueVaccines} overdue
+                              </Badge>
+                            )}
+                            {result.upcomingVaccines > 0 && (
+                              <Badge variant="secondary" className="text-xs">
+                                {result.upcomingVaccines} upcoming
+                              </Badge>
+                            )}
                             <div className="flex flex-wrap gap-2">
                               <Button variant="outline" size="sm" asChild>
                                 <Link href={`/facility/child/${result.id}`} className="gap-2">
@@ -326,7 +365,7 @@ export default function FacilityDashboardPage() {
                                 </Link>
                               </Button>
                               <Button variant="ghost" size="sm" className="gap-2" asChild>
-                                <Link href={`tel:${result.contact.replace(/\s+/g, "")}`}>
+                                <Link href={`tel:${result.guardianPhone.replace(/\s+/g, "")}`}>
                                   <Phone className="h-4 w-4" />
                                   Call guardian
                                 </Link>

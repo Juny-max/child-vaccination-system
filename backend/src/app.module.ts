@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { ParentModule } from './parent/parent.module';
+import { FacilityModule } from './facility/facility.module';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { ParentModule } from './parent/parent.module';
 
     // Juny's Modules
     ParentModule,
-    // FacilityNurseModule, // TODO: Add later
+    FacilityModule,
     // ChwModule,           // TODO: Add later
     // PhaModule,           // TODO: Add later
 
