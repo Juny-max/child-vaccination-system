@@ -6,12 +6,12 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthGuard } from '@nestjs/passport';
 import { FacilityService } from './facility.service';
 import { SearchChildDto } from './dto';
 
 @Controller('facility')
-@UseGuards(JwtAuthGuard)
+@UseGuards(AuthGuard('jwt'))
 export class FacilityController {
   constructor(private readonly facilityService: FacilityService) {}
 

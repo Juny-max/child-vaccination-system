@@ -314,7 +314,6 @@ export default function FacilityDashboardPage() {
                       'Find child'
                     )}
                   </Button>
-                  </Button>
                 </div>
               </form>
 

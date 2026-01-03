@@ -219,6 +219,10 @@ export class FacilityService {
       ?.filter((v) => !v.isOverdue)
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
 
+    // Extract guardian and branch (they come as objects from the join)
+    const guardian = child.guardian as any;
+    const branch = child.branch as any;
+
     return {
       id: child.id,
       childId: child.child_id,
@@ -230,13 +234,13 @@ export class FacilityService {
       length: child.length,
       bloodType: child.blood_type,
       profilePhoto: child.profile_photo,
-      guardianId: child.guardian?.id,
-      guardianName: child.guardian?.name || 'Unknown',
-      guardianPhone: child.guardian?.primary_phone || 'N/A',
-      guardianEmail: child.guardian?.email,
-      guardianAddress: child.guardian?.address,
-      facilityId: child.branch?.id,
-      facilityName: child.branch?.name || 'Unknown',
+      guardianId: guardian?.id,
+      guardianName: guardian?.name || 'Unknown',
+      guardianPhone: guardian?.primary_phone || 'N/A',
+      guardianEmail: guardian?.email,
+      guardianAddress: guardian?.address,
+      facilityId: branch?.id,
+      facilityName: branch?.name || 'Unknown',
       registrationDate: child.created_at,
       lastVisit: lastVaccination?.administered_date || null,
       vaccinationsCompleted: completed?.length || 0,
