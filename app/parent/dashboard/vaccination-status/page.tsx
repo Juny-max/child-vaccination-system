@@ -10,9 +10,10 @@ import * as parentApi from "@/lib/api/parent"
 import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, Loader2, Syringe, User } from "lucide-react"
 
 export default function VaccinationStatusPage() {
-  const { children, getChildVaccinations, isLoading: isLoadingContext } = useParentDashboard()
+  const { children, getChildVaccinations, getChildUpcomingVaccinations, isLoading: isLoadingContext } = useParentDashboard()
   const [selectedChildId, setSelectedChildId] = useState<string>('')
   const [vaccinations, setVaccinations] = useState<parentApi.VaccinationRecord[]>([])
+  const [upcomingVaccinations, setUpcomingVaccinations] = useState<parentApi.UpcomingVaccination[]>([])
   const [isLoadingVaccinations, setIsLoadingVaccinations] = useState(false)
   const [isBookingOpen, setIsBookingOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -31,8 +32,12 @@ export default function VaccinationStatusPage() {
       if (!selectedChildId) return
       setIsLoadingVaccinations(true)
       try {
-        const data = await getChildVaccinations(selectedChildId)
-        setVaccinations(data)
+        const [history, upcoming] = await Promise.all([
+          getChildVaccinations(selectedChildId),
+          getChildUpcomingVaccinations(selectedChildId)
+        ])
+        setVaccinations(history)
+        setUpcomingVaccinations(upcoming)
       } catch (error) {
         console.error('Failed to load vaccinations:', error)
       } finally {
@@ -40,11 +45,11 @@ export default function VaccinationStatusPage() {
       }
     }
     loadVaccinations()
-  }, [selectedChildId, getChildVaccinations])
+  }, [selectedChildId, getChildVaccinations, getChildUpcomingVaccinations])
 
   const complete = vaccinations.filter((record) => record.status === "Completed")
-  const scheduled = vaccinations.filter((record) => record.status === "Scheduled")
-  const missed = vaccinations.filter((record) => record.status === "Missed")
+  const scheduled = upcomingVaccinations.filter((record) => !record.isOverdue)
+  const missed = upcomingVaccinations.filter((record) => record.isOverdue)
 
   const isLoading = isLoadingContext || isLoadingVaccinations
 
@@ -124,103 +129,132 @@ export default function VaccinationStatusPage() {
             <div className="flex items-center justify-center p-8">
               <Loader2 className="size-8 animate-spin text-primary" />
             </div>
-          ) : vaccinations.length === 0 ? (
+          ) : vaccinations.length === 0 && upcomingVaccinations.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               No vaccination records found. Records will appear here after your child receives their first vaccine.
             </div>
           ) : (
-            vaccinations.map((record) => (
-              <div
-                key={record.id}
-                className="flex flex-col gap-3 rounded-lg border border-border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="text-base font-semibold text-foreground">{record.vaccine}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Dose {record.doseNumber} • {record.facilityName}
-                  </p>
+            <>
+              {/* Completed Vaccinations */}
+              {vaccinations.map((record) => (
+                <div
+                  key={record.id}
+                  className="flex flex-col gap-3 rounded-lg border border-border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-base font-semibold text-foreground">{record.vaccine}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Dose {record.doseNumber} • {record.facilityName}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-6">
+                    <Badge className="capitalize" variant="default">
+                      Completed
+                    </Badge>
+                    <p className="text-xs text-muted-foreground">{record.administeredDate}</p>
+                  </div>
                 </div>
-                <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-6">
-                  <Badge className="capitalize" variant={getStatusVariant(record.status)}>
-                    {record.status}
-                  </Badge>
-                  <p className="text-xs text-muted-foreground">{record.administeredDate}</p>
+              ))}
+              
+              {/* Upcoming/Missed Vaccinations */}
+              {upcomingVaccinations.map((upcoming) => (
+                <div
+                  key={upcoming.id}
+                  className="flex flex-col gap-3 rounded-lg border border-border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-base font-semibold text-foreground">{upcoming.vaccine}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Dose {upcoming.doseNumber} • {upcoming.scheduleName}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-6">
+                    <Badge variant={upcoming.isOverdue ? "destructive" : "secondary"}>
+                      {upcoming.isOverdue ? `Missed (${upcoming.daysOverdue}d overdue)` : "Scheduled"}
+                    </Badge>
+                    <p className="text-xs text-muted-foreground">Due: {upcoming.dueDate}</p>
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </>
           )}
         </CardContent>
       </Card>
 
-      <Card className="border-destructive/30 bg-destructive/5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg text-destructive">
-            <AlertTriangle className="size-5" /> Upcoming dose notice
-          </CardTitle>
-          <CardDescription>Make sure your child receives the pending MMR dose to unlock the digital certificate.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">
-              MMR (Dose 1/2) is still pending. Schedule an appointment or inform your nurse if your child is unwell.
-            </p>
-          </div>
-          <Button className="gap-2" variant="secondary" onClick={handleLaunchBooking}>
-            <CalendarPlus className="size-4" /> Book appointment
-          </Button>
-        </CardContent>
-        {isBookingOpen ? (
-          <CardContent className="border-t border-border bg-muted/40">
-            <form className="space-y-4" onSubmit={handleBookingSubmit}>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-foreground" htmlFor="preferredDate">
-                    Preferred date
-                  </label>
-                  <Input id="preferredDate" name="preferredDate" type="date" required />
+      {/* Book Appointment Card - only show if there are missed vaccinations */}
+      {missed.length > 0 && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg text-destructive">
+              <AlertTriangle className="size-5" /> Missed Vaccinations
+            </CardTitle>
+            <CardDescription>
+              Your child has {missed.length} overdue vaccination{missed.length > 1 ? 's' : ''}. Please schedule an appointment soon.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Schedule an appointment or contact your clinic if your child is unwell.
+              </p>
+            </div>
+            <Button className="gap-2" variant="secondary" onClick={handleLaunchBooking}>
+              <CalendarPlus className="size-4" /> Book appointment
+            </Button>
+          </CardContent>
+          {isBookingOpen ? (
+            <CardContent className="border-t border-border bg-muted/40">
+              <form className="space-y-4" onSubmit={handleBookingSubmit}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground" htmlFor="preferredDate">
+                      Preferred date
+                    </label>
+                    <Input id="preferredDate" name="preferredDate" type="date" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-foreground" htmlFor="preferredTime">
+                      Preferred time
+                    </label>
+                    <Input id="preferredTime" name="preferredTime" type="time" required />
+                  </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-foreground" htmlFor="preferredTime">
-                    Preferred time
+                  <label className="text-sm font-medium text-foreground" htmlFor="contactNumber">
+                    Contact number
                   </label>
-                  <Input id="preferredTime" name="preferredTime" type="time" required />
+                  <Input id="contactNumber" name="contactNumber" type="tel" placeholder="e.g. +233 24 123 4567" required />
                 </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-foreground" htmlFor="contactNumber">
-                  Contact number
-                </label>
-                <Input id="contactNumber" name="contactNumber" type="tel" placeholder="e.g. +233 24 123 4567" required />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-foreground" htmlFor="notes">
-                  Notes for the nurse (optional)
-                </label>
-                <textarea
-                  id="notes"
-                  name="notes"
-                  rows={3}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  placeholder="Mention recent symptoms or preferred facility"
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <Button type="submit" className="gap-2" disabled={isSubmitting}>
-                  <CalendarPlus className="size-4" /> {isSubmitting ? "Submitting..." : "Submit request"}
-                </Button>
-                <Button type="button" variant="ghost" onClick={() => setIsBookingOpen(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        ) : null}
-        {confirmation ? (
-          <CardContent className="border-t border-primary/20 bg-primary/5 text-sm text-foreground">
-            {confirmation}
-          </CardContent>
-        ) : null}
-      </Card>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-foreground" htmlFor="notes">
+                    Notes for the nurse (optional)
+                  </label>
+                  <textarea
+                    id="notes"
+                    name="notes"
+                    rows={3}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    placeholder="Mention recent symptoms or preferred facility"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button type="submit" className="gap-2" disabled={isSubmitting}>
+                    <CalendarPlus className="size-4" /> {isSubmitting ? "Submitting..." : "Submit request"}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setIsBookingOpen(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          ) : null}
+          {confirmation ? (
+            <CardContent className="border-t border-primary/20 bg-primary/5 text-sm text-foreground">
+              {confirmation}
+            </CardContent>
+          ) : null}
+        </Card>
+      )}
     </div>
   )
 }
@@ -241,11 +275,4 @@ function Stats({ label, value, icon }: StatsProps) {
       </div>
     </div>
   )
-}
-
-function getStatusVariant(status: string) {
-  if (status === "Completed") return "default" as const
-  if (status === "Scheduled") return "secondary" as const
-  if (status === "Missed") return "destructive" as const
-  return "outline" as const
 }
