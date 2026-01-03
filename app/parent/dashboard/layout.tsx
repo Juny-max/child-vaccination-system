@@ -15,6 +15,7 @@ import {
   Baby,
   CalendarDays,
   Home,
+  Loader2,
   LogOut,
   Menu,
   MessageCircle,
@@ -53,6 +54,7 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
   const { userName, greeting, isLoading, error, retryFetch, logout } = useParentDashboard()
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   const currentNavItems = useMemo(() => navItems, [])
 
@@ -66,6 +68,16 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
       await retryFetch()
     } finally {
       setIsRetrying(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true)
+    try {
+      await logout()
+    } catch (error) {
+      console.error('Logout failed:', error)
+      setIsLoggingOut(false)
     }
   }
 
@@ -104,8 +116,8 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
                 'Try Again'
               )}
             </Button>
-            <Button variant="outline" onClick={logout} className="gap-2">
-              <LogOut className="size-4" />
+            <Button variant="outline" onClick={handleLogout} disabled={isLoggingOut} className="gap-2">
+              {isLoggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
               Back to Login
             </Button>
           </div>
@@ -154,8 +166,9 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
               <ThemeToggle />
               <span className="text-sm text-muted-foreground">Signed in as {userName}</span>
             </div>
-            <Button variant="outline" size="sm" onClick={logout} className="gap-2">
-              <LogOut className="size-4" /> Logout
+            <Button variant="outline" size="sm" onClick={handleLogout} disabled={isLoggingOut} className="gap-2">
+              {isLoggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+              Logout
             </Button>
           </div>
         </div>
@@ -224,8 +237,9 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
               </nav>
             </div>
             <div className="border-t border-border p-4">
-              <Button onClick={logout} variant="outline" className="w-full gap-2">
-                <LogOut className="size-4" /> Logout
+              <Button onClick={handleLogout} disabled={isLoggingOut} variant="outline" className="w-full gap-2">
+                {isLoggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+                Logout
               </Button>
             </div>
           </div>
