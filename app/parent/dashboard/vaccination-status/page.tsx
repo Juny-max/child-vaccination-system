@@ -7,23 +7,31 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useParentDashboard } from "../dashboard-context"
 import * as parentApi from "@/lib/api/parent"
-import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, Loader2, Syringe } from "lucide-react"
+import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, Loader2, Syringe, User } from "lucide-react"
 
 export default function VaccinationStatusPage() {
   const { children, getChildVaccinations, isLoading: isLoadingContext } = useParentDashboard()
+  const [selectedChildId, setSelectedChildId] = useState<string>('')
   const [vaccinations, setVaccinations] = useState<parentApi.VaccinationRecord[]>([])
   const [isLoadingVaccinations, setIsLoadingVaccinations] = useState(false)
   const [isBookingOpen, setIsBookingOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
 
-  // Load vaccinations for primary child
+  // Set initial selected child
+  useEffect(() => {
+    if (children.length > 0 && !selectedChildId) {
+      setSelectedChildId(children[0].id)
+    }
+  }, [children, selectedChildId])
+
+  // Load vaccinations for selected child
   useEffect(() => {
     async function loadVaccinations() {
-      if (children.length === 0) return
+      if (!selectedChildId) return
       setIsLoadingVaccinations(true)
       try {
-        const data = await getChildVaccinations(children[0].id)
+        const data = await getChildVaccinations(selectedChildId)
         setVaccinations(data)
       } catch (error) {
         console.error('Failed to load vaccinations:', error)
@@ -32,13 +40,15 @@ export default function VaccinationStatusPage() {
       }
     }
     loadVaccinations()
-  }, [children, getChildVaccinations])
+  }, [selectedChildId, getChildVaccinations])
 
   const complete = vaccinations.filter((record) => record.status === "Completed")
   const scheduled = vaccinations.filter((record) => record.status === "Scheduled")
   const missed = vaccinations.filter((record) => record.status === "Missed")
 
   const isLoading = isLoadingContext || isLoadingVaccinations
+
+  const selectedChild = children.find(child => child.id === selectedChildId)
 
   const handleLaunchBooking = () => {
     setIsBookingOpen(true)
@@ -64,10 +74,36 @@ export default function VaccinationStatusPage() {
 
   return (
     <div className="space-y-6 lg:space-y-8">
+      {/* Child Selector */}
+      {children.length > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <User className="size-5" /> Select Child
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {children.map((child) => (
+                <Button
+                  key={child.id}
+                  variant={selectedChildId === child.id ? "default" : "outline"}
+                  onClick={() => setSelectedChildId(child.id)}
+                  className="flex items-center gap-2"
+                >
+                  {child.name} ({child.age})
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-primary/20 bg-primary/5">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">
             <Syringe className="size-5" /> Vaccination timeline
+            {selectedChild && <span className="text-sm font-normal text-muted-foreground">- {selectedChild.name}</span>}
           </CardTitle>
           <CardDescription>Review your child&apos;s completed, ongoing, and upcoming vaccinations.</CardDescription>
         </CardHeader>

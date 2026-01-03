@@ -17,5 +17,5 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
-      - key: CORS_ORIGIN
-        value: https://cvcc-iota.vercel.app
+      - key: CORS_ORIGINS
+        value: https://cvcc-iota.vercel.app,https://child-vaccination-system.vercel.app
