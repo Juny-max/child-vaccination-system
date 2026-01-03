@@ -294,13 +294,14 @@ export class ParentService {
         id: event.id,
         vaccine: event.vaccine?.name || 'Unknown',
         vaccineCode: event.vaccine?.code || '',
-        dose: `${event.dose_number}`,
-        date: event.administered_date,
+        doseNumber: event.dose_number,
+        administeredDate: event.administered_date,
         status,
         administeredBy: event.administered_by?.full_name || 'Unknown',
-        facility: event.facility?.name || 'Unknown',
+        facilityName: event.facility?.name || 'Unknown',
         batchNumber: event.batch_number,
-        notes: event.notes,
+        nextDoseDate: null, // Can be calculated if needed
+        sideEffects: event.notes,
       };
     });
   }
@@ -344,14 +345,16 @@ export class ParentService {
     return this.db.getMissedVaccinations(guardian.id);
   }
 
-  private determineVaccinationStatus(dbStatus: string): VaccinationStatus {
-    switch (dbStatus) {
+  private determineVaccinationStatus(dbStatus: string): 'Completed' | 'Scheduled' | 'Missed' {
+    switch (dbStatus?.toLowerCase()) {
       case 'completed':
-        return VaccinationStatus.COMPLETE;
+        return 'Completed';
+      case 'scheduled':
+        return 'Scheduled';
       case 'missed':
-        return VaccinationStatus.OVERDUE;
+        return 'Missed';
       default:
-        return VaccinationStatus.ON_TRACK;
+        return 'Scheduled';
     }
   }
 

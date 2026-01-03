@@ -77,13 +77,14 @@ export class VaccinationRecordDto {
   id: string;
   vaccine: string;
   vaccineCode: string;
-  dose: string;
-  date: string;
-  status: VaccinationStatus;
-  administeredBy: string;
-  facility: string;
-  batchNumber: string | null;
-  notes: string | null;
+  doseNumber: number;
+  administeredDate: string;
+  status: 'Completed' | 'Scheduled' | 'Missed';
+  batchNumber?: string;
+  facilityName: string;
+  administeredBy?: string;
+  nextDoseDate?: string;
+  sideEffects?: string;
 }
 
 /**
