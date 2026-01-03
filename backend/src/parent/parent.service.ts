@@ -300,7 +300,7 @@ export class ParentService {
         administeredBy: event.administered_by?.full_name || 'Unknown',
         facilityName: event.facility?.name || 'Unknown',
         batchNumber: event.batch_number,
-        nextDoseDate: null, // Can be calculated if needed
+        nextDoseDate: undefined,
         sideEffects: event.notes,
       };
     });
