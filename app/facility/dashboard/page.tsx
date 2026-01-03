@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { Html5Qrcode } from "html5-qrcode"
 import {
   AlertCircle,
   AlertTriangle,
@@ -18,6 +19,7 @@ import {
   Stethoscope,
   User,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -114,8 +116,9 @@ export default function FacilityDashboardPage() {
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [cameraState, setCameraState] = useState<CameraState>("idle")
   const [cameraError, setCameraError] = useState<string | null>(null)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const scannerRef = useRef<Html5Qrcode | null>(null)
+  const isProcessingScan = useRef(false)
+  const scannerId = "qr-scanner-facility"
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -154,22 +157,11 @@ export default function FacilityDashboardPage() {
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
 
-  useEffect(() => {
-    if (cameraState !== "active") return
-    const videoElement = videoRef.current
-    if (!videoElement) return
-    videoElement.srcObject = streamRef.current
-    return () => {
-      if (videoElement) {
-        videoElement.srcObject = null
-      }
-    }
-  }, [cameraState])
-
+  // Cleanup QR scanner on unmount
   useEffect(() => {
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop())
+      if (scannerRef.current?.isScanning) {
+        scannerRef.current.stop().catch(console.error)
       }
     }
   }, [])
@@ -209,24 +201,155 @@ export default function FacilityDashboardPage() {
     if (cameraState === "active" || cameraState === "starting") return
     setCameraError(null)
     setCameraState("starting")
+    
+    // Wait for DOM to update with the scanner div
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      streamRef.current = stream
+      // Check if we're on HTTPS or localhost
+      const isSecureContext = window.isSecureContext
+      if (!isSecureContext && window.location.hostname !== 'localhost') {
+        throw new Error("Camera requires HTTPS connection. Please use https:// or localhost")
+      }
+
+      // Request camera permission first
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: "environment" } 
+        })
+        // Stop the test stream immediately
+        stream.getTracks().forEach(track => track.stop())
+      } catch (permError: any) {
+        if (permError.name === 'NotAllowedError') {
+          throw new Error("Camera permission denied. Please allow camera access in your browser settings.")
+        } else if (permError.name === 'NotFoundError') {
+          throw new Error("No camera found on this device.")
+        } else if (permError.name === 'NotReadableError') {
+          throw new Error("Camera is already in use by another application. Please close other apps using the camera.")
+        } else {
+          throw new Error(`Camera error: ${permError.message || 'Unable to access camera'}`)
+        }
+      }
+
+      // Verify the element exists
+      const element = document.getElementById(scannerId)
+      if (!element) {
+        throw new Error("Scanner container not found. Please try again.")
+      }
+
+      // Initialize scanner
+      if (!scannerRef.current) {
+        scannerRef.current = new Html5Qrcode(scannerId)
+      }
+
+      // Get available cameras
+      const cameras = await Html5Qrcode.getCameras()
+      if (!cameras || cameras.length === 0) {
+        throw new Error("No cameras detected. Please ensure your camera is connected and not blocked.")
+      }
+
+      // Prefer back camera for mobile devices
+      const cameraId = cameras.find(cam => 
+        cam.label.toLowerCase().includes('back') || 
+        cam.label.toLowerCase().includes('rear') ||
+        cam.label.toLowerCase().includes('environment')
+      )?.id || cameras[0].id
+
+      // Start scanning with retry logic
+      await scannerRef.current.start(
+        cameraId,
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+        },
+        async (decodedText) => {
+          // Prevent duplicate scans
+          if (isProcessingScan.current) return
+          isProcessingScan.current = true
+          
+          // QR code scanned successfully
+          await handleQRCodeScan(decodedText)
+          await stopCamera()
+          
+          // Reset after a delay to allow re-scanning if needed
+          setTimeout(() => {
+            isProcessingScan.current = false
+          }, 2000)
+        },
+        (errorMessage) => {
+          // Scanning error (happens frequently, not critical)
+          if (!errorMessage.includes("NotFoundException")) {
+            console.log("Scan error:", errorMessage)
+          }
+        }
+      )
+
       setCameraState("active")
       setSystemMessage("Camera ready. Align the QR code within the frame to identify the child.")
+      toast.success("Camera started successfully")
     } catch (error) {
-      console.error("Camera initialisation failed", error)
-      setCameraError("Unable to access camera. Check browser permissions or switch devices.")
+      console.error("Camera initialization failed:", error)
+      const errorMsg = error instanceof Error ? error.message : "Unable to access camera"
+      setCameraError(errorMsg)
       setCameraState("error")
+      toast.error(errorMsg)
     }
   }
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
+  const stopCamera = async () => {
+    if (scannerRef.current?.isScanning) {
+      try {
+        await scannerRef.current.stop()
+      } catch (error) {
+        console.error("Error stopping camera:", error)
+      }
     }
     setCameraState("idle")
+  }
+
+  const handleQRCodeScan = async (decodedText: string) => {
+    try {
+      // The QR code should contain the child's ID or CVCC ID
+      // Try to parse it as JSON first, otherwise use as direct ID
+      let childId = decodedText
+      
+      try {
+        const parsed = JSON.parse(decodedText)
+        childId = parsed.childId || parsed.id || parsed.cvccId || decodedText
+      } catch {
+        // Not JSON, use as is
+      }
+
+      setSystemMessage("Looking up child record...")
+      toast.loading("Scanning QR code...")
+      
+      // Search for the child
+      const results = await facilityApi.searchChildren(childId)
+      
+      toast.dismiss()
+      
+      if (results.length === 0) {
+        setSystemMessage("No child found with this QR code. Please verify and try again.")
+        toast.error("Child not found")
+        return
+      }
+
+      // If single result, navigate directly
+      if (results.length === 1) {
+        toast.success(`Opening record for ${results[0].name}`)
+        router.push(`/facility/child/${results[0].id}`)
+        return
+      }
+
+      // Multiple results - show them
+      setSearchResults(results)
+      setSystemMessage(`${results.length} children found. Please select the correct one.`)
+    } catch (error) {
+      console.error("QR code lookup failed:", error)
+      setSystemMessage("Failed to lookup child record. Please try manual search.")
+      toast.error("Lookup failed")
+    }
   }
 
   const todaysAppointments = useMemo(() => appointments, [])
@@ -391,31 +514,51 @@ export default function FacilityDashboardPage() {
                 <CardDescription>Fastest look-up using the CVCC passbook or digital certificate.</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                <Button className="gap-2" variant="default" onClick={startCamera} disabled={cameraState === "starting"}>
+                <Button 
+                  className="gap-2" 
+                  variant="default" 
+                  onClick={startCamera} 
+                  disabled={cameraState === "starting" || cameraState === "active"}
+                >
                   <Camera className="h-4 w-4" />
-                  {cameraState === "starting" ? "Starting camera" : "Start scanning"}
+                  {cameraState === "starting" ? "Starting camera..." : cameraState === "active" ? "Scanning..." : "Start scanning"}
                 </Button>
-                {cameraState === "active" ? (
+                {(cameraState === "starting" || cameraState === "active") ? (
                   <div className="space-y-2">
-                    <div className="relative overflow-hidden rounded-lg border border-border">
-                      <video ref={videoRef} autoPlay playsInline className="h-48 w-full bg-black/80 object-cover" />
-                      <div className="pointer-events-none absolute inset-0 border-4 border-dashed border-primary/80" />
-                    </div>
-                    <Button variant="outline" size="sm" onClick={stopCamera}>
-                      Stop camera
-                    </Button>
+                    <div id={scannerId} className="relative overflow-hidden rounded-lg border-2 border-primary/50" />
+                    {cameraState === "active" && (
+                      <Button variant="outline" size="sm" onClick={stopCamera} className="w-full">
+                        Stop camera
+                      </Button>
+                    )}
                   </div>
                 ) : null}
-                {cameraState === "error" ? (
+                {cameraState === "error" || cameraError ? (
+                  <div className="space-y-2">
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-xs">
+                        {cameraError || "Camera error occurred"}
+                      </AlertDescription>
+                    </Alert>
+                    <div className="rounded-md bg-muted p-3 text-xs space-y-1">
+                      <p className="font-semibold">Troubleshooting:</p>
+                      <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+                        <li>Check if another app is using your camera</li>
+                        <li>Click the camera icon in your browser&apos;s address bar and allow access</li>
+                        <li>Try refreshing the page (F5)</li>
+                        <li>Restart your browser if the issue persists</li>
+                      </ul>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => { setCameraError(null); setCameraState("idle"); }} className="w-full">
+                      Try again
+                    </Button>
+                  </div>
+                ) : cameraState !== "active" ? (
                   <p className="text-xs text-muted-foreground">
-                    Grant camera access in your browser settings or switch to a tablet/phone with a working camera.
+                    Position the QR code within the frame. The system will decode and open the child&apos;s record automatically.
                   </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Position the QR code within the frame. The system will decode and open the child&apos;s record automatically once
-                    backend integration is complete.
-                  </p>
-                )}
+                ) : null}
               </CardContent>
             </Card>
 

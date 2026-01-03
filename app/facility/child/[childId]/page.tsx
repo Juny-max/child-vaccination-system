@@ -20,6 +20,7 @@ import {
   Syringe,
   Thermometer,
   User,
+  X,
 } from "lucide-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import * as facilityApi from "@/lib/api/facility"
 
 type VaccineStatus = "overdue" | "dueToday" | "upcoming" | "completed"
 
@@ -54,7 +56,7 @@ type ChildRecord = {
     name: string
     phone: string
     address: string
-    preferredContact: "sms" | "email"
+    preferredContact: "sms" | "email" | "whatsapp"
   }
   birthDetails: {
     weight: string
@@ -131,7 +133,7 @@ const defaultSchedule: VaccineEntry[] = [
 type AnthropometricMeasurement = {
   id: string
   date: string
-  weightKg: number
+  weightKg?: number
   lengthCm?: number
   headCircumferenceCm?: number
   muacCm?: number
@@ -241,10 +243,45 @@ export default function ChildPatientChartPage() {
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [selectedDose, setSelectedDose] = useState<VaccineEntry | null>(null)
   const [administerForm, setAdministerForm] = useState<AdministerFormState>(initialAdministerState)
-  const [measurements, setMeasurements] = useState<AnthropometricMeasurement[]>(() => sampleMeasurements[childId] ?? [])
   const [measurementForm, setMeasurementForm] = useState<MeasurementFormState>(() => createEmptyMeasurementForm())
   const [measurementErrors, setMeasurementErrors] = useState<MeasurementFormErrors>({})
   const [measurementStatus, setMeasurementStatus] = useState<string | null>(null)
+  
+  // State for fetched data
+  const [isLoadingChild, setIsLoadingChild] = useState(true)
+  const [childProfile, setChildProfile] = useState<facilityApi.FacilityChildProfile | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [vaccinationHistory, setVaccinationHistory] = useState<facilityApi.VaccinationEvent[]>([])
+  const [scheduledVaccines, setScheduledVaccines] = useState<facilityApi.ScheduledVaccine[]>([])
+  const [isLoadingVaccines, setIsLoadingVaccines] = useState(true)
+  const [isSavingVaccine, setIsSavingVaccine] = useState(false)
+  
+  // State for growth monitoring
+  const [measurements, setMeasurements] = useState<AnthropometricMeasurement[]>([])
+  const [isLoadingMeasurements, setIsLoadingMeasurements] = useState(true)
+  const [isSavingMeasurement, setIsSavingMeasurement] = useState(false)
+  
+  // State for session notes
+  const [sessionNote, setSessionNote] = useState("")
+  const [isSavingNote, setIsSavingNote] = useState(false)
+  const [sessionNotes, setSessionNotes] = useState<facilityApi.SessionNote[]>([])
+  
+  // State for guardian update modal
+  const [showGuardianModal, setShowGuardianModal] = useState(false)
+  const [guardianData, setGuardianData] = useState<facilityApi.Guardian | null>(null)
+  const [guardianForm, setGuardianForm] = useState({
+    fullName: "",
+    phonePrimary: "",
+    phoneAlternate: "",
+    email: "",
+    addressLine1: "",
+    landmark: "",
+    city: "",
+    region: "",
+    preferredContact: "sms" as "sms" | "email" | "whatsapp",
+  })
+  const [isSavingGuardian, setIsSavingGuardian] = useState(false)
+  const [isLoadingGuardian, setIsLoadingGuardian] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -264,12 +301,103 @@ export default function ChildPatientChartPage() {
 
     setUserName(name || "Facility Nurse")
   }, [router])
-
+  
+  // Fetch child profile data
   useEffect(() => {
-    setMeasurements(sampleMeasurements[childId] ?? [])
-    setMeasurementForm(createEmptyMeasurementForm(userName))
-    setMeasurementErrors({})
-  }, [childId, userName])
+    const fetchChildData = async () => {
+      if (!childId || childId === "new-child") return
+      
+      setIsLoadingChild(true)
+      setLoadError(null)
+      
+      try {
+        const profile = await facilityApi.getChildProfile(childId)
+        setChildProfile(profile)
+      } catch (error) {
+        console.error("Failed to load child profile:", error)
+        setLoadError("Could not load child data. Please try again.")
+      } finally {
+        setIsLoadingChild(false)
+      }
+    }
+    
+    fetchChildData()
+  }, [childId])
+  
+  // Fetch vaccination data
+  useEffect(() => {
+    const fetchVaccinationData = async () => {
+      if (!childId || childId === "new-child" || !childProfile?.dateOfBirth) return
+      
+      setIsLoadingVaccines(true)
+      
+      try {
+        const [history, scheduled] = await Promise.all([
+          facilityApi.getVaccinationHistory(childId),
+          facilityApi.getScheduledVaccinations(childId, childProfile.dateOfBirth),
+        ])
+        
+        setVaccinationHistory(history)
+        setScheduledVaccines(scheduled)
+      } catch (error) {
+        console.error("Failed to load vaccination data:", error)
+      } finally {
+        setIsLoadingVaccines(false)
+      }
+    }
+    
+    fetchVaccinationData()
+  }, [childId, childProfile?.dateOfBirth])
+  
+  // Fetch growth monitoring data
+  useEffect(() => {
+    const fetchMeasurements = async () => {
+      if (!childId || childId === "new-child") return
+      
+      setIsLoadingMeasurements(true)
+      
+      try {
+        const history = await facilityApi.getGrowthMonitoringHistory(childId)
+        
+        // Transform API data to component format
+        const transformed: AnthropometricMeasurement[] = history.map(m => ({
+          id: m.id,
+          date: m.measurementDate,
+          weightKg: m.weightKg || undefined,
+          lengthCm: m.lengthCm || undefined,
+          headCircumferenceCm: m.headCircumferenceCm || undefined,
+          muacCm: m.muacCm || undefined,
+          temperatureC: m.temperatureC || undefined,
+          recordedBy: m.recordedByName,
+          notes: m.notes || undefined,
+        }))
+        
+        setMeasurements(transformed)
+      } catch (error) {
+        console.error("Failed to load measurements:", error)
+      } finally {
+        setIsLoadingMeasurements(false)
+      }
+    }
+    
+    fetchMeasurements()
+  }, [childId])
+  
+  // Fetch session notes
+  useEffect(() => {
+    const fetchNotes = async () => {
+      if (!childId || childId === "new-child") return
+      
+      try {
+        const notes = await facilityApi.getSessionNotes(childId)
+        setSessionNotes(notes)
+      } catch (error) {
+        console.error("Failed to load session notes:", error)
+      }
+    }
+    
+    fetchNotes()
+  }, [childId])
 
   useEffect(() => {
     if (!userName) return
@@ -294,6 +422,33 @@ export default function ChildPatientChartPage() {
   }, [measurementStatus])
 
   const childRecord = useMemo<ChildRecord>(() => {
+    // If we have fetched profile data, use it
+    if (childProfile) {
+      return {
+        id: childProfile.childId,
+        name: childProfile.name,
+        dateOfBirth: childProfile.dateOfBirth,
+        age: childProfile.age,
+        gender: childProfile.gender,
+        photoUrl: childProfile.profilePhoto || undefined,
+        guardian: {
+          name: childProfile.guardianName,
+          phone: childProfile.guardianPhone,
+          address: childProfile.guardianAddress || "Address not provided",
+          preferredContact: childProfile.guardianPreferredContact || "sms",
+        },
+        birthDetails: {
+          weight: childProfile.weight ? `${childProfile.weight} kg` : "Not recorded",
+          length: childProfile.length ? `${childProfile.length} cm` : "Not recorded",
+          place: "Not recorded",
+          deliveryType: "Not recorded",
+        },
+        allergies: [],
+        lastVisit: childProfile.lastVisit || "Not yet",
+      }
+    }
+    
+    // Fallback to sample data or default
     return (
       sampleChildren[childId] ?? {
         id: childId,
@@ -317,9 +472,52 @@ export default function ChildPatientChartPage() {
         lastVisit: "Not yet",
       }
     )
-  }, [childId])
+  }, [childId, childProfile])
 
-  const schedule = useMemo(() => defaultSchedule, [])
+  const schedule = useMemo<VaccineEntry[]>(() => {
+    const entries: VaccineEntry[] = []
+    
+    // Add completed vaccinations from history
+    vaccinationHistory.forEach((vax) => {
+      entries.push({
+        id: `completed-${vax.id}`,
+        vaccine: vax.vaccineName,
+        scheduledDate: vax.administeredDate, // Use administered date for completed vaccines
+        status: "completed",
+        administeredDate: vax.administeredDate,
+        batchNumber: vax.batchNumber || undefined,
+        notes: vax.notes || undefined,
+      })
+    })
+    
+    // Add scheduled vaccinations
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    scheduledVaccines.forEach((vax) => {
+      const dueDate = new Date(vax.dueDate)
+      dueDate.setHours(0, 0, 0, 0)
+      
+      let status: VaccineStatus
+      if (vax.isOverdue) {
+        status = "overdue"
+      } else if (dueDate.getTime() === today.getTime()) {
+        status = "dueToday"
+      } else {
+        status = "upcoming"
+      }
+      
+      entries.push({
+        id: `scheduled-${vax.vaccineName}-${vax.dueDate}`,
+        vaccine: vax.vaccineName,
+        scheduledDate: vax.dueDate,
+        status,
+        notes: vax.isOverdue ? "Overdue - administer as soon as possible" : undefined,
+      })
+    })
+    
+    return entries
+  }, [vaccinationHistory, scheduledVaccines])
 
   const groupedSchedule = useMemo(() => {
     return {
@@ -350,8 +548,10 @@ export default function ChildPatientChartPage() {
     setMeasurementErrors({})
   }
 
-  const handleMeasurementSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleMeasurementSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (isSavingMeasurement) return
+    
     const errors: MeasurementFormErrors = {}
 
     const recordedByName = measurementForm.recordedBy.trim()
@@ -401,21 +601,46 @@ export default function ChildPatientChartPage() {
       return
     }
 
-    const newMeasurement: AnthropometricMeasurement = {
-      id: generateMeasurementId(),
-      date: measurementForm.date,
-      weightKg: roundTo(parsedWeight, 2),
-      lengthCm: parsedLength !== undefined ? roundTo(parsedLength, 1) : undefined,
-      headCircumferenceCm: parsedHead !== undefined ? roundTo(parsedHead, 1) : undefined,
-      muacCm: parsedMuac !== undefined ? roundTo(parsedMuac, 1) : undefined,
-      temperatureC: parsedTemp !== undefined ? roundTo(parsedTemp, 1) : undefined,
-      recordedBy: recordedByName,
-      notes: measurementForm.notes.trim() ? measurementForm.notes.trim() : undefined,
-    }
+    setIsSavingMeasurement(true)
 
-    setMeasurements((previous) => [newMeasurement, ...previous])
-    setMeasurementStatus("Growth monitoring saved. Update the Child Health Record Book and growth chart.")
-    resetMeasurementForm()
+    try {
+      // Save to database
+      const requestData: facilityApi.RecordGrowthMeasurementRequest = {
+        measurementDate: measurementForm.date,
+        recordedByName: recordedByName,
+        weightKg: roundTo(parsedWeight, 2),
+        lengthCm: parsedLength !== undefined ? roundTo(parsedLength, 1) : undefined,
+        headCircumferenceCm: parsedHead !== undefined ? roundTo(parsedHead, 1) : undefined,
+        muacCm: parsedMuac !== undefined ? roundTo(parsedMuac, 1) : undefined,
+        temperatureC: parsedTemp !== undefined ? roundTo(parsedTemp, 1) : undefined,
+        notes: measurementForm.notes.trim() ? measurementForm.notes.trim() : undefined,
+      }
+
+      await facilityApi.recordGrowthMeasurement(childId, requestData)
+
+      // Refetch measurements from database
+      const history = await facilityApi.getGrowthMonitoringHistory(childId)
+      const transformed: AnthropometricMeasurement[] = history.map(m => ({
+        id: m.id,
+        date: m.measurementDate,
+        weightKg: m.weightKg || undefined,
+        lengthCm: m.lengthCm || undefined,
+        headCircumferenceCm: m.headCircumferenceCm || undefined,
+        muacCm: m.muacCm || undefined,
+        temperatureC: m.temperatureC || undefined,
+        recordedBy: m.recordedByName,
+        notes: m.notes || undefined,
+      }))
+      
+      setMeasurements(transformed)
+      setMeasurementStatus("Growth monitoring saved. Update the Child Health Record Book and growth chart.")
+      resetMeasurementForm()
+    } catch (error) {
+      console.error("Failed to save measurement:", error)
+      setMeasurementStatus("Failed to save measurement. Please try again.")
+    } finally {
+      setIsSavingMeasurement(false)
+    }
   }
 
   const openAdministerModal = (entry: VaccineEntry) => {
@@ -440,16 +665,149 @@ export default function ChildPatientChartPage() {
     setAdministerForm((previous) => ({ ...previous, [field]: value }))
   }
 
-  const handleAdministerSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleAdministerSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!selectedDose) return
+    if (!selectedDose || isSavingVaccine) return
 
-    closeAdministerModal()
-    setSystemMessage(
-      administerForm.aefiFlag
-        ? `Dose recorded and AEFI alert sent to branch manager for ${selectedDose.vaccine}.`
-        : `${selectedDose.vaccine} recorded as administered. Vaccination history updated.`
-    )
+    setIsSavingVaccine(true)
+
+    try {
+      // Prepare the data for the API
+      const requestData: facilityApi.AdministerVaccineRequest = {
+        vaccineName: selectedDose.vaccine,
+        administeredDate: administerForm.dateAdministered,
+        batchNumber: administerForm.batchNumber,
+        expiryDate: administerForm.expiryDate || undefined,
+        administeredBy: administerForm.administeredBy,
+        vaccinationSite: administerForm.site || undefined,
+        aefiFlag: administerForm.aefiFlag,
+        notes: administerForm.aefiFlag ? administerForm.aefiNotes : undefined,
+      }
+
+      // Call the API to save the vaccination
+      await facilityApi.administerVaccine(childId, requestData)
+
+      // Refetch vaccination data to update the timeline
+      if (childProfile?.dateOfBirth) {
+        const [history, scheduled] = await Promise.all([
+          facilityApi.getVaccinationHistory(childId),
+          facilityApi.getScheduledVaccinations(childId, childProfile.dateOfBirth),
+        ])
+        
+        setVaccinationHistory(history)
+        setScheduledVaccines(scheduled)
+      }
+
+      closeAdministerModal()
+      setSystemMessage(
+        administerForm.aefiFlag
+          ? `Dose recorded and AEFI alert sent to branch manager for ${selectedDose.vaccine}.`
+          : `${selectedDose.vaccine} recorded as administered. Vaccination history updated.`
+      )
+    } catch (error) {
+      console.error("Failed to save vaccination:", error)
+      setSystemMessage("Failed to save vaccination. Please try again.")
+    } finally {
+      setIsSavingVaccine(false)
+    }
+  }
+
+  const handleSaveSessionNote = async () => {
+    if (!sessionNote.trim() || isSavingNote) return
+
+    setIsSavingNote(true)
+
+    try {
+      const requestData: facilityApi.RecordSessionNoteRequest = {
+        visitDate: new Date().toISOString().split("T")[0],
+        recordedByName: userName || "Facility Nurse",
+        notes: sessionNote.trim(),
+      }
+
+      await facilityApi.recordSessionNote(childId, requestData)
+
+      // Refetch notes from database
+      const notes = await facilityApi.getSessionNotes(childId)
+      setSessionNotes(notes)
+      setSessionNote("")
+      setSystemMessage("Session note saved successfully.")
+    } catch (error) {
+      console.error("Failed to save session note:", error)
+      setSystemMessage("Failed to save session note. Please try again.")
+    } finally {
+      setIsSavingNote(false)
+    }
+  }
+
+  const openGuardianModal = async () => {
+    if (isLoadingGuardian) return
+    
+    setIsLoadingGuardian(true)
+    try {
+      const guardian = await facilityApi.getGuardian(childId)
+      setGuardianData(guardian)
+      setGuardianForm({
+        fullName: guardian.fullName,
+        phonePrimary: guardian.phonePrimary,
+        phoneAlternate: guardian.phoneAlternate || "",
+        email: guardian.email || "",
+        addressLine1: guardian.addressLine1,
+        landmark: guardian.landmark || "",
+        city: guardian.city,
+        region: guardian.region,
+        preferredContact: guardian.preferredContact || "sms",
+      })
+      setShowGuardianModal(true)
+    } catch (error) {
+      console.error("Failed to load guardian:", error)
+      setSystemMessage("Failed to load guardian details. Please try again.")
+    } finally {
+      setIsLoadingGuardian(false)
+    }
+  }
+
+  const closeGuardianModal = () => {
+    setShowGuardianModal(false)
+    setGuardianData(null)
+  }
+
+  const handleGuardianFormChange = (field: keyof typeof guardianForm, value: string) => {
+    setGuardianForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleSaveGuardian = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!guardianData || isSavingGuardian) return
+
+    setIsSavingGuardian(true)
+
+    try {
+      const updateData: facilityApi.UpdateGuardianRequest = {
+        fullName: guardianForm.fullName,
+        phonePrimary: guardianForm.phonePrimary,
+        phoneAlternate: guardianForm.phoneAlternate || undefined,
+        email: guardianForm.email || undefined,
+        addressLine1: guardianForm.addressLine1,
+        landmark: guardianForm.landmark || undefined,
+        city: guardianForm.city,
+        region: guardianForm.region,
+        preferredContact: guardianForm.preferredContact,
+      }
+
+      await facilityApi.updateGuardian(guardianData.id, updateData)
+
+      // Refetch child profile to update displayed guardian info
+      const profile = await facilityApi.getChildProfile(childId)
+      setChildProfile(profile)
+
+      closeGuardianModal()
+      setSystemMessage("Guardian details updated successfully.")
+    } catch (error) {
+      console.error("Failed to update guardian:", error)
+      setSystemMessage("Failed to update guardian details. Please try again.")
+    } finally {
+      setIsSavingGuardian(false)
+    }
   }
 
   const renderScheduleGroup = (title: string, entries: VaccineEntry[], accent: string, empty: string) => (
@@ -519,13 +877,28 @@ export default function ChildPatientChartPage() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+        {loadError ? (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        ) : null}
+        
         {systemMessage ? (
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{systemMessage}</AlertDescription>
           </Alert>
         ) : null}
-
+        
+        {isLoadingChild ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-sm text-muted-foreground">Loading child profile...</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
         <section className="mt-6 grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
           <Card className="border-primary/40">
             <CardHeader className="space-y-2">
@@ -594,10 +967,23 @@ export default function ChildPatientChartPage() {
                     Call guardian
                   </Link>
                 </Button>
-                <Button size="sm" variant="ghost" className="gap-2" asChild>
-                  <Link href="#">
-                    <ClipboardList className="h-4 w-4" /> Update details
-                  </Link>
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  className="gap-2" 
+                  onClick={openGuardianModal}
+                  disabled={isLoadingGuardian}
+                >
+                  {isLoadingGuardian ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardList className="h-4 w-4" /> Update details
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -605,46 +991,47 @@ export default function ChildPatientChartPage() {
         </section>
 
         <section className="mt-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Vaccination timeline</h2>
-              <p className="text-sm text-muted-foreground">
-                Review overdue doses first, then capture today&apos;s vaccines before the child leaves.
-              </p>
-            </div>
-            <Button variant="outline" size="sm" className="gap-2" asChild>
-              <Link href="#">
-                <FileText className="h-4 w-4" /> Print child register summary
-              </Link>
-            </Button>
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Vaccination timeline</h2>
+            <p className="text-sm text-muted-foreground">
+              Review overdue doses first, then capture today&apos;s vaccines before the child leaves.
+            </p>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            {renderScheduleGroup(
-              "Overdue",
-              groupedSchedule.overdue,
-              "border-destructive/40",
-              "No overdue vaccines. Maintain adherence to the EPI schedule."
-            )}
-            {renderScheduleGroup(
-              "Due today",
-              groupedSchedule.dueToday,
-              "border-amber-300/50",
-              "No vaccines scheduled for today."
-            )}
-            {renderScheduleGroup(
-              "Upcoming",
-              groupedSchedule.upcoming,
-              "border-sky-300/60",
-              "Upcoming vaccines will appear here."
-            )}
-            {renderScheduleGroup(
-              "Completed",
-              groupedSchedule.completed,
-              "border-emerald-300/60",
-              "Completed vaccinations will display once recorded."
-            )}
-          </div>
+          {isLoadingVaccines ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-sm text-muted-foreground">Loading vaccination records...</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-2">
+              {renderScheduleGroup(
+                "Overdue",
+                groupedSchedule.overdue,
+                "border-destructive/40",
+                "No overdue vaccines. Maintain adherence to the EPI schedule."
+              )}
+              {renderScheduleGroup(
+                "Due today",
+                groupedSchedule.dueToday,
+                "border-amber-300/50",
+                "No vaccines scheduled for today."
+              )}
+              {renderScheduleGroup(
+                "Upcoming",
+                groupedSchedule.upcoming,
+                "border-sky-300/60",
+                "Upcoming vaccines will appear here."
+              )}
+              {renderScheduleGroup(
+                "Completed",
+                groupedSchedule.completed,
+                "border-emerald-300/60",
+                "Completed vaccinations will display once recorded."
+              )}
+            </div>
+          )}
         </section>
 
         <section className="mt-8">
@@ -822,10 +1209,19 @@ export default function ChildPatientChartPage() {
                   />
                 </div>
                 <div className="flex flex-col gap-2 md:col-span-3 md:flex-row">
-                  <Button type="submit" className="gap-2">
-                    <Scale className="h-4 w-4" /> Record measurements
+                  <Button type="submit" className="gap-2" disabled={isSavingMeasurement}>
+                    {isSavingMeasurement ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        Recording...
+                      </>
+                    ) : (
+                      <>
+                        <Scale className="h-4 w-4" /> Record measurements
+                      </>
+                    )}
                   </Button>
-                  <Button type="button" variant="ghost" onClick={resetMeasurementForm}>
+                  <Button type="button" variant="ghost" onClick={resetMeasurementForm} disabled={isSavingMeasurement}>
                     Clear
                   </Button>
                 </div>
@@ -887,12 +1283,50 @@ export default function ChildPatientChartPage() {
               </CardTitle>
               <CardDescription>Document growth monitoring, counselling, or follow-up actions.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <textarea
-                placeholder="Add session notes once the visit is complete."
-                className="min-h-[140px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">Notes sync to HQ dashboards when the backend is connected.</p>
+            <CardContent className="space-y-4">
+              <div>
+                <textarea
+                  placeholder="Add session notes once the visit is complete."
+                  className="min-h-[140px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={sessionNote}
+                  onChange={(e) => setSessionNote(e.target.value)}
+                  disabled={isSavingNote}
+                />
+                <div className="mt-2 flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">Notes are saved to the database and visible on HQ dashboards.</p>
+                  <Button 
+                    size="sm" 
+                    onClick={handleSaveSessionNote}
+                    disabled={!sessionNote.trim() || isSavingNote}
+                    className="gap-2"
+                  >
+                    {isSavingNote ? (
+                      <>
+                        <div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save note"
+                    )}
+                  </Button>
+                </div>
+              </div>
+              
+              {sessionNotes.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-foreground">Previous notes</p>
+                  <div className="max-h-[200px] space-y-2 overflow-y-auto">
+                    {sessionNotes.map((note) => (
+                      <div key={note.id} className="rounded-md border border-border bg-muted/50 p-3">
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(note.visitDate)} • {note.recordedByName}
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">{note.notes}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -912,6 +1346,8 @@ export default function ChildPatientChartPage() {
             </CardContent>
           </Card>
         </section>
+        </>
+        )}
       </main>
 
       {selectedDose ? (
@@ -968,11 +1404,13 @@ export default function ChildPatientChartPage() {
                     onChange={(event) => handleAdministerChange("site", event.target.value)}
                   >
                     <option value="">Select site</option>
-                    <option value="left thigh">Left thigh</option>
-                    <option value="right thigh">Right thigh</option>
-                    <option value="left arm">Left arm</option>
-                    <option value="right arm">Right arm</option>
+                    <option value="left-thigh">Left thigh</option>
+                    <option value="right-thigh">Right thigh</option>
+                    <option value="left-arm-upper">Left arm (upper)</option>
+                    <option value="right-arm-upper">Right arm (upper)</option>
                     <option value="oral">Oral</option>
+                    <option value="intranasal">Intranasal</option>
+                    <option value="other">Other</option>
                   </select>
                 </div>
               </div>
@@ -1021,13 +1459,206 @@ export default function ChildPatientChartPage() {
                   Cold chain check: confirm vial was within +2°C to +8°C at administration.
                 </span>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={closeAdministerModal}>
+                  <Button type="button" variant="outline" onClick={closeAdministerModal} disabled={isSavingVaccine}>
                     Cancel
                   </Button>
-                  <Button type="submit" className="gap-2">
-                    <CheckCircle2 className="h-4 w-4" /> Save dose
+                  <Button type="submit" className="gap-2" disabled={isSavingVaccine}>
+                    {isSavingVaccine ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-4 w-4" /> Save dose
+                      </>
+                    )}
                   </Button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Guardian Edit Modal */}
+      {showGuardianModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-lg bg-background p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Update Guardian Details</h3>
+              <button
+                type="button"
+                onClick={closeGuardianModal}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveGuardian} className="space-y-4">
+              <div>
+                <label htmlFor="guardian-fullName" className="block text-sm font-medium">
+                  Full Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="guardian-fullName"
+                  type="text"
+                  value={guardianForm.fullName}
+                  onChange={(e) => handleGuardianFormChange("fullName", e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="guardian-phonePrimary" className="block text-sm font-medium">
+                    Primary Phone <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="guardian-phonePrimary"
+                    type="tel"
+                    value={guardianForm.phonePrimary}
+                    onChange={(e) => handleGuardianFormChange("phonePrimary", e.target.value)}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="guardian-phoneAlternate" className="block text-sm font-medium">
+                    Alternate Phone
+                  </label>
+                  <input
+                    id="guardian-phoneAlternate"
+                    type="tel"
+                    value={guardianForm.phoneAlternate}
+                    onChange={(e) => handleGuardianFormChange("phoneAlternate", e.target.value)}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="guardian-email" className="block text-sm font-medium">
+                  Email Address
+                </label>
+                <input
+                  id="guardian-email"
+                  type="email"
+                  value={guardianForm.email}
+                  onChange={(e) => handleGuardianFormChange("email", e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="guardian-addressLine1" className="block text-sm font-medium">
+                  Address <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="guardian-addressLine1"
+                  type="text"
+                  value={guardianForm.addressLine1}
+                  onChange={(e) => handleGuardianFormChange("addressLine1", e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="guardian-landmark" className="block text-sm font-medium">
+                  Landmark
+                </label>
+                <input
+                  id="guardian-landmark"
+                  type="text"
+                  value={guardianForm.landmark}
+                  onChange={(e) => handleGuardianFormChange("landmark", e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="Near the market, opposite school..."
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="guardian-city" className="block text-sm font-medium">
+                    City/Town <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="guardian-city"
+                    type="text"
+                    value={guardianForm.city}
+                    onChange={(e) => handleGuardianFormChange("city", e.target.value)}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="guardian-region" className="block text-sm font-medium">
+                    Region <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="guardian-region"
+                    value={guardianForm.region}
+                    onChange={(e) => handleGuardianFormChange("region", e.target.value)}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    required
+                  >
+                    <option value="">Select region...</option>
+                    <option value="Greater Accra">Greater Accra</option>
+                    <option value="Ashanti">Ashanti</option>
+                    <option value="Western">Western</option>
+                    <option value="Eastern">Eastern</option>
+                    <option value="Central">Central</option>
+                    <option value="Northern">Northern</option>
+                    <option value="Volta">Volta</option>
+                    <option value="Bono">Bono</option>
+                    <option value="Bono East">Bono East</option>
+                    <option value="Ahafo">Ahafo</option>
+                    <option value="Upper East">Upper East</option>
+                    <option value="Upper West">Upper West</option>
+                    <option value="North East">North East</option>
+                    <option value="Savannah">Savannah</option>
+                    <option value="Oti">Oti</option>
+                    <option value="Western North">Western North</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="guardian-preferredContact" className="block text-sm font-medium">
+                  Preferred Contact Method
+                </label>
+                <select
+                  id="guardian-preferredContact"
+                  value={guardianForm.preferredContact}
+                  onChange={(e) => handleGuardianFormChange("preferredContact", e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="sms">SMS</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="email">Email</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-border pt-4">
+                <Button type="button" variant="outline" onClick={closeGuardianModal} disabled={isSavingGuardian}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="gap-2" disabled={isSavingGuardian}>
+                  {isSavingGuardian ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4" /> Save Changes
+                    </>
+                  )}
+                </Button>
               </div>
             </form>
           </div>

@@ -1,6 +1,9 @@
 import {
   Controller,
   Get,
+  Post,
+  Put,
+  Body,
   Query,
   Param,
   UseGuards,
@@ -8,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FacilityService } from './facility.service';
-import { SearchChildDto } from './dto';
+import { SearchChildDto, AdministerVaccineDto, RecordGrowthMeasurementDto, RecordSessionNoteDto, UpdateGuardianDto } from './dto';
 
 @Controller('facility')
 @UseGuards(AuthGuard('jwt'))
@@ -58,5 +61,87 @@ export class FacilityController {
       childId,
       dateOfBirth,
     );
+  }
+
+  /**
+   * POST /api/facility/children/:childId/vaccinations
+   * Record a vaccination event (administer vaccine)
+   */
+  @Post('children/:childId/vaccinations')
+  async administerVaccine(
+    @Param('childId') childId: string,
+    @Body() dto: AdministerVaccineDto,
+    @Request() req: any,
+  ) {
+    return this.facilityService.administerVaccine(childId, dto, req.user.id);
+  }
+
+  /**
+   * POST /api/facility/children/:childId/measurements
+   * Record a growth monitoring measurement
+   */
+  @Post('children/:childId/measurements')
+  async recordGrowthMeasurement(
+    @Param('childId') childId: string,
+    @Body() dto: RecordGrowthMeasurementDto,
+    @Request() req: any,
+  ) {
+    return this.facilityService.recordGrowthMeasurement(
+      childId,
+      dto,
+      req.user.id,
+    );
+  }
+
+  /**
+   * GET /api/facility/children/:childId/measurements
+   * Get growth monitoring history for a child
+   */
+  @Get('children/:childId/measurements')
+  async getGrowthMonitoringHistory(@Param('childId') childId: string) {
+    return this.facilityService.getGrowthMonitoringHistory(childId);
+  }
+
+  /**
+   * POST /api/facility/children/:childId/session-notes
+   * Record a clinic session note
+   */
+  @Post('children/:childId/session-notes')
+  async recordSessionNote(
+    @Param('childId') childId: string,
+    @Body() dto: RecordSessionNoteDto,
+    @Request() req: any,
+  ) {
+    return this.facilityService.recordSessionNote(childId, dto, req.user.id);
+  }
+
+  /**
+   * GET /api/facility/children/:childId/session-notes
+   * Get clinic session notes for a child
+   */
+  @Get('children/:childId/session-notes')
+  async getSessionNotes(@Param('childId') childId: string) {
+    return this.facilityService.getSessionNotes(childId);
+  }
+
+  /**
+   * GET /api/facility/children/:childId/guardian
+   * Get guardian details for a child
+   */
+  @Get('children/:childId/guardian')
+  async getGuardian(@Param('childId') childId: string) {
+    return this.facilityService.getGuardianByChildId(childId);
+  }
+
+  /**
+   * PUT /api/facility/guardians/:guardianId
+   * Update guardian details
+   */
+  @Put('guardians/:guardianId')
+  async updateGuardian(
+    @Param('guardianId') guardianId: string,
+    @Body() dto: UpdateGuardianDto,
+  ) {
+    return this.facilityService.updateGuardian(guardianId, dto);
   }
 }

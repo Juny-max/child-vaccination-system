@@ -264,10 +264,10 @@ export class AuthService {
    * Logout user (optional - for token blacklisting in production)
    */
   async logout(userId: string): Promise<void> {
-    // Create audit log for logout
+    // Create audit log for logout using 'update' action
     await this.databaseService.createAuditLog(
       userId,
-      'LOGOUT',
+      'update',
       'users',
       userId,
       { after: { logout_time: new Date().toISOString() } }

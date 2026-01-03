@@ -17,6 +17,91 @@ export class SearchChildDto {
   query: string; // Can be child name, CVCC ID, or phone number
 }
 
+/**
+ * Administer vaccine request
+ */
+export class AdministerVaccineDto {
+  @IsString()
+  @IsNotEmpty()
+  vaccineName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  administeredDate: string; // ISO date string
+
+  @IsString()
+  @IsNotEmpty()
+  batchNumber: string;
+
+  @IsString()
+  @IsOptional()
+  expiryDate?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  administeredBy: string;
+
+  @IsString()
+  @IsOptional()
+  vaccinationSite?: string;
+
+  @IsOptional()
+  aefiFlag?: boolean;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+/**
+ * Record growth monitoring measurement request
+ */
+export class RecordGrowthMeasurementDto {
+  @IsString()
+  @IsNotEmpty()
+  measurementDate: string; // ISO date string
+
+  @IsString()
+  @IsNotEmpty()
+  recordedByName: string;
+
+  @IsNotEmpty()
+  weightKg: number;
+
+  @IsOptional()
+  lengthCm?: number;
+
+  @IsOptional()
+  headCircumferenceCm?: number;
+
+  @IsOptional()
+  muacCm?: number;
+
+  @IsOptional()
+  temperatureC?: number;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+/**
+ * Record clinic session note request
+ */
+export class RecordSessionNoteDto {
+  @IsString()
+  @IsNotEmpty()
+  visitDate: string; // ISO date string
+
+  @IsString()
+  @IsNotEmpty()
+  recordedByName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  notes: string;
+}
+
 // ============================================================================
 // RESPONSE DTOs
 // ============================================================================
@@ -62,6 +147,7 @@ export class FacilityChildProfileDto {
   guardianPhone: string;
   guardianEmail: string | null;
   guardianAddress: string | null;
+  guardianPreferredContact: 'sms' | 'email' | 'whatsapp';
 
   // Facility info
   facilityId: string;
@@ -107,3 +193,91 @@ export class ScheduledVaccineDto {
   daysOverdue: number;
   isMandatory: boolean;
 }
+
+/**
+ * Growth monitoring measurement response
+ */
+export class GrowthMeasurementDto {
+  id: string;
+  childId: string;
+  measurementDate: string;
+  weightKg: number | null;
+  lengthCm: number | null;
+  headCircumferenceCm: number | null;
+  muacCm: number | null;
+  temperatureC: number | null;
+  recordedByName: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+/**
+ * Clinic session note response
+ */
+export class SessionNoteDto {
+  id: string;
+  childId: string;
+  visitDate: string;
+  recordedByName: string;
+  notes: string;
+  createdAt: string;
+}
+
+/**
+ * Update guardian details request
+ */
+export class UpdateGuardianDto {
+  @IsString()
+  @IsNotEmpty()
+  fullName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  phonePrimary: string;
+
+  @IsString()
+  @IsOptional()
+  phoneAlternate?: string;
+
+  @IsString()
+  @IsOptional()
+  email?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  addressLine1: string;
+
+  @IsString()
+  @IsOptional()
+  landmark?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  city: string;
+
+  @IsString()
+  @IsNotEmpty()
+  region: string;
+
+  @IsString()
+  @IsOptional()
+  preferredContact?: 'sms' | 'email' | 'whatsapp';
+}
+
+/**
+ * Guardian details response
+ */
+export class GuardianDto {
+  id: string;
+  fullName: string;
+  phonePrimary: string;
+  phoneAlternate: string | null;
+  email: string | null;
+  addressLine1: string;
+  landmark: string | null;
+  city: string;
+  region: string;
+  preferredContact: 'sms' | 'email' | 'whatsapp';
+}
+
+

@@ -5,6 +5,13 @@ import {
   FacilityChildProfileDto,
   VaccinationEventDto,
   ScheduledVaccineDto,
+  AdministerVaccineDto,
+  RecordGrowthMeasurementDto,
+  GrowthMeasurementDto,
+  RecordSessionNoteDto,
+  SessionNoteDto,
+  UpdateGuardianDto,
+  GuardianDto,
 } from './dto';
 
 @Injectable()
@@ -20,28 +27,32 @@ export class FacilityService {
   ): Promise<ChildSearchResultDto[]> {
     const trimmedQuery = query.trim().toLowerCase();
 
-    // Search in children table with joins to guardians and facilities
+    // Search in children table with joins using child_guardian pivot table
     const { data: children, error } = await this.db.supabase
       .from('children')
       .select(`
         id,
-        child_id,
-        first_name,
-        last_name,
+        cvcc_id,
+        full_name,
         date_of_birth,
         gender,
-        guardian:guardians (
-          id,
-          name,
-          primary_phone
+        primary_facility_id,
+        child_guardian!inner (
+          guardian_id,
+          is_primary,
+          guardians (
+            id,
+            full_name,
+            phone_primary
+          )
         ),
-        branch:branches (
+        branches:primary_facility_id (
           id,
           name
         )
       `)
       .or(
-        `child_id.ilike.%${trimmedQuery}%,first_name.ilike.%${trimmedQuery}%,last_name.ilike.%${trimmedQuery}%`,
+        `cvcc_id.ilike.%${trimmedQuery}%,full_name.ilike.%${trimmedQuery}%`,
       )
       .limit(10);
 
@@ -52,49 +63,73 @@ export class FacilityService {
       .from('guardians')
       .select(`
         id,
-        name,
-        primary_phone,
-        children (
-          id,
+        full_name,
+        phone_primary,
+        child_guardian!inner (
           child_id,
-          first_name,
-          last_name,
-          date_of_birth,
-          gender,
-          branch:branches (
+          is_primary,
+          children (
             id,
-            name
+            cvcc_id,
+            full_name,
+            date_of_birth,
+            gender,
+            primary_facility_id,
+            branches:primary_facility_id (
+              id,
+              name
+            )
           )
         )
       `)
-      .ilike('primary_phone', `%${trimmedQuery}%`)
+      .ilike('phone_primary', `%${trimmedQuery}%`)
       .limit(10);
 
     if (phoneError) throw new Error(phoneError.message);
 
-    // Combine results
+    // Combine results and normalize structure
     const allChildren: any[] = [];
 
     // Add direct child matches
     if (children) {
-      allChildren.push(...children);
+      children.forEach((child: any) => {
+        // Get primary guardian from child_guardian array
+        const primaryGuardianLink = Array.isArray(child.child_guardian)
+          ? child.child_guardian.find((cg: any) => cg.is_primary)
+          : child.child_guardian;
+        
+        const guardianData = primaryGuardianLink?.guardians;
+        
+        allChildren.push({
+          ...child,
+          guardian: guardianData ? {
+            id: guardianData.id,
+            full_name: guardianData.full_name,
+            phone_primary: guardianData.phone_primary,
+          } : null,
+        });
+      });
     }
 
     // Add children found via guardian phone
     if (byPhone) {
       byPhone.forEach((guardian: any) => {
-        if (guardian.children && Array.isArray(guardian.children)) {
-          guardian.children.forEach((child: any) => {
+        const childGuardianLinks = Array.isArray(guardian.child_guardian) 
+          ? guardian.child_guardian 
+          : [guardian.child_guardian];
+          
+        childGuardianLinks.forEach((link: any) => {
+          if (link?.children) {
             allChildren.push({
-              ...child,
+              ...link.children,
               guardian: {
                 id: guardian.id,
-                name: guardian.name,
-                primary_phone: guardian.primary_phone,
+                full_name: guardian.full_name,
+                phone_primary: guardian.phone_primary,
               },
             });
-          });
-        }
+          }
+        });
       });
     }
 
@@ -133,17 +168,20 @@ export class FacilityService {
           vaccinationStatus = 'Complete';
         }
 
+        // Get branch name
+        const branchName = child.branches?.name || 'Unknown';
+
         return {
           id: child.id,
-          childId: child.child_id,
-          name: `${child.first_name} ${child.last_name}`,
+          childId: child.cvcc_id,
+          name: child.full_name,
           dateOfBirth: child.date_of_birth,
           age,
           gender: child.gender || 'Unknown',
-          guardianName: child.guardian?.name || 'Unknown',
-          guardianPhone: child.guardian?.primary_phone || 'N/A',
+          guardianName: child.guardian?.full_name || 'Unknown',
+          guardianPhone: child.guardian?.phone_primary || 'N/A',
           lastVisit: lastVaccination?.administered_date || null,
-          facilityName: child.branch?.name || 'Unknown',
+          facilityName: branchName,
           vaccinationStatus,
           upcomingVaccines: upcomingCount,
           overdueVaccines: overdueCount,
@@ -162,24 +200,33 @@ export class FacilityService {
       .from('children')
       .select(`
         id,
-        child_id,
-        first_name,
-        last_name,
+        cvcc_id,
+        full_name,
         date_of_birth,
         gender,
-        weight,
-        length,
+        birth_weight,
+        birth_length,
         blood_type,
-        profile_photo,
+        profile_photo_url,
         created_at,
-        guardian:guardians (
-          id,
-          name,
-          primary_phone,
-          email,
-          address
+        primary_facility_id,
+        child_guardian (
+          guardian_id,
+          is_primary,
+          relationship,
+          guardians (
+            id,
+            full_name,
+            phone_primary,
+            email,
+            address_line1,
+            landmark,
+            city,
+            region,
+            preferred_contact
+          )
         ),
-        branch:branches (
+        branches:primary_facility_id (
           id,
           name
         )
@@ -188,10 +235,21 @@ export class FacilityService {
       .single();
 
     if (error || !child) {
-      throw new NotFoundException('Child not found');
+      console.error('Error fetching child profile:', error);
+      throw new NotFoundException(`Child not found: ${error?.message || 'Unknown error'}`);
     }
 
     const age = this.calculateAge(child.date_of_birth);
+
+    // Get primary guardian
+    const primaryGuardianLink = Array.isArray(child.child_guardian)
+      ? child.child_guardian.find((cg: any) => cg.is_primary)
+      : child.child_guardian;
+    
+    const guardianData = primaryGuardianLink?.guardians;
+    
+    // Handle branch data (could be array or object)
+    const branchData = Array.isArray(child.branches) ? child.branches[0] : child.branches;
 
     // Get vaccination counts
     const { data: completed } = await this.db.supabase
@@ -219,28 +277,30 @@ export class FacilityService {
       ?.filter((v) => !v.isOverdue)
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
 
-    // Extract guardian and branch (they come as objects from the join)
-    const guardian = child.guardian as any;
-    const branch = child.branch as any;
-
     return {
       id: child.id,
-      childId: child.child_id,
-      name: `${child.first_name} ${child.last_name}`,
+      childId: child.cvcc_id,
+      name: child.full_name,
       dateOfBirth: child.date_of_birth,
       age,
       gender: child.gender || 'Unknown',
-      weight: child.weight,
-      length: child.length,
+      weight: child.birth_weight,
+      length: child.birth_length,
       bloodType: child.blood_type,
-      profilePhoto: child.profile_photo,
-      guardianId: guardian?.id,
-      guardianName: guardian?.name || 'Unknown',
-      guardianPhone: guardian?.primary_phone || 'N/A',
-      guardianEmail: guardian?.email,
-      guardianAddress: guardian?.address,
-      facilityId: branch?.id,
-      facilityName: branch?.name || 'Unknown',
+      profilePhoto: child.profile_photo_url,
+      guardianId: (guardianData as any)?.id,
+      guardianName: (guardianData as any)?.full_name || 'Unknown',
+      guardianPhone: (guardianData as any)?.phone_primary || 'N/A',
+      guardianEmail: (guardianData as any)?.email,
+      guardianAddress: [
+        (guardianData as any)?.address_line1,
+        (guardianData as any)?.landmark,
+        (guardianData as any)?.city,
+        (guardianData as any)?.region,
+      ].filter(Boolean).join(', ') || 'Not provided',
+      guardianPreferredContact: (guardianData as any)?.preferred_contact || 'sms',
+      facilityId: (branchData as any)?.id,
+      facilityName: (branchData as any)?.name || 'Unknown',
       registrationDate: child.created_at,
       lastVisit: lastVaccination?.administered_date || null,
       vaccinationsCompleted: completed?.length || 0,
@@ -297,6 +357,81 @@ export class FacilityService {
   }
 
   /**
+   * Administer a vaccine to a child
+   */
+  async administerVaccine(
+    childId: string,
+    dto: AdministerVaccineDto,
+    userId: string,
+  ): Promise<VaccinationEventDto> {
+    // Get vaccine info from the database
+    const { data: vaccine, error: vaccineError } = await this.db.supabase
+      .from('vaccines')
+      .select('id, name, code')
+      .eq('name', dto.vaccineName)
+      .single();
+
+    if (vaccineError || !vaccine) {
+      throw new NotFoundException(`Vaccine ${dto.vaccineName} not found`);
+    }
+
+    // Create vaccination event
+    const { data: event, error } = await this.db.supabase
+      .from('vaccination_events')
+      .insert({
+        child_id: childId,
+        vaccine_id: vaccine.id,
+        dose_number: 1, // You might want to calculate this based on history
+        administered_date: dto.administeredDate,
+        administered_by_user_id: userId,
+        batch_number: dto.batchNumber,
+        lot_number: dto.batchNumber, // Using batch as lot for now
+        expiry_date: dto.expiryDate || null,
+        vaccination_site: dto.vaccinationSite || null,
+        status: 'completed',
+        notes: dto.aefiFlag ? null : (dto.notes || null), // Notes go to AEFI report if AEFI flagged
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to record vaccination: ${error.message}`);
+    }
+
+    // If AEFI flag is set, create an AEFI report
+    if (dto.aefiFlag && event) {
+      await this.db.supabase
+        .from('aefi_reports')
+        .insert({
+          vaccination_event_id: event.id,
+          child_id: childId,
+          reported_by_user_id: userId,
+          symptoms: ['Reported during vaccination'],
+          severity: 'mild', // Default severity, should be updated by medical staff
+          onset_date: dto.administeredDate,
+          status: 'reported',
+          notes: dto.notes || 'AEFI flagged during vaccination administration',
+          notified_branch_nurse: false,
+        });
+    }
+
+    return {
+      id: event.id,
+      vaccineId: event.vaccine_id,
+      vaccineName: vaccine.name,
+      vaccineCode: vaccine.code,
+      doseNumber: event.dose_number,
+      administeredDate: event.administered_date,
+      administeredBy: dto.administeredBy,
+      batchNumber: event.batch_number,
+      lotNumber: event.lot_number,
+      vaccinationSite: event.vaccination_site,
+      status: event.status,
+      notes: event.notes,
+    };
+  }
+
+  /**
    * Calculate age from date of birth
    */
   private calculateAge(dateOfBirth: string): string {
@@ -318,5 +453,244 @@ export class FacilityService {
     }
 
     return `${years}y ${remainingMonths}m`;
+  }
+
+  /**
+   * Record a growth monitoring measurement for a child
+   */
+  async recordGrowthMeasurement(
+    childId: string,
+    dto: RecordGrowthMeasurementDto,
+    userId: string,
+    facilityId?: string,
+  ): Promise<GrowthMeasurementDto> {
+    const { data: measurement, error } = await this.db.supabase
+      .from('growth_monitoring')
+      .insert({
+        child_id: childId,
+        measurement_date: dto.measurementDate,
+        weight_kg: dto.weightKg,
+        length_cm: dto.lengthCm || null,
+        head_circumference_cm: dto.headCircumferenceCm || null,
+        muac_cm: dto.muacCm || null,
+        temperature_c: dto.temperatureC || null,
+        recorded_by_user_id: userId,
+        recorded_by_name: dto.recordedByName,
+        facility_id: facilityId || null,
+        notes: dto.notes || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to record measurement: ${error.message}`);
+    }
+
+    return {
+      id: measurement.id,
+      childId: measurement.child_id,
+      measurementDate: measurement.measurement_date,
+      weightKg: measurement.weight_kg,
+      lengthCm: measurement.length_cm,
+      headCircumferenceCm: measurement.head_circumference_cm,
+      muacCm: measurement.muac_cm,
+      temperatureC: measurement.temperature_c,
+      recordedByName: measurement.recorded_by_name,
+      notes: measurement.notes,
+      createdAt: measurement.created_at,
+    };
+  }
+
+  /**
+   * Get growth monitoring history for a child
+   */
+  async getGrowthMonitoringHistory(
+    childId: string,
+  ): Promise<GrowthMeasurementDto[]> {
+    const { data: measurements, error } = await this.db.supabase
+      .from('growth_monitoring')
+      .select('*')
+      .eq('child_id', childId)
+      .order('measurement_date', { ascending: false });
+
+    if (error) {
+      throw new Error(
+        `Failed to fetch growth monitoring history: ${error.message}`,
+      );
+    }
+
+    return measurements.map((m) => ({
+      id: m.id,
+      childId: m.child_id,
+      measurementDate: m.measurement_date,
+      weightKg: m.weight_kg,
+      lengthCm: m.length_cm,
+      headCircumferenceCm: m.head_circumference_cm,
+      muacCm: m.muac_cm,
+      temperatureC: m.temperature_c,
+      recordedByName: m.recorded_by_name,
+      notes: m.notes,
+      createdAt: m.created_at,
+    }));
+  }
+
+  /**
+   * Record a clinic session note for a child visit
+   */
+  async recordSessionNote(
+    childId: string,
+    dto: RecordSessionNoteDto,
+    userId: string,
+    facilityId?: string,
+  ): Promise<SessionNoteDto> {
+    const { data: note, error } = await this.db.supabase
+      .from('clinic_session_notes')
+      .insert({
+        child_id: childId,
+        facility_id: facilityId || null,
+        visit_date: dto.visitDate,
+        recorded_by_user_id: userId,
+        recorded_by_name: dto.recordedByName,
+        notes: dto.notes,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to record session note: ${error.message}`);
+    }
+
+    return {
+      id: note.id,
+      childId: note.child_id,
+      visitDate: note.visit_date,
+      recordedByName: note.recorded_by_name,
+      notes: note.notes,
+      createdAt: note.created_at,
+    };
+  }
+
+  /**
+   * Get clinic session notes for a child
+   */
+  async getSessionNotes(childId: string): Promise<SessionNoteDto[]> {
+    const { data: notes, error } = await this.db.supabase
+      .from('clinic_session_notes')
+      .select('*')
+      .eq('child_id', childId)
+      .order('visit_date', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to fetch session notes: ${error.message}`);
+    }
+
+    return notes.map((n) => ({
+      id: n.id,
+      childId: n.child_id,
+      visitDate: n.visit_date,
+      recordedByName: n.recorded_by_name,
+      notes: n.notes,
+      createdAt: n.created_at,
+    }));
+  }
+
+  /**
+   * Get guardian details for a child
+   */
+  async getGuardianByChildId(childId: string): Promise<GuardianDto> {
+    // Get guardian through child_guardian pivot table
+    const { data: childGuardian, error: pivotError } = await this.db.supabase
+      .from('child_guardian')
+      .select(`
+        guardian_id,
+        guardians (
+          id,
+          full_name,
+          phone_primary,
+          phone_alternate,
+          email,
+          address_line1,
+          landmark,
+          city,
+          region,
+          preferred_contact
+        )
+      `)
+      .eq('child_id', childId)
+      .eq('is_primary', true)
+      .single();
+
+    if (pivotError) {
+      console.error('Error fetching guardian:', pivotError);
+      throw new NotFoundException(`Guardian for child ${childId} not found: ${pivotError.message}`);
+    }
+
+    if (!childGuardian) {
+      throw new NotFoundException(`No primary guardian found for child ${childId}`);
+    }
+
+    // guardians might be an object or array depending on the relationship
+    const guardian = Array.isArray(childGuardian.guardians) 
+      ? childGuardian.guardians[0] 
+      : childGuardian.guardians;
+    
+    if (!guardian) {
+      throw new NotFoundException(`Guardian data not found for child ${childId}`);
+    }
+
+    return {
+      id: guardian.id,
+      fullName: guardian.full_name,
+      phonePrimary: guardian.phone_primary,
+      phoneAlternate: guardian.phone_alternate,
+      email: guardian.email,
+      addressLine1: guardian.address_line1,
+      landmark: guardian.landmark,
+      city: guardian.city,
+      region: guardian.region,
+      preferredContact: guardian.preferred_contact || 'sms',
+    };
+  }
+
+  /**
+   * Update guardian details
+   */
+  async updateGuardian(
+    guardianId: string,
+    dto: UpdateGuardianDto,
+  ): Promise<GuardianDto> {
+    const { data: guardian, error } = await this.db.supabase
+      .from('guardians')
+      .update({
+        full_name: dto.fullName,
+        phone_primary: dto.phonePrimary,
+        phone_alternate: dto.phoneAlternate || null,
+        email: dto.email || null,
+        address_line1: dto.addressLine1,
+        landmark: dto.landmark || null,
+        city: dto.city,
+        region: dto.region,
+        preferred_contact: dto.preferredContact || 'sms',
+      })
+      .eq('id', guardianId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update guardian: ${error.message}`);
+    }
+
+    return {
+      id: guardian.id,
+      fullName: guardian.full_name,
+      phonePrimary: guardian.phone_primary,
+      phoneAlternate: guardian.phone_alternate,
+      email: guardian.email,
+      addressLine1: guardian.address_line1,
+      landmark: guardian.landmark,
+      city: guardian.city,
+      region: guardian.region,
+      preferredContact: guardian.preferred_contact || 'sms',
+    };
   }
 }
