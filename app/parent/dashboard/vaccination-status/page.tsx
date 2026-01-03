@@ -1,21 +1,44 @@
 'use client'
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { vaccinationRecords } from "../data"
-import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, Syringe } from "lucide-react"
+import { useParentDashboard } from "../dashboard-context"
+import * as parentApi from "@/lib/api/parent"
+import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, Loader2, Syringe } from "lucide-react"
 
 export default function VaccinationStatusPage() {
+  const { children, getChildVaccinations, isLoading: isLoadingContext } = useParentDashboard()
+  const [vaccinations, setVaccinations] = useState<parentApi.VaccinationRecord[]>([])
+  const [isLoadingVaccinations, setIsLoadingVaccinations] = useState(false)
   const [isBookingOpen, setIsBookingOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
 
-  const complete = vaccinationRecords.filter((record) => record.status === "Complete")
-  const onTrack = vaccinationRecords.filter((record) => record.status === "On Track")
-  const upcoming = vaccinationRecords.filter((record) => record.status === "Upcoming")
+  // Load vaccinations for primary child
+  useEffect(() => {
+    async function loadVaccinations() {
+      if (children.length === 0) return
+      setIsLoadingVaccinations(true)
+      try {
+        const data = await getChildVaccinations(children[0].id)
+        setVaccinations(data)
+      } catch (error) {
+        console.error('Failed to load vaccinations:', error)
+      } finally {
+        setIsLoadingVaccinations(false)
+      }
+    }
+    loadVaccinations()
+  }, [children, getChildVaccinations])
+
+  const complete = vaccinations.filter((record) => record.status === "Completed")
+  const scheduled = vaccinations.filter((record) => record.status === "Scheduled")
+  const missed = vaccinations.filter((record) => record.status === "Missed")
+
+  const isLoading = isLoadingContext || isLoadingVaccinations
 
   const handleLaunchBooking = () => {
     setIsBookingOpen(true)
@@ -50,8 +73,8 @@ export default function VaccinationStatusPage() {
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <Stats label="Completed" value={`${complete.length}`} icon={<CheckCircle2 className="size-5 text-primary" />} />
-          <Stats label="On track" value={`${onTrack.length}`} icon={<Clock3 className="size-5 text-secondary" />} />
-          <Stats label="Upcoming" value={`${upcoming.length}`} icon={<CalendarPlus className="size-5 text-muted-foreground" />} />
+          <Stats label="Scheduled" value={`${scheduled.length}`} icon={<Clock3 className="size-5 text-secondary" />} />
+          <Stats label="Missed" value={`${missed.length}`} icon={<AlertTriangle className="size-5 text-destructive" />} />
         </CardContent>
       </Card>
 
@@ -61,23 +84,35 @@ export default function VaccinationStatusPage() {
           <CardDescription>Each entry includes completion status and due dates.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {vaccinationRecords.map((record) => (
-            <div
-              key={`${record.vaccine}-${record.dose}`}
-              className="flex flex-col gap-3 rounded-lg border border-border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div>
-                <p className="text-base font-semibold text-foreground">{record.vaccine}</p>
-                <p className="text-xs text-muted-foreground">Dose {record.dose}</p>
-              </div>
-              <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-6">
-                <Badge className="capitalize" variant={getStatusVariant(record.status)}>
-                  {record.status}
-                </Badge>
-                <p className="text-xs text-muted-foreground">{record.date}</p>
-              </div>
+          {isLoading ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="size-8 animate-spin text-primary" />
             </div>
-          ))}
+          ) : vaccinations.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">
+              No vaccination records found. Records will appear here after your child receives their first vaccine.
+            </div>
+          ) : (
+            vaccinations.map((record) => (
+              <div
+                key={record.id}
+                className="flex flex-col gap-3 rounded-lg border border-border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="text-base font-semibold text-foreground">{record.vaccine}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Dose {record.doseNumber} • {record.facilityName}
+                  </p>
+                </div>
+                <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-6">
+                  <Badge className="capitalize" variant={getStatusVariant(record.status)}>
+                    {record.status}
+                  </Badge>
+                  <p className="text-xs text-muted-foreground">{record.administeredDate}</p>
+                </div>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
 
@@ -173,7 +208,8 @@ function Stats({ label, value, icon }: StatsProps) {
 }
 
 function getStatusVariant(status: string) {
-  if (status === "Complete") return "default" as const
-  if (status === "On Track") return "secondary" as const
+  if (status === "Completed") return "default" as const
+  if (status === "Scheduled") return "secondary" as const
+  if (status === "Missed") return "destructive" as const
   return "outline" as const
 }

@@ -41,10 +41,15 @@ export interface AuthResponse {
  * Login with email and password
  */
 export async function login(credentials: LoginRequest): Promise<AuthResponse> {
+  // Clear any existing token before login to prevent 401 errors
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('authToken');
+  }
+  
   const response = await apiRequest<AuthResponse>('/auth/login', {
     method: 'POST',
     body: JSON.stringify(credentials),
-  });
+  }, true); // Skip auth redirect for login endpoint
   
   // Store auth data in localStorage
   if (typeof window !== 'undefined') {

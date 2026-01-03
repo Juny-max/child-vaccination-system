@@ -1,24 +1,27 @@
 'use client'
 
 import { useEffect, useMemo, useState } from "react"
-import { AlertTriangle, CalendarDays, ClipboardList, PhoneCall } from "lucide-react"
+import { AlertTriangle, CalendarDays, ClipboardList, Loader2, PhoneCall } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { childProfiles, missedVaccinations, type MissedVaccination } from "../data"
+import { useParentDashboard } from "../dashboard-context"
+import * as parentApi from "@/lib/api/parent"
 
 type VisitPreference = "facility" | "chw"
+type MissedVaccination = parentApi.MissedVaccination
 
 export default function MissedVaccinationsPage() {
-  const primaryChild = childProfiles[0]
+  const { children, missedVaccinations, isLoading } = useParentDashboard()
+  const primaryChild = children[0]
 
   const monthsOld = useMemo(() => calculateMonthsOld(primaryChild?.dateOfBirth), [primaryChild?.dateOfBirth])
   const isCHWRecommended = monthsOld !== null && monthsOld <= 24
 
   const [selectedVaccine, setSelectedVaccine] = useState<MissedVaccination | null>(null)
   const [visitPreference, setVisitPreference] = useState<VisitPreference>(isCHWRecommended ? "chw" : "facility")
-  const [preferredFacility, setPreferredFacility] = useState(primaryChild?.primaryFacility ?? "Nearest district clinic")
+  const [preferredFacility, setPreferredFacility] = useState(primaryChild?.facilityName ?? "Nearest district clinic")
   const [preferredDate, setPreferredDate] = useState("")
   const [preferredTime, setPreferredTime] = useState("")
   const [contactNumber, setContactNumber] = useState("")
@@ -33,13 +36,13 @@ export default function MissedVaccinationsPage() {
 
     const recommended = isCHWRecommended && selectedVaccine.daysOverdue >= 10 ? "chw" : "facility"
     setVisitPreference(recommended)
-    setPreferredFacility(primaryChild?.primaryFacility ?? "Nearest district clinic")
+    setPreferredFacility(primaryChild?.facilityName ?? "Nearest district clinic")
     setPreferredDate("")
     setPreferredTime("")
     setContactNumber("")
     setReason("")
     setConfirmation(null)
-  }, [selectedVaccine, isCHWRecommended, primaryChild?.primaryFacility])
+  }, [selectedVaccine, isCHWRecommended, primaryChild?.facilityName])
 
   const minDate = useMemo(() => new Date().toISOString().split("T")[0], [])
 
@@ -72,37 +75,51 @@ export default function MissedVaccinationsPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {missedVaccinations.map((item) => (
-          <Card key={item.vaccine} className="border border-dashed border-destructive/40">
-            <CardHeader>
-              <CardTitle className="text-lg">{item.vaccine}</CardTitle>
-              <CardDescription>Due on {item.due}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between rounded-lg bg-destructive/10 px-3 py-2">
-                <Badge variant="destructive">{item.daysOverdue} days overdue</Badge>
-                <span className="text-xs text-muted-foreground">Notify your nurse</span>
-              </div>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>• Ensure your child is not running a fever before the make-up dose.</p>
-                <p>• Bring the child health record booklet for updates.</p>
-                <p>• Notify staff if your child had a reaction to previous doses.</p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button className="gap-2" variant="secondary" onClick={() => setSelectedVaccine(item)}>
-                  <CalendarDays className="size-4" /> Schedule visit
-                </Button>
-                <Button asChild className="gap-2" variant="outline">
-                  <a href="tel:+233301234567" aria-label="Call your nurse">
-                    <PhoneCall className="size-4" /> Call nurse
-                  </a>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {isLoading ? (
+        <Card className="flex items-center justify-center p-12">
+          <Loader2 className="size-8 animate-spin text-primary" />
+        </Card>
+      ) : missedVaccinations.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            🎉 Great news! Your children have no missed vaccinations. Keep up the good work!
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {missedVaccinations.map((item) => (
+            <Card key={`${item.childId}-${item.vaccine}`} className="border border-dashed border-destructive/40">
+              <CardHeader>
+                <CardTitle className="text-lg">{item.vaccine}</CardTitle>
+                <CardDescription>
+                  {item.childName} • Due on {item.dueDate}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg bg-destructive/10 px-3 py-2">
+                  <Badge variant="destructive">{item.daysOverdue} days overdue</Badge>
+                  <span className="text-xs text-muted-foreground">Notify your nurse</span>
+                </div>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>• Ensure your child is not running a fever before the make-up dose.</p>
+                  <p>• Bring the child health record booklet for updates.</p>
+                  <p>• Notify staff if your child had a reaction to previous doses.</p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button className="gap-2" variant="secondary" onClick={() => setSelectedVaccine(item)}>
+                    <CalendarDays className="size-4" /> Schedule visit
+                  </Button>
+                  <Button asChild className="gap-2" variant="outline">
+                    <a href="tel:+233301234567" aria-label="Call your nurse">
+                      <PhoneCall className="size-4" /> Call nurse
+                    </a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {selectedVaccine ? (
         <Card className="border-primary/30">
@@ -183,7 +200,7 @@ export default function MissedVaccinationsPage() {
                     value={preferredFacility}
                     onChange={(event) => setPreferredFacility(event.target.value)}
                   >
-                    <option value={primaryChild?.primaryFacility}>{primaryChild?.primaryFacility}</option>
+                    <option value={primaryChild?.facilityName}>{primaryChild?.facilityName || "Primary Facility"}</option>
                     <option value="Korle Bu Teaching Hospital">Korle Bu Teaching Hospital</option>
                     <option value="Ga Central Mobile Outreach Clinic">Ga Central Mobile Outreach Clinic</option>
                   </select>

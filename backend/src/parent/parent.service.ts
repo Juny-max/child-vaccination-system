@@ -80,8 +80,24 @@ export class ParentService {
   }> {
     if (!notes) return [];
 
-    // Parse emergency contacts from notes field
-    // Format: "Primary emergency contact: Name (Relationship). Secondary: Name (Relationship)"
+    // First, try to parse as JSON (new format)
+    try {
+      const parsed = JSON.parse(notes);
+      if (parsed.emergencyContacts && Array.isArray(parsed.emergencyContacts)) {
+        return parsed.emergencyContacts.map((c: any, index: number) => ({
+          id: c.id || `ec-${index + 1}`,
+          name: c.name || '',
+          relationship: c.relationship || '',
+          phone: c.phone || '',
+          isPrimary: c.isPrimary ?? index === 0,
+        }));
+      }
+    } catch {
+      // Not JSON, try legacy format
+    }
+
+    // Legacy format: Parse emergency contacts from notes field
+    // Format: "Name (Relationship) • +233..."
     const contacts: Array<{
       id: string;
       name: string;
@@ -157,6 +173,20 @@ export class ParentService {
 
     const client = this.db.supabase;
 
+    // Build the notes field with emergency contacts if provided
+    let notesValue = guardian.notes;
+    if (updates.emergencyContacts) {
+      notesValue = JSON.stringify({
+        emergencyContacts: updates.emergencyContacts.map((c, index) => ({
+          id: `ec-${index + 1}`,
+          name: c.name,
+          relationship: c.relationship,
+          phone: c.phone,
+          isPrimary: c.isPrimary ?? index === 0,
+        })),
+      });
+    }
+
     const { error } = await client
       .from('guardians')
       .update({
@@ -170,6 +200,7 @@ export class ParentService {
         region: updates.region || guardian.region,
         postal_code: updates.postalCode,
         preferred_contact: updates.preferredContactMethod || guardian.preferred_contact,
+        notes: notesValue,
       })
       .eq('id', guardian.id);
 
@@ -207,31 +238,18 @@ export class ParentService {
       const child = relation.child;
       return {
         id: child.id,
-        cvccId: child.cvcc_id,
+        childId: child.cvcc_id,  // CVCC ID for display (e.g., CHILD-001)
         name: child.full_name,
         dateOfBirth: child.date_of_birth,
         age: this.calculateAge(child.date_of_birth),
         gender: child.gender,
-        birthWeight: this.formatWeight(child.birth_weight),
-        birthLength: this.formatLength(child.birth_length),
+        weight: this.formatWeight(child.birth_weight),
+        length: this.formatLength(child.birth_length),
         bloodType: child.blood_type || 'Unknown',
-        relationship: relation.relationship,
-        primaryFacility: child.primary_facility
-          ? {
-              id: child.primary_facility.id,
-              name: child.primary_facility.name,
-              address: child.primary_facility.address || '',
-              phone: child.primary_facility.phone || '',
-            }
-          : {
-              id: '',
-              name: 'Not assigned',
-              address: '',
-              phone: '',
-            },
         profilePhoto: child.profile_photo_url || '/images/demo-child-1.svg',
-        allergies: child.allergies || [],
-        criticalNotes: child.critical_notes,
+        registrationDate: child.created_at || child.date_of_birth,
+        facilityName: child.primary_facility?.name || 'Not assigned',
+        facilityId: child.primary_facility?.id || '',
       };
     });
   }
@@ -343,6 +361,8 @@ export class ParentService {
 
   /**
    * Get certificates for a child
+   * Completion status is DYNAMICALLY calculated based on actual vaccination events,
+   * NOT from the stored certificate status (to prevent data inconsistency)
    */
   async getCertificates(
     userId: string,
@@ -350,20 +370,24 @@ export class ParentService {
   ): Promise<CertificateDto[]> {
     const child = await this.getChildDetails(userId, childId);
     const certificates = await this.db.getCertificates(childId);
+    
+    // Get actual vaccination completion status (not from certificate table)
+    const vaccinationStatus = await this.db.getVaccinationCompletionStatus(childId);
 
     return (certificates || []).map((cert: any) => ({
       certificateId: cert.certificate_id,
-      childId: childId,
+      childId: child.childId, // Use human-readable CVCC ID instead of UUID
       childName: child.name,
       issuedDate: cert.issued_date,
       issuedBy: cert.issued_by?.full_name || 'Unknown',
       issuedByFacility: cert.facility?.name || 'Unknown',
-      completionStatus:
-        cert.completion_status === 'Complete'
-          ? CertificateCompletionStatus.COMPLETE
-          : CertificateCompletionStatus.PARTIAL,
+      // Use ACTUAL completion status from vaccination_events, not stored certificate status
+      completionStatus: vaccinationStatus.isComplete
+        ? CertificateCompletionStatus.COMPLETE
+        : CertificateCompletionStatus.PARTIAL,
       qrPayload: cert.qr_payload,
-      vaccinesCompleted: cert.vaccines_completed || [],
+      // Use actual completed vaccines from vaccination_events
+      vaccinesCompleted: vaccinationStatus.completedVaccines,
       lastVerified: cert.last_verified_at
         ? new Date(cert.last_verified_at).toLocaleString('en-GB', {
             day: 'numeric',
@@ -374,6 +398,8 @@ export class ParentService {
           })
         : null,
       pdfUrl: cert.pdf_url,
+      // Add progress info for UI
+      vaccinationProgress: `${vaccinationStatus.completedCount}/${vaccinationStatus.totalRequired}`,
     }));
   }
 
@@ -410,15 +436,15 @@ export class ParentService {
 
     return (appointments || []).map((apt: any) => ({
       id: apt.id,
-      title: apt.vaccine?.name
+      purpose: apt.vaccine?.name
         ? `${apt.vaccine.name} vaccination`
         : 'Health visit',
       childId: apt.child?.id || '',
       childName: apt.child?.full_name || 'Unknown',
-      date: apt.scheduled_date,
-      time: apt.scheduled_time || 'TBD',
-      location: apt.facility?.name || 'TBD',
-      facilityPhone: apt.facility?.phone || '',
+      facilityId: apt.facility?.id || '',
+      facilityName: apt.facility?.name || 'TBD',
+      scheduledDate: apt.scheduled_date,
+      scheduledTime: apt.scheduled_time || 'TBD',
       status: apt.status,
       notes: apt.notes,
     }));
@@ -465,13 +491,13 @@ export class ParentService {
 
     return {
       id: data.id,
-      title: 'Vaccination appointment',
+      purpose: 'Vaccination appointment',
       childId: request.childId,
       childName: '',
-      date: data.scheduled_date,
-      time: data.scheduled_time || 'TBD',
-      location: 'TBD',
-      facilityPhone: '',
+      facilityId: '',
+      facilityName: 'TBD',
+      scheduledDate: data.scheduled_date,
+      scheduledTime: data.scheduled_time || 'TBD',
       status: data.status,
       notes: data.notes,
     };

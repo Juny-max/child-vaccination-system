@@ -55,7 +55,7 @@ export interface MissedVaccination {
 }
 
 export interface Certificate {
-  id: string;
+  id?: string;
   certificateId: string;
   childId: string;
   childName: string;
@@ -63,8 +63,13 @@ export interface Certificate {
   issuedDate?: string;
   validUntil?: string;
   issuedBy?: string;
+  issuedByFacility?: string;
   qrPayload?: string;
-  vaccines: string[];
+  vaccines?: string[];
+  vaccinesCompleted?: string[];
+  lastVerified?: string | null;
+  pdfUrl?: string | null;
+  vaccinationProgress?: string;
 }
 
 export interface Appointment {

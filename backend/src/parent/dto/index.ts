@@ -13,7 +13,9 @@ import {
   IsUUID,
   IsNotEmpty,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 // ============================================================================
 // ENUMS
@@ -54,24 +56,18 @@ export enum AppointmentStatus {
  */
 export class ChildProfileDto {
   id: string;
-  cvccId: string;
+  childId: string;  // CVCC ID for display (e.g., CHILD-001)
   name: string;
   dateOfBirth: string;
   age: string;
   gender: string;
-  birthWeight: string;
-  birthLength: string;
+  weight: string;
+  length: string;
   bloodType: string;
-  relationship: string;
-  primaryFacility: {
-    id: string;
-    name: string;
-    address: string;
-    phone: string;
-  };
   profilePhoto: string;
-  allergies: string[];
-  criticalNotes: string | null;
+  registrationDate: string;
+  facilityName: string;
+  facilityId: string;
 }
 
 /**
@@ -131,6 +127,8 @@ export class CertificateDto {
   vaccinesCompleted: string[];
   lastVerified: string | null;
   pdfUrl: string | null;
+  /** Progress of vaccinations e.g. "10/17" */
+  vaccinationProgress?: string;
 }
 
 /**
@@ -138,13 +136,13 @@ export class CertificateDto {
  */
 export class AppointmentDto {
   id: string;
-  title: string;
+  purpose: string;
   childId: string;
   childName: string;
-  date: string;
-  time: string;
-  location: string;
-  facilityPhone: string;
+  facilityId: string;
+  facilityName: string;
+  scheduledDate: string;
+  scheduledTime: string;
   status: AppointmentStatus;
   notes: string | null;
 }
@@ -277,6 +275,12 @@ export class UpdateMotherDetailsDto {
   @IsOptional()
   @IsEnum(ContactMethod)
   preferredContactMethod?: ContactMethod;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EmergencyContactRequestDto)
+  emergencyContacts?: EmergencyContactRequestDto[];
 }
 
 /**

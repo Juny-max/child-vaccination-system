@@ -6,7 +6,7 @@
 
 **Frontend:** ✅ Complete (Next.js 16 + React 19 + TypeScript + Tailwind CSS)  
 **Database:** ✅ Schema designed and seeded in Supabase (PostgreSQL)  
-**Backend:** 🚧 **IN PROGRESS** - NestJS API development (see Backend Development section)
+**Backend:** ✅ Deployed (NestJS API running on Render → `https://child-vaccination-system-e18o.onrender.com/api`)
 
 ---
 
@@ -74,6 +74,91 @@ pnpm dev
 \`\`\`
 
 Visit `http://localhost:3000`
+
+---
+
+## 🧰 Backend API (NestJS) Quick Start
+
+### Local environment
+
+1. `cd backend`
+2. Copy `.env.example` to `.env` (or keep using the existing `.env`) and populate the following keys:
+  - `SUPABASE_URL=https://pvzatstzlvtaequsqhec.supabase.co`
+  - `SUPABASE_SERVICE_ROLE_KEY=<service role key from Supabase → Settings → API>`
+  - `JWT_SECRET=<any strong string>`
+  - `PORT=3001`
+  - `CORS_ORIGIN=http://localhost:3000`
+3. Install dependencies once: `pnpm install`
+4. Start the watcher: `pnpm run start:dev`
+5. The API boots on `http://localhost:3001` (all routes are under `/api`).
+
+### Quick verification (demo login)
+
+1. Start the backend watcher: `pnpm run start:dev` (inside the `backend` folder).
+2. Open a second PowerShell window and run:
+
+```powershell
+cd backend
+$headers = @{"Content-Type"="application/json"}
+$body = '{"email":"akosua.asante@example.com","password":"password1234","userType":"parent"}'
+Invoke-RestMethod -Uri "http://localhost:3001/api/auth/login" -Method POST -Body $body -Headers $headers
+```
+
+You should see `LOGIN SUCCESSFUL` output that includes the parent name and the JWT token. If you prefer a GUI, use Postman/Thunder Client with the same URL and JSON body.
+
+### Resetting a user's password (terminal)
+
+Anytime you need to change a demo/password entry:
+
+```powershell
+cd backend
+npx ts-node scripts/reset-password.ts
+```
+
+The script lists all users, lets you pick an email, and updates the password hash in Supabase using the same SHA-256 routine as the backend.
+
+### Starting the backend for daily work
+
+```powershell
+cd backend
+pnpm install    # first day only; skip if node_modules already exists
+pnpm run start:dev
+```
+
+Leave that terminal running while you develop. Press `Ctrl + C` to stop the server when you are done.
+
+### Where backend code lives
+
+Yes—both developers add *all* NestJS code inside the `backend/` folder (controllers, services, modules, scripts, etc.). That keeps the API in one place while the Next.js frontend stays in the root `app/` folder.
+
+### Production build commands
+
+```bash
+pnpm run build      # emits dist/src
+pnpm run start:prod # runs node dist/src/main
+```
+
+### Deploying to Render (free tier)
+
+1. Push code to GitHub (already done for this repo).
+2. In Render, create a **Web Service** and point it to the `main` branch.
+3. Set **Root Directory** to `backend` and use these commands:
+  - Build: `pnpm install && pnpm run build`
+  - Start: `pnpm run start:prod`
+4. Add environment variables in Render → Settings → Environment:
+
+| Key | Value |
+|-----|-------|
+| `SUPABASE_URL` | `https://pvzatstzlvtaequsqhec.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | (same as local `.env`, never commit) |
+| `JWT_SECRET` | Same as local secret |
+| `PORT` | `3001` |
+| `CORS_ORIGIN` | Production frontend URL (e.g., `https://cvcc-iota.vercel.app`) |
+| `NODE_ENV` | `production` |
+
+5. After deploy completes, the API will be live (currently `https://child-vaccination-system-e18o.onrender.com/api`). Update the frontend `NEXT_PUBLIC_API_URL` to match.
+
+> ℹ️ The root route (`/`) returns 404 on purpose; test endpoints such as `/api/auth/login` or `/api/parent/dashboard` instead.
 
 ---
 
@@ -480,18 +565,18 @@ Content-Type: application/json
 
 ## 🎭 Demo Accounts
 
-All roles authenticate through `/auth/login`. Use any password with six or more characters.
+All roles authenticate through `/auth/login` using the shared demo password `password1234` (reset anytime via `backend/scripts/reset-password.ts`).
 
-- **Parent**: parent@example.com
-- **HQ Admin**: admin@health.gov.gh
-- **Branch Manager**: branch.manager@health.gov.gh
-- **Facility Nurse**: nurse@health.gov.gh
-- **Community Health Worker**: chw@health.gov.gh
-- **Data Officer**: data.officer@health.gov.gh
-- **Public Health Authority**: pha@health.gov.gh
+- **Parent**: parent@example.com (password `password1234`)
+- **HQ Admin**: admin@health.gov.gh (password `password1234`)
+- **Branch Manager**: branch.manager@health.gov.gh (password `password1234`)
+- **Facility Nurse**: nurse@health.gov.gh (password `password1234`)
+- **Community Health Worker**: chw@health.gov.gh (password `password1234`)
+- **Data Officer**: data.officer@health.gov.gh (password `password1234`)
+- **Public Health Authority**: pha@health.gov.gh (password `password1234`)
 
 **Test Parent Account (Seeded in Database):**
-- **Email**: akosua.asante@example.com
+- **Email**: akosua.asante@example.com (password `password1234`)
 - **Children**: 
   - Esi Boadu (CHILD-001) - Complete vaccinations
   - Kojo Asante (CHILD-002) - Incomplete vaccinations

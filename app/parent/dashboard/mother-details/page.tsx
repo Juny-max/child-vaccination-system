@@ -9,18 +9,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useParentDashboard } from "../dashboard-context"
-import {
-  emergencyContactsTemplate,
-  motherDetailsTemplate,
-  type ContactMethod,
-  type EmergencyContact,
-  type MotherDetails,
-} from "../data"
+import * as parentApi from "@/lib/api/parent"
 import {
   AlertTriangle,
   CheckCircle2,
   Edit3,
   Globe,
+  Loader2,
   Lock,
   Mail,
   MapPin,
@@ -33,17 +28,25 @@ import {
   UserCog,
 } from "lucide-react"
 
+type ContactMethod = "phone" | "sms" | "email"
+
+type MotherDetailsLocal = {
+  name: string
+  primaryPhone: string
+  secondaryPhone?: string
+  email: string
+  address: string
+  preferredContactMethod: ContactMethod
+}
+
+type EmergencyContact = parentApi.EmergencyContact
+
 type EditableMotherFields = {
   name: string
   primaryPhone: string
   secondaryPhone: string
   email: string
-  addressLine1: string
-  landmark: string
-  city: string
-  region: string
-  country: string
-  postalCode: string
+  address: string
   preferredContactMethod: ContactMethod
 }
 
@@ -52,14 +55,12 @@ type ProfileErrors = Partial<Record<keyof EditableMotherFields, string>>
 const CONTACT_METHOD_LABELS: Record<ContactMethod, string> = {
   phone: "Phone call",
   sms: "SMS",
-  whatsapp: "WhatsApp",
   email: "Email",
 }
 
 const CONTACT_METHOD_OPTIONS: { value: ContactMethod; label: string }[] = [
   { value: "phone", label: "Phone call" },
   { value: "sms", label: "SMS" },
-  { value: "whatsapp", label: "WhatsApp" },
   { value: "email", label: "Email" },
 ]
 
@@ -74,33 +75,59 @@ type ContactFormState = {
 type ContactErrors = Partial<Record<"name" | "relationship" | "phone", string>>
 
 export default function MotherDetailsPage() {
-  const { userName } = useParentDashboard()
-  const resolvedName = userName?.trim().length ? userName : motherDetailsTemplate.name
+  const { userName, motherDetails: apiMotherDetails, isLoading, updateMotherDetails } = useParentDashboard()
+  
+  // Convert API data to local format
+  const initialDetails: MotherDetailsLocal = useMemo(() => {
+    if (apiMotherDetails) {
+      return {
+        name: apiMotherDetails.name,
+        primaryPhone: apiMotherDetails.primaryPhone || "",
+        secondaryPhone: apiMotherDetails.secondaryPhone || "",
+        email: apiMotherDetails.email || "",
+        address: apiMotherDetails.address || "",
+        preferredContactMethod: apiMotherDetails.preferredContact as ContactMethod || "sms",
+      }
+    }
+    return {
+      name: userName || "Parent",
+      primaryPhone: "",
+      secondaryPhone: "",
+      email: "",
+      address: "",
+      preferredContactMethod: "sms" as ContactMethod,
+    }
+  }, [apiMotherDetails, userName])
 
-  const [motherDetails, setMotherDetails] = useState<MotherDetails>(() => ({
-    ...motherDetailsTemplate,
-    name: resolvedName,
-  }))
+  const [motherDetails, setMotherDetails] = useState<MotherDetailsLocal>(initialDetails)
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [formErrors, setFormErrors] = useState<ProfileErrors>({})
-  const [formState, setFormState] = useState<EditableMotherFields>(() => toEditableState({
-    ...motherDetailsTemplate,
-    name: resolvedName,
-  }))
-  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>(() => ensurePrimaryContact(emergencyContactsTemplate))
+  const [formState, setFormState] = useState<EditableMotherFields>(() => toEditableState(initialDetails))
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>(() => 
+    ensurePrimaryContact(apiMotherDetails?.emergencyContacts || [])
+  )
   const [contactFormState, setContactFormState] = useState<ContactFormState | null>(null)
   const [contactFormErrors, setContactFormErrors] = useState<ContactErrors>({})
   const [contactStatus, setContactStatus] = useState<string | null>(null)
 
+  // Sync with API data when it loads
   useEffect(() => {
-    const nextName = userName?.trim().length ? userName : motherDetailsTemplate.name
-    setMotherDetails((previous) => ({
-      ...previous,
-      name: nextName,
-    }))
-  }, [userName])
+    if (apiMotherDetails) {
+      const newDetails: MotherDetailsLocal = {
+        name: apiMotherDetails.name,
+        primaryPhone: apiMotherDetails.primaryPhone || "",
+        secondaryPhone: apiMotherDetails.secondaryPhone || "",
+        email: apiMotherDetails.email || "",
+        address: apiMotherDetails.address || "",
+        preferredContactMethod: apiMotherDetails.preferredContact as ContactMethod || "sms",
+      }
+      setMotherDetails(newDetails)
+      setFormState(toEditableState(newDetails))
+      setEmergencyContacts(ensurePrimaryContact(apiMotherDetails.emergencyContacts || []))
+    }
+  }, [apiMotherDetails])
 
   useEffect(() => {
     if (!statusMessage) return
@@ -114,7 +141,7 @@ export default function MotherDetailsPage() {
     return () => window.clearTimeout(timeout)
   }, [contactStatus])
 
-  const formattedAddress = useMemo(() => formatAddress(motherDetails), [motherDetails])
+  const formattedAddress = motherDetails.address || "No address provided"
 
   const startEditing = () => {
     setFormState(toEditableState(motherDetails))
@@ -166,7 +193,9 @@ export default function MotherDetailsPage() {
     }
   }
 
-  const handleContactSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const [isSavingContact, setIsSavingContact] = useState(false)
+
+  const handleContactSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!contactFormState) return
 
@@ -188,12 +217,14 @@ export default function MotherDetailsPage() {
       return
     }
 
-    setEmergencyContacts((previous) => {
+    setIsSavingContact(true)
+
+    try {
       let nextContacts: EmergencyContact[]
       let targetId = sanitized.id ?? ""
 
       if (sanitized.id) {
-        nextContacts = previous.map((contact) =>
+        nextContacts = emergencyContacts.map((contact) =>
           contact.id === sanitized.id
             ? {
                 ...contact,
@@ -206,48 +237,94 @@ export default function MotherDetailsPage() {
         )
       } else {
         const newContact: EmergencyContact = {
-          id: generateContactId(previous.length + 1),
+          id: generateContactId(emergencyContacts.length + 1),
           name: sanitized.name,
           relationship: sanitized.relationship,
           phone: sanitized.phone,
           isPrimary: sanitized.isPrimary,
         }
         targetId = newContact.id
-        nextContacts = [...previous, newContact]
+        nextContacts = [...emergencyContacts, newContact]
       }
 
       if (sanitized.isPrimary) {
-        return nextContacts.map((contact) => ({ ...contact, isPrimary: contact.id === (sanitized.id ? sanitized.id : targetId) }))
+        nextContacts = nextContacts.map((contact) => ({ ...contact, isPrimary: contact.id === (sanitized.id ? sanitized.id : targetId) }))
+      } else {
+        nextContacts = ensurePrimaryContact(nextContacts)
       }
 
-      return ensurePrimaryContact(nextContacts)
-    })
+      // Save to backend
+      await updateMotherDetails({
+        emergencyContacts: nextContacts.map(c => ({
+          name: c.name,
+          relationship: c.relationship,
+          phone: c.phone,
+          isPrimary: c.isPrimary,
+        })),
+      })
 
-    setContactStatus(sanitized.id ? "Emergency contact details saved." : "Emergency contact added to your profile.")
-    closeContactEditor()
-  }
-
-  const deleteContact = (contactId: string) => {
-    setEmergencyContacts((previous) => {
-      const filtered = previous.filter((contact) => contact.id !== contactId)
-      return ensurePrimaryContact(filtered)
-    })
-    setContactStatus("Emergency contact removed from your profile.")
-    if (contactFormState?.id === contactId) {
+      setEmergencyContacts(nextContacts)
+      setContactStatus(sanitized.id ? "Emergency contact details saved." : "Emergency contact added to your profile.")
       closeContactEditor()
+    } catch (error) {
+      console.error('Failed to save emergency contact:', error)
+      setContactFormErrors({ name: "Failed to save. Please try again." })
+    } finally {
+      setIsSavingContact(false)
     }
   }
 
-  const makePrimary = (contactId: string) => {
-    setEmergencyContacts((previous) =>
-      previous.map((contact) => ({
-        ...contact,
-        isPrimary: contact.id === contactId,
-      })),
-    )
-    setContactStatus("Primary emergency contact updated.")
-    if (contactFormState) {
-      setContactFormState((previous) => (previous ? { ...previous, isPrimary: previous.id === contactId } : previous))
+  const deleteContact = async (contactId: string) => {
+    const filtered = emergencyContacts.filter((contact) => contact.id !== contactId)
+    const nextContacts = ensurePrimaryContact(filtered)
+    
+    try {
+      // Save to backend
+      await updateMotherDetails({
+        emergencyContacts: nextContacts.map(c => ({
+          name: c.name,
+          relationship: c.relationship,
+          phone: c.phone,
+          isPrimary: c.isPrimary,
+        })),
+      })
+      
+      setEmergencyContacts(nextContacts)
+      setContactStatus("Emergency contact removed from your profile.")
+      if (contactFormState?.id === contactId) {
+        closeContactEditor()
+      }
+    } catch (error) {
+      console.error('Failed to delete emergency contact:', error)
+      setContactStatus("Failed to remove contact. Please try again.")
+    }
+  }
+
+  const makePrimary = async (contactId: string) => {
+    const nextContacts = emergencyContacts.map((contact) => ({
+      ...contact,
+      isPrimary: contact.id === contactId,
+    }))
+    
+    try {
+      // Save to backend
+      await updateMotherDetails({
+        emergencyContacts: nextContacts.map(c => ({
+          name: c.name,
+          relationship: c.relationship,
+          phone: c.phone,
+          isPrimary: c.isPrimary,
+        })),
+      })
+      
+      setEmergencyContacts(nextContacts)
+      setContactStatus("Primary emergency contact updated.")
+      if (contactFormState) {
+        setContactFormState((previous) => (previous ? { ...previous, isPrimary: previous.id === contactId } : previous))
+      }
+    } catch (error) {
+      console.error('Failed to update primary contact:', error)
+      setContactStatus("Failed to update primary contact. Please try again.")
     }
   }
 
@@ -278,20 +355,28 @@ export default function MotherDetailsPage() {
     const sanitized = sanitizeForm(formState)
     setIsSaving(true)
 
-    window.setTimeout(() => {
-      const nextDetails: MotherDetails = {
+    window.setTimeout(async () => {
+      const nextDetails: MotherDetailsLocal = {
         ...motherDetails,
         name: sanitized.name,
         primaryPhone: sanitized.primaryPhone,
         secondaryPhone: sanitized.secondaryPhone ? sanitized.secondaryPhone : undefined,
         email: sanitized.email,
-        addressLine1: sanitized.addressLine1,
-        landmark: sanitized.landmark ? sanitized.landmark : undefined,
-        city: sanitized.city,
-        region: sanitized.region,
-        country: sanitized.country,
-        postalCode: sanitized.postalCode ? sanitized.postalCode : undefined,
+        address: sanitized.address,
         preferredContactMethod: sanitized.preferredContactMethod,
+      }
+
+      // Call API to update
+      try {
+        await updateMotherDetails({
+          primaryPhone: sanitized.primaryPhone,
+          secondaryPhone: sanitized.secondaryPhone || undefined,
+          email: sanitized.email,
+          address: sanitized.address,
+          preferredContact: sanitized.preferredContactMethod,
+        })
+      } catch (error) {
+        console.error('Failed to update profile:', error)
       }
 
       setMotherDetails(nextDetails)
@@ -409,89 +494,26 @@ export default function MotherDetailsPage() {
                   <div className="space-y-1">
                     <p className="font-medium text-foreground">Facility-managed information</p>
                     <p>
-                      Residential address, alternate numbers, and preferred contact channel are locked to protect clinic records.
+                      Residential address and preferred contact channel are locked to protect clinic records.
                       Speak with your assigned nurse if these details need an update.
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field
-                  id="addressLine1"
-                  label="Residential address"
-                  autoComplete="address-line1"
-                  value={formState.addressLine1}
-                  onChange={(event) => handleFieldChange("addressLine1", event.target.value)}
-                  error={formErrors.addressLine1}
-                  placeholder="House number, street, community"
-                  icon={<MapPin className="size-4 text-primary" />}
-                  disabled
-                  readOnly
-                />
-                <Field
-                  id="landmark"
-                  label="Nearest landmark (optional)"
-                  autoComplete="address-line2"
-                  value={formState.landmark}
-                  onChange={(event) => handleFieldChange("landmark", event.target.value)}
-                  error={formErrors.landmark}
-                  placeholder="Landmark, GPS address"
-                  disabled
-                  readOnly
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field
-                  id="city"
-                  label="City / Town"
-                  autoComplete="address-level2"
-                  value={formState.city}
-                  onChange={(event) => handleFieldChange("city", event.target.value)}
-                  error={formErrors.city}
-                  placeholder="Accra"
-                  disabled
-                  readOnly
-                />
-                <Field
-                  id="region"
-                  label="Region"
-                  autoComplete="address-level1"
-                  value={formState.region}
-                  onChange={(event) => handleFieldChange("region", event.target.value)}
-                  error={formErrors.region}
-                  placeholder="Greater Accra"
-                  disabled
-                  readOnly
-                />
-                <Field
-                  id="postalCode"
-                  label="Postal / GPS code (optional)"
-                  autoComplete="postal-code"
-                  value={formState.postalCode}
-                  onChange={(event) => handleFieldChange("postalCode", event.target.value)}
-                  error={formErrors.postalCode}
-                  placeholder="GA-184-5123"
-                  disabled
-                  readOnly
-                />
-              </div>
+              <Field
+                id="address"
+                label="Residential address"
+                autoComplete="street-address"
+                value={formState.address}
+                onChange={(event) => handleFieldChange("address", event.target.value)}
+                placeholder="Full address"
+                icon={<MapPin className="size-4 text-primary" />}
+                disabled
+                readOnly
+              />
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field
-                  id="country"
-                  label="Country"
-                  autoComplete="country"
-                  value={formState.country}
-                  onChange={(event) => handleFieldChange("country", event.target.value)}
-                  error={formErrors.country}
-                  placeholder="Ghana"
-                  icon={<Globe className="size-4 text-primary" />}
-                  disabled
-                  readOnly
-                />
-
                 <div className="space-y-1">
                   <Label htmlFor="preferredContact" className="text-sm font-medium text-foreground">
                     Preferred contact method
@@ -760,18 +782,13 @@ function Field({
   )
 }
 
-function toEditableState(details: MotherDetails): EditableMotherFields {
+function toEditableState(details: MotherDetailsLocal): EditableMotherFields {
   return {
     name: details.name,
     primaryPhone: details.primaryPhone,
     secondaryPhone: details.secondaryPhone ?? "",
     email: details.email,
-    addressLine1: details.addressLine1,
-    landmark: details.landmark ?? "",
-    city: details.city,
-    region: details.region,
-    country: details.country,
-    postalCode: details.postalCode ?? "",
+    address: details.address,
     preferredContactMethod: details.preferredContactMethod,
   }
 }
@@ -785,12 +802,7 @@ function sanitizeForm(values: EditableMotherFields): EditableMotherFields {
     primaryPhone: normalizePhone(values.primaryPhone),
     secondaryPhone: values.secondaryPhone ? normalizePhone(values.secondaryPhone) : "",
     email: values.email.trim().toLowerCase(),
-    addressLine1: normalize(values.addressLine1),
-    landmark: values.landmark ? normalize(values.landmark) : "",
-    city: normalize(values.city),
-    region: normalize(values.region),
-    country: normalize(values.country),
-    postalCode: values.postalCode ? values.postalCode.trim().toUpperCase() : "",
+    address: normalize(values.address),
     preferredContactMethod: values.preferredContactMethod,
   }
 }
@@ -842,42 +854,11 @@ function validateProfile(values: EditableMotherFields): ProfileErrors {
     }
   }
 
-  if (!values.addressLine1.trim()) {
-    errors.addressLine1 = "Residential address is required."
-  }
-
-  if (!values.city.trim()) {
-    errors.city = "City or town is required."
-  }
-
-  if (!values.region.trim()) {
-    errors.region = "Region is required."
-  }
-
-  if (!values.country.trim()) {
-    errors.country = "Country is required."
-  }
-
-  if (values.postalCode) {
-    const postal = values.postalCode.trim()
-    if (!/^[A-Za-z0-9\s-]{3,10}$/.test(postal)) {
-      errors.postalCode = "Enter a valid postal or GPS code."
-    }
-  }
-
   if (!CONTACT_METHOD_OPTIONS.some((option) => option.value === values.preferredContactMethod)) {
     errors.preferredContactMethod = "Select a contact method."
   }
 
   return errors
-}
-
-function formatAddress(details: MotherDetails) {
-  const lines = [details.addressLine1]
-  if (details.landmark) lines.push(details.landmark)
-  lines.push(`${details.city}, ${details.region}`)
-  lines.push(details.postalCode ? `${details.country} • ${details.postalCode}` : details.country)
-  return lines.filter(Boolean).join("\n")
 }
 
 function sanitizeContact(values: ContactFormState): ContactFormState {

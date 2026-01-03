@@ -14,7 +14,7 @@ async function generateHash(password: string): Promise<string> {
 }
 
 async function main() {
-  const password = process.argv[2] || 'password123';
+  const password = process.argv[2] || 'password1234';
   
   console.log('\n🔐 Password Hash Generator');
   console.log('='.repeat(50));

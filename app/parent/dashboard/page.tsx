@@ -79,10 +79,10 @@ export default function ParentDashboardOverview() {
         completionStatus: record.completionStatus as "Complete" | "Partial",
         issuedDate: record.issuedDate || "",
         validUntil: record.validUntil || "",
-        issuedBy: record.issuedBy || "",
-        vaccinesCompleted: record.vaccines,
+        issuedBy: record.issuedByFacility || record.issuedBy || "",
+        vaccinesCompleted: record.vaccinesCompleted || record.vaccines || [],
         qrPayload: record.qrPayload || "",
-        lastVerified: new Date().toLocaleDateString(),
+        lastVerified: record.lastVerified || new Date().toLocaleDateString(),
       }
       await generateCertificatePdf(certRecord, { logoDataUrl, qrDataUrl })
       toast.success("Certificate PDF downloaded")
@@ -163,7 +163,7 @@ export default function ParentDashboardOverview() {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vaccines recorded</p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {latestCertificate.vaccines.map((vaccine) => (
+                      {(latestCertificate.vaccines ?? []).map((vaccine) => (
                         <Badge key={vaccine} variant="outline" className="border-primary/30 bg-primary/5 text-primary">
                           {vaccine}
                         </Badge>

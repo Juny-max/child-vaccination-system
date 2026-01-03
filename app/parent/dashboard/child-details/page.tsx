@@ -3,19 +3,47 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Baby, CalendarDays, ClipboardList, QrCode, Stethoscope, Users, X } from "lucide-react"
+import { Baby, CalendarDays, ClipboardList, Loader2, QrCode, Stethoscope, Users, X } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { childProfiles, healthReminders, type ChildProfile } from "../data"
+import { useParentDashboard } from "../dashboard-context"
 
 export default function ChildDetailsPage() {
-  const [activeChildId, setActiveChildId] = useState(childProfiles[0]?.id ?? "")
-  const activeChild = childProfiles.find((child) => child.id === activeChildId) ?? childProfiles[0]
+  const { children, isLoading, getChildVaccinations } = useParentDashboard()
+  const [activeChildId, setActiveChildId] = useState<string>("")
+  const [vaccinations, setVaccinations] = useState<any[]>([])
+  const [isLoadingVaccinations, setIsLoadingVaccinations] = useState(false)
+  
+  // Set active child when data loads
+  useEffect(() => {
+    if (children.length > 0 && !activeChildId) {
+      setActiveChildId(children[0].id)
+    }
+  }, [children, activeChildId])
+
+  const activeChild = children.find((child) => child.id === activeChildId) ?? children[0]
   const [isQrOverlayOpen, setIsQrOverlayOpen] = useState(false)
   const [qrIsMounted, setQrIsMounted] = useState(false)
   const closeTimeoutRef = useRef<number | null>(null)
+
+  // Load vaccinations when active child changes
+  useEffect(() => {
+    async function loadVaccinations() {
+      if (!activeChild?.id) return
+      setIsLoadingVaccinations(true)
+      try {
+        const data = await getChildVaccinations(activeChild.id)
+        setVaccinations(data.slice(0, 5)) // Get latest 5 vaccinations for journal
+      } catch (error) {
+        console.error('Failed to load vaccinations:', error)
+      } finally {
+        setIsLoadingVaccinations(false)
+      }
+    }
+    loadVaccinations()
+  }, [activeChild?.id, getChildVaccinations])
 
   const formattedAge = useMemo(() => {
     if (!activeChild) return "--"
@@ -26,7 +54,7 @@ export default function ChildDetailsPage() {
     if (!activeChild) return ""
     return JSON.stringify({
       type: "cvcc-child",
-      id: activeChild.id,
+      id: activeChild.childId || activeChild.id,
       name: activeChild.name,
       dob: activeChild.dateOfBirth,
     })
@@ -56,6 +84,36 @@ export default function ChildDetailsPage() {
       }
     }
   }, [])
+
+  // Health reminders - could be fetched from API in future
+  const healthReminders = [
+    "Keep up with tummy-time exercises (10–15 mins daily).",
+    "Monitor hydration, especially on hot days.",
+    "Introduce pureed fruit after the 6-month check-up.",
+    "Book next check-up before 6 weeks pass.",
+  ]
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading child details...</span>
+      </div>
+    )
+  }
+
+  if (children.length === 0) {
+    return (
+      <Card className="border-primary/20 bg-primary/5">
+        <CardHeader>
+          <CardTitle>No children registered</CardTitle>
+          <CardDescription>
+            You don&apos;t have any children registered yet. Please contact your health facility to register your children.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -87,9 +145,9 @@ export default function ChildDetailsPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">Child ID: {activeChild?.id}</Badge>
+            <Badge variant="secondary">Child ID: {activeChild?.childId || "Not assigned"}</Badge>
             <Badge variant="outline" className="flex items-center gap-1">
-              <Users className="size-3" /> {childProfiles.length} registered child{childProfiles.length > 1 ? "ren" : ""}
+              <Users className="size-3" /> {children.length} registered child{children.length > 1 ? "ren" : ""}
             </Badge>
             <Button variant="outline" size="sm" className="gap-2" onClick={openQrOverlay}>
               <QrCode className="size-4" /> Show clinic QR
@@ -97,9 +155,9 @@ export default function ChildDetailsPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {childProfiles.length > 1 ? (
+          {children.length > 1 ? (
             <div className="flex flex-wrap gap-3">
-              {childProfiles.map((child) => (
+              {children.map((child) => (
                 <button
                   key={child.id}
                   onClick={() => setActiveChildId(child.id)}
@@ -116,7 +174,7 @@ export default function ChildDetailsPage() {
                   </div>
                   <div>
                     <p className="text-sm font-semibold leading-tight">{child.name}</p>
-                    <p className="text-xs text-muted-foreground">{child.relationship}</p>
+                    <p className="text-xs text-muted-foreground">{child.age}</p>
                   </div>
                 </button>
               ))}
@@ -126,14 +184,14 @@ export default function ChildDetailsPage() {
           {activeChild ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Detail label="Full name" value={activeChild.name} />
-              <Detail label="Age" value={formattedAge} />
-              <Detail label="Height" value={activeChild.height} />
+              <Detail label="Age" value={activeChild.age || formattedAge} />
+              <Detail label="Height/Length" value={activeChild.length || "Not recorded"} />
               <Detail label="Date of birth" value={formatDate(activeChild.dateOfBirth)} />
-              <Detail label="Birth weight" value={activeChild.birthWeight} />
-              <Detail label="Blood type" value={activeChild.bloodType} />
-              <Detail label="Primary facility" value={activeChild.primaryFacility} />
-              <Detail label="Relationship" value={activeChild.relationship} />
-              <Detail label="National ID" value={`${activeChild.id}-GHS`} hint="Linked to Ghana Health Service" />
+              <Detail label="Weight" value={activeChild.weight || "Not recorded"} />
+              <Detail label="Blood type" value={activeChild.bloodType || "Not recorded"} />
+              <Detail label="Primary facility" value={activeChild.facilityName} />
+              <Detail label="Gender" value={activeChild.gender} />
+              <Detail label="Registration date" value={formatDate(activeChild.registrationDate)} />
             </div>
           ) : null}
         </CardContent>
@@ -143,26 +201,32 @@ export default function ChildDetailsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <ClipboardList className="size-5" /> Health journal
+              <ClipboardList className="size-5" /> Vaccination history
             </CardTitle>
-            <CardDescription>Daily notes captured during clinic visits</CardDescription>
+            <CardDescription>Recent vaccinations from clinic visits</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <JournalEntry
-              date="Jan 20, 2025"
-              notes="DPT (2nd dose) administered. Mild fever recorded in the evening; resolved with paracetamol."
-            />
-            <JournalEntry
-              date="Dec 19, 2024"
-              notes="DPT (1st dose) administered. No adverse reactions. Growth chart updated."
-            />
-            <JournalEntry
-              date="Dec 5, 2024"
-              notes="BCG and Polio (1st dose) recorded. Mother educated on post-shot care and hydration."
-            />
+            {isLoadingVaccinations ? (
+              <div className="flex items-center gap-2 py-4">
+                <Loader2 className="size-4 animate-spin" />
+                <span>Loading vaccination records...</span>
+              </div>
+            ) : vaccinations.length > 0 ? (
+              <>
+                {vaccinations.map((vax) => (
+                  <JournalEntry
+                    key={vax.id}
+                    date={formatDate(vax.administeredDate || vax.date)}
+                    notes={`${vax.vaccine} (Dose ${vax.doseNumber || vax.dose}) administered at ${vax.facilityName || vax.facility}. ${vax.notes || ''}`}
+                  />
+                ))}
+              </>
+            ) : (
+              <p className="py-4 text-muted-foreground">No vaccination records yet.</p>
+            )}
             <Button asChild variant="outline" className="gap-2">
               <Link href="/parent/dashboard/vaccination-status">
-                View vaccination history
+                View full vaccination history
                 <CalendarDays className="size-4" />
               </Link>
             </Button>

@@ -9,24 +9,61 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { certificateRecords, type CertificateRecord } from "../data"
+import { useParentDashboard } from "../dashboard-context"
 import { generateCertificatePdf } from "@/lib/certificate-pdf"
-import { Award, FileDown, Lock, QrCode, Sparkles } from "lucide-react"
+import { Award, FileDown, Lock, QrCode, Sparkles, Loader2 } from "lucide-react"
+import type { Certificate as ApiCertificate } from "@/lib/api/parent"
+
+// Extended type for internal use
+type CertificateDisplay = {
+  certificateId: string
+  childId: string
+  childName: string
+  issuedDate: string
+  issuedBy: string
+  issuedByFacility: string
+  completionStatus: "Complete" | "Partial"
+  qrPayload: string
+  vaccinesCompleted: string[]
+  lastVerified: string
+  pdfUrl: string | null
+  vaccinationProgress?: string
+}
 
 export default function CertificatesPage() {
+  const { certificates: apiCertificates, isLoading } = useParentDashboard()
   const [isGeneratingId, setIsGeneratingId] = useState<string | null>(null)
   const qrRefs = useRef<Record<string, HTMLCanvasElement | null>>({})
   const logoDataUrlRef = useRef<string | null>(null)
 
+  // Transform API certificates to display format
+  const certificates: CertificateDisplay[] = useMemo(() => {
+    if (!apiCertificates || apiCertificates.length === 0) return []
+    return apiCertificates.map((cert: ApiCertificate) => ({
+      certificateId: cert.certificateId,
+      childId: cert.childId,
+      childName: cert.childName,
+      issuedDate: cert.issuedDate || "Not issued yet",
+      issuedBy: cert.issuedBy || cert.issuedByFacility || "Unknown",
+      issuedByFacility: cert.issuedByFacility || cert.issuedBy || "Unknown",
+      completionStatus: cert.completionStatus === "Complete" ? "Complete" : "Partial",
+      qrPayload: cert.qrPayload || `${cert.certificateId}|${cert.childId}|${cert.childName}`,
+      vaccinesCompleted: cert.vaccinesCompleted || cert.vaccines || [],
+      lastVerified: cert.lastVerified || "Not verified yet",
+      pdfUrl: cert.pdfUrl || null,
+      vaccinationProgress: cert.vaccinationProgress,
+    }))
+  }, [apiCertificates])
+
   const counts = useMemo(() => {
-    const total = certificateRecords.length
-    const complete = certificateRecords.filter((record) => record.completionStatus === "Complete").length
+    const total = certificates.length
+    const complete = certificates.filter((record) => record.completionStatus === "Complete").length
     return {
       total,
       complete,
       pending: total - complete,
     }
-  }, [])
+  }, [certificates])
 
   const assignQrRef = useCallback((childId: string, node: HTMLCanvasElement | null) => {
     qrRefs.current[childId] = node
@@ -53,7 +90,7 @@ export default function CertificatesPage() {
   }, [])
 
   const handleDownload = useCallback(
-    async (record: CertificateRecord) => {
+    async (record: CertificateDisplay) => {
       if (record.completionStatus !== "Complete") {
         toast.error("Complete this vaccination schedule to generate a certificate.")
         return
@@ -63,7 +100,19 @@ export default function CertificatesPage() {
         const logoDataUrl = await fetchLogoDataUrl()
         const qrCanvas = qrRefs.current[record.childId]
         const qrDataUrl = qrCanvas?.toDataURL("image/png")
-        await generateCertificatePdf(record, { logoDataUrl, qrDataUrl })
+        // Convert to CertificateRecord format for PDF generation
+        const pdfRecord = {
+          certificateId: record.certificateId,
+          childId: record.childId,
+          childName: record.childName,
+          issuedDate: record.issuedDate,
+          issuedBy: record.issuedByFacility || record.issuedBy,
+          completionStatus: record.completionStatus as "Complete" | "Partial",
+          qrPayload: record.qrPayload,
+          vaccinesCompleted: record.vaccinesCompleted,
+          lastVerified: record.lastVerified,
+        }
+        await generateCertificatePdf(pdfRecord, { logoDataUrl, qrDataUrl })
         toast.success(`${record.childName}'s certificate downloaded`)
       } catch (error) {
         console.error("Certificate PDF error", error)
@@ -74,6 +123,33 @@ export default function CertificatesPage() {
     },
     [fetchLogoDataUrl]
   )
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading certificates...</span>
+      </div>
+    )
+  }
+
+  if (certificates.length === 0) {
+    return (
+      <div className="space-y-6">
+        <Card className="border-primary/30 bg-gradient-to-r from-primary/5 via-background to-muted">
+          <CardHeader>
+            <Badge variant="secondary" className="mb-2 inline-flex w-fit items-center gap-1">
+              <Sparkles className="size-3" /> Certificate center
+            </Badge>
+            <CardTitle className="text-2xl">No certificates yet</CardTitle>
+            <CardDescription>
+              Certificates will appear here once your children complete their vaccination schedules.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -95,7 +171,7 @@ export default function CertificatesPage() {
       </Card>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        {certificateRecords.map((record) => (
+        {certificates.map((record) => (
           <Card key={record.certificateId} className="border border-border">
             <CardHeader className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -103,22 +179,29 @@ export default function CertificatesPage() {
                   <CardTitle className="text-xl">{record.childName}</CardTitle>
                   <CardDescription>Child ID: {record.childId}</CardDescription>
                 </div>
-                <Badge
-                  variant={record.completionStatus === "Complete" ? "secondary" : "outline"}
-                  className={record.completionStatus === "Complete" ? "bg-emerald-600 text-white" : "border-amber-400 text-amber-700"}
-                >
-                  {record.completionStatus === "Complete" ? "Complete" : "Incomplete"}
-                </Badge>
+                <div className="flex flex-col items-end gap-1">
+                  <Badge
+                    variant={record.completionStatus === "Complete" ? "secondary" : "outline"}
+                    className={record.completionStatus === "Complete" ? "bg-emerald-600 text-white" : "border-amber-400 text-amber-700"}
+                  >
+                    {record.completionStatus === "Complete" ? "Complete" : "Incomplete"}
+                  </Badge>
+                  {record.vaccinationProgress && (
+                    <span className="text-xs text-muted-foreground">
+                      Progress: {record.vaccinationProgress} vaccines
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                 <span>
                   <strong>Issued:</strong> {record.issuedDate}
                 </span>
                 <span>
-                  <strong>Facility:</strong> {record.issuedBy}
+                  <strong>Facility:</strong> {record.issuedByFacility || record.issuedBy}
                 </span>
                 <span>
-                  <strong>Last verified:</strong> {record.lastVerified}
+                  <strong>Last verified:</strong> {record.lastVerified || "Not verified yet"}
                 </span>
               </div>
             </CardHeader>
@@ -137,16 +220,16 @@ export default function CertificatesPage() {
                 </div>
               </div>
 
-              {record.completionStatus === "Partial" ? (
-                <Alert variant="default" className="border-amber-300 bg-amber-50 text-amber-900">
+              {record.completionStatus === "Partial" && (
+                <Alert variant="default" className="border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-100">
                   <AlertTitle className="flex items-center gap-2 text-sm font-semibold">
                     <Lock className="size-4" /> Certificate pending
                   </AlertTitle>
                   <AlertDescription className="text-sm">
-                    Complete the outstanding doses to unlock this digital certificate.
+                    Complete the outstanding doses ({record.vaccinationProgress || "in progress"}) to unlock this digital certificate.
                   </AlertDescription>
                 </Alert>
-              ) : null}
+              )}
 
               <div className="flex flex-col gap-3 rounded-xl border border-dashed border-primary/30 bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">

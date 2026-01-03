@@ -1,17 +1,17 @@
 -- ============================================================================
 -- Update Demo User Passwords for Backend Authentication
--- Password for all demo users: password123
--- SHA-256 hash: ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f
+-- Password for all demo users: password1234
+-- SHA-256 hash: b9c950640e1b3740e98acb93e669c65766f6670dd1609ba91ff41052ba48c6f3
 -- ============================================================================
 
 -- Update parent user password
 UPDATE users 
-SET password_hash = 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f'
+SET password_hash = 'b9c950640e1b3740e98acb93e669c65766f6670dd1609ba91ff41052ba48c6f3'
 WHERE email = 'akosua.asante@example.com';
 
 -- Update other demo users
 UPDATE users 
-SET password_hash = 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f'
+SET password_hash = 'b9c950640e1b3740e98acb93e669c65766f6670dd1609ba91ff41052ba48c6f3'
 WHERE email IN (
   'parent@example.com',
   'admin@health.gov.gh',

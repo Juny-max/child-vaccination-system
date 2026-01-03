@@ -19,9 +19,9 @@ export function getAuthHeaders(): HeadersInit {
 /**
  * Handle API response errors
  */
-export async function handleResponse<T>(response: Response): Promise<T> {
+export async function handleResponse<T>(response: Response, skipAuthRedirect = false): Promise<T> {
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 && !skipAuthRedirect) {
       // Token expired or invalid - redirect to login
       if (typeof window !== 'undefined') {
         localStorage.removeItem('authToken');
@@ -44,7 +44,8 @@ export async function handleResponse<T>(response: Response): Promise<T> {
  */
 export async function apiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  skipAuthRedirect = false
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   
@@ -56,5 +57,5 @@ export async function apiRequest<T>(
     },
   });
   
-  return handleResponse<T>(response);
+  return handleResponse<T>(response, skipAuthRedirect);
 }

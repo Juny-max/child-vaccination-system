@@ -5,20 +5,26 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { appointments } from "../data"
-import { CalendarDays, CheckCircle2, FileText, MapPin, PhoneCall, PlusCircle } from "lucide-react"
+import { useParentDashboard } from "../dashboard-context"
+import { CalendarDays, CheckCircle2, FileText, Loader2, MapPin, PhoneCall, PlusCircle } from "lucide-react"
 
 export default function AppointmentsPage() {
+  const { appointments, isLoading } = useParentDashboard()
   const [isBookingOpen, setIsBookingOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [expandedAppointmentId, setExpandedAppointmentId] = useState<string | null>(null)
 
   const facilityOptions = useMemo(() => {
-    const unique = new Set(appointments.map((appointment) => appointment.location))
+    const unique = new Set<string>()
     unique.add("Any participating clinic")
+    appointments.forEach((appointment) => {
+      if (appointment.facilityName) {
+        unique.add(appointment.facilityName)
+      }
+    })
     return Array.from(unique)
-  }, [])
+  }, [appointments])
 
   const toggleInstructions = (appointmentId: string) => {
     setExpandedAppointmentId((previous) => (previous === appointmentId ? null : appointmentId))
@@ -110,8 +116,8 @@ export default function AppointmentsPage() {
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                   defaultValue={facilityOptions[0]}
                 >
-                  {facilityOptions.map((facility) => (
-                    <option key={facility} value={facility}>
+                  {facilityOptions.map((facility, index) => (
+                    <option key={`facility-${index}-${facility}`} value={facility}>
                       {facility}
                     </option>
                   ))}
@@ -151,54 +157,66 @@ export default function AppointmentsPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {appointments.map((appointment) => {
-          const appointmentId = `${appointment.title}-${appointment.date}`
-          const isExpanded = expandedAppointmentId === appointmentId
+      {isLoading ? (
+        <Card className="flex items-center justify-center p-12">
+          <Loader2 className="size-8 animate-spin text-primary" />
+        </Card>
+      ) : appointments.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            No appointments scheduled. Click "Book new appointment" to create one.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {appointments.map((appointment) => {
+            const appointmentId = appointment.id
+            const isExpanded = expandedAppointmentId === appointmentId
 
-          return (
-            <Card key={appointmentId} className="border border-border">
-              <CardHeader>
-                <CardTitle className="text-lg">{appointment.title}</CardTitle>
-                <CardDescription>
-                  {appointment.date} at {appointment.time}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2 text-foreground">
-                  <MapPin className="size-4 text-primary" />
-                  {appointment.location}
-                </div>
-                {isExpanded ? (
-                  <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-foreground">
-                    <p className="font-semibold">Preparation checklist</p>
-                    <p className="text-sm text-muted-foreground">{appointment.notes}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Detailed instructions will sync here once the clinic publishes them in the backend system.
-                    </p>
+            return (
+              <Card key={appointmentId} className="border border-border">
+                <CardHeader>
+                  <CardTitle className="text-lg">{appointment.purpose}</CardTitle>
+                  <CardDescription>
+                    {appointment.scheduledDate} at {appointment.scheduledTime}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 text-foreground">
+                    <MapPin className="size-4 text-primary" />
+                    {appointment.facilityName}
                   </div>
-                ) : null}
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => toggleInstructions(appointmentId)}
-                    aria-expanded={isExpanded}
-                  >
-                    <FileText className="size-4" /> {isExpanded ? "Hide instructions" : "View instructions"}
-                  </Button>
-                  <Button asChild variant="secondary" size="sm" className="gap-2">
-                    <a href="tel:+233301234567" aria-label="Call the facility">
-                      <PhoneCall className="size-4" /> Contact facility
-                    </a>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
-      </div>
+                  {isExpanded ? (
+                    <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-foreground">
+                      <p className="font-semibold">Preparation checklist</p>
+                      <p className="text-sm text-muted-foreground">{appointment.notes || "No special instructions."}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Detailed instructions will sync here once the clinic publishes them in the backend system.
+                      </p>
+                    </div>
+                  ) : null}
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => toggleInstructions(appointmentId)}
+                      aria-expanded={isExpanded}
+                    >
+                      <FileText className="size-4" /> {isExpanded ? "Hide instructions" : "View instructions"}
+                    </Button>
+                    <Button asChild variant="secondary" size="sm" className="gap-2">
+                      <a href="tel:+233301234567" aria-label="Call the facility">
+                        <PhoneCall className="size-4" /> Contact facility
+                      </a>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
 
       <Card>
         <CardHeader>

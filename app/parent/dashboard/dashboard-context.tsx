@@ -4,13 +4,6 @@ import { createContext, useContext, useEffect, useState, useCallback, type React
 import { useRouter } from "next/navigation"
 import * as parentApi from "@/lib/api/parent"
 import * as authApi from "@/lib/api/auth"
-import { 
-  childInfo, 
-  certificateRecords, 
-  motherDetailsTemplate, 
-  appointments as demoAppointments,
-  missedVaccinations as demoMissedVaccinations
-} from "./data"
 
 // ============================================
 // Types
@@ -43,6 +36,7 @@ export type ParentDashboardContextValue = {
   createAppointment: (data: parentApi.CreateAppointmentRequest) => Promise<parentApi.Appointment>
   cancelAppointment: (appointmentId: string, reason?: string) => Promise<void>
   updateMotherDetails: (data: parentApi.UpdateMotherDetailsRequest) => Promise<void>
+  retryFetch: () => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -68,10 +62,31 @@ const defaultContext: ParentDashboardContextValue = {
   createAppointment: async () => ({} as parentApi.Appointment),
   cancelAppointment: async () => {},
   updateMotherDetails: async () => {},
+  retryFetch: async () => {},
   logout: async () => {},
 }
 
 const ParentDashboardContext = createContext<ParentDashboardContextValue>(defaultContext)
+
+// Helper to extract error message
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    // Check for network errors
+    if (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed to fetch')) {
+      return 'Unable to connect to the server. Please check your internet connection and try again.'
+    }
+    // Check for auth errors
+    if (err.message.includes('401') || err.message.includes('Unauthorized')) {
+      return 'Your session has expired. Please log in again.'
+    }
+    // Check for server errors
+    if (err.message.includes('500') || err.message.includes('Internal Server')) {
+      return 'The server encountered an error. Please try again later.'
+    }
+    return err.message
+  }
+  return 'An unexpected error occurred. Please try again.'
+}
 
 export function ParentDashboardProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
@@ -103,109 +118,36 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
 
   // Fetch dashboard data
   const refreshDashboard = useCallback(async () => {
-    try {
-      setError(null)
-      const data = await parentApi.getDashboard()
-      setDashboard(data)
-      setUserName(data.guardian.name.split(' ')[0])
-      setMissedVaccinations(data.missedVaccinations)
-      setNotifications(data.recentNotifications)
-      setAppointments(data.upcomingAppointments)
-    } catch (err) {
-      console.warn('Failed to fetch dashboard, using demo data:', err)
-      // Use demo data as fallback (cast to API types)
-      const storedName = localStorage.getItem('userName') || 'User'
-      setUserName(storedName.split(' ')[0])
-      setMissedVaccinations(demoMissedVaccinations.map(m => ({
-        childId: childInfo.id,
-        childName: childInfo.name,
-        vaccine: m.vaccine,
-        dueDate: m.due,
-        daysOverdue: m.daysOverdue,
-      })))
-      setNotifications([])
-      setAppointments(demoAppointments.map((a, idx) => ({
-        id: `demo-appt-${idx}`,
-        childId: childInfo.id,
-        childName: childInfo.name,
-        facilityId: 'demo-facility',
-        facilityName: a.location,
-        scheduledDate: a.date,
-        scheduledTime: a.time,
-        purpose: a.title,
-        status: 'scheduled' as const,
-        notes: a.notes
-      })))
-      setDashboard(null) // Indicate demo mode
-    }
+    const data = await parentApi.getDashboard()
+    setDashboard(data)
+    setUserName(data.guardian.name.split(' ')[0])
+    setMissedVaccinations(data.missedVaccinations)
+    setNotifications(data.recentNotifications)
+    setAppointments(data.upcomingAppointments)
   }, [])
 
   // Fetch children
   const refreshChildren = useCallback(async () => {
-    try {
-      const data = await parentApi.getChildren()
-      setChildrenData(data)
-    } catch (err) {
-      console.warn('Failed to fetch children, using demo data:', err)
-      // Use demo data as fallback (matching API types)
-      setChildrenData([{
-        id: childInfo.id,
-        childId: childInfo.id,
-        name: childInfo.name,
-        dateOfBirth: '2023-06-15',
-        age: childInfo.age,
-        gender: 'female',
-        bloodType: childInfo.bloodType,
-        weight: childInfo.birthWeight,
-        length: childInfo.height,
-        profilePhoto: childInfo.profilePhoto,
-        registrationDate: '2023-06-20',
-        facilityName: childInfo.primaryFacility,
-        facilityId: 'demo-facility'
-      }])
-    }
+    const data = await parentApi.getChildren()
+    setChildrenData(data)
   }, [])
 
   // Fetch appointments
   const refreshAppointments = useCallback(async () => {
-    try {
-      const data = await parentApi.getAppointments()
-      setAppointments(data)
-    } catch (err) {
-      console.error('Failed to fetch appointments:', err)
-    }
+    const data = await parentApi.getAppointments()
+    setAppointments(data)
   }, [])
 
   // Fetch certificates
   const refreshCertificates = useCallback(async () => {
-    try {
-      const data = await parentApi.getAllCertificates()
-      setCertificates(data)
-    } catch (err) {
-      console.warn('Failed to fetch certificates, using demo data:', err)
-      // Use demo data as fallback (matching API types)
-      setCertificates(certificateRecords.map(cert => ({
-        id: cert.certificateId,
-        certificateId: cert.certificateId,
-        childId: cert.childId,
-        childName: cert.childName,
-        completionStatus: cert.completionStatus as 'Complete' | 'Partial' | 'Pending',
-        issuedDate: cert.issuedDate,
-        issuedBy: cert.issuedBy,
-        qrPayload: cert.qrPayload,
-        vaccines: cert.vaccinesCompleted
-      })))
-    }
+    const data = await parentApi.getAllCertificates()
+    setCertificates(data)
   }, [])
 
   // Fetch missed vaccinations
   const refreshMissedVaccinations = useCallback(async () => {
-    try {
-      const data = await parentApi.getMissedVaccinations()
-      setMissedVaccinations(data)
-    } catch (err) {
-      console.error('Failed to fetch missed vaccinations:', err)
-    }
+    const data = await parentApi.getMissedVaccinations()
+    setMissedVaccinations(data)
   }, [])
 
   // Get child vaccinations
@@ -243,6 +185,51 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     router.push('/auth/login')
   }, [router])
 
+  // Fetch all data
+  const fetchAllData = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    
+    try {
+      // Fetch dashboard first (contains most data)
+      await refreshDashboard()
+      
+      // Fetch additional data in parallel
+      const results = await Promise.allSettled([
+        refreshChildren(),
+        refreshCertificates(),
+        parentApi.getProfile().then(setMotherDetails),
+      ])
+      
+      // Check for partial failures and log them (non-critical)
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          const endpoints = ['children', 'certificates', 'profile']
+          console.warn(`Failed to fetch ${endpoints[index]}:`, result.reason)
+        }
+      })
+    } catch (err) {
+      console.error('Failed to fetch dashboard data:', err)
+      const errorMessage = getErrorMessage(err)
+      setError(errorMessage)
+      
+      // If auth error, redirect to login
+      if (errorMessage.includes('session has expired')) {
+        localStorage.removeItem('authToken')
+        localStorage.removeItem('userRole')
+        localStorage.removeItem('userName')
+        router.push('/auth/login')
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }, [refreshDashboard, refreshChildren, refreshCertificates, router])
+
+  // Retry fetch
+  const retryFetch = useCallback(async () => {
+    await fetchAllData()
+  }, [fetchAllData])
+
   // Initial data fetch
   useEffect(() => {
     const token = localStorage.getItem('authToken')
@@ -259,49 +246,13 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // Set initial name from localStorage
+    // Set initial name from localStorage while loading
     if (name) {
       setUserName(name.split(' ')[0])
     }
 
-    // Fetch all data
-    const fetchData = async () => {
-      setIsLoading(true)
-      try {
-        await Promise.all([
-          refreshDashboard(),
-          refreshChildren(),
-          refreshCertificates(),
-        ])
-        
-        // Fetch mother details
-        try {
-          const mother = await parentApi.getProfile()
-          setMotherDetails(mother)
-        } catch {
-          // Use demo mother details as fallback (matching API types)
-          setMotherDetails({
-            id: 'demo-mother',
-            name: motherDetailsTemplate.name,
-            primaryPhone: motherDetailsTemplate.primaryPhone,
-            secondaryPhone: motherDetailsTemplate.secondaryPhone,
-            email: motherDetailsTemplate.email,
-            address: `${motherDetailsTemplate.addressLine1}, ${motherDetailsTemplate.city}`,
-            preferredContact: motherDetailsTemplate.preferredContactMethod as 'phone' | 'sms' | 'email',
-            preferredLanguage: 'en',
-            emergencyContacts: []
-          })
-        }
-      } catch (err) {
-        console.error('Failed to fetch initial data:', err)
-        // Don't set error - we have demo data fallback
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchData()
-  }, [router, refreshDashboard, refreshChildren, refreshCertificates])
+    fetchAllData()
+  }, [router, fetchAllData])
 
   const value: ParentDashboardContextValue = {
     userName,
@@ -325,6 +276,7 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     createAppointment: createAppointmentHandler,
     cancelAppointment: cancelAppointmentHandler,
     updateMotherDetails: updateMotherDetailsHandler,
+    retryFetch,
     logout: logoutHandler,
   }
 

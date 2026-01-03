@@ -4,7 +4,12 @@ NestJS backend for the Child Vaccination Command Center.
 
 ## Deployment
 
-This backend is configured to deploy on Railway from the `/backend` subdirectory.
+The service currently deploys to **Render** from the `/backend` subdirectory. Use these settings:
+
+- Branch: `main`
+- Root Directory: `backend`
+- Build Command: `pnpm install && pnpm run build`
+- Start Command: `pnpm run start:prod`
 
 ### Environment Variables (set in Railway dashboard)
 
@@ -17,20 +22,42 @@ This backend is configured to deploy on Railway from the `/backend` subdirectory
 | `PORT` | Server port (Railway sets this) | `3001` |
 | `CORS_ORIGIN` | Frontend URL for CORS | `https://your-app.vercel.app` |
 
+### Environment Variables
+
+Create `.env` in this folder and fill in:
+
+```env
+SUPABASE_URL=https://pvzatstzlvtaequsqhec.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service role key from Supabase console>
+JWT_SECRET=<choose a long random string>
+PORT=3001
+CORS_ORIGIN=http://localhost:3000
+```
+
+For Render, copy the same values into the dashboard (plus `NODE_ENV=production` and your production `CORS_ORIGIN`).
+
 ### Local Development
 
 ```bash
-# Install dependencies
+# Install dependencies once
 pnpm install
 
-# Start in development mode
+# Start in development mode (watches files)
 pnpm run start:dev
 
-# Build for production
+# Build for production output
 pnpm run build
 
-# Start production server
+# Run the built server
 pnpm run start:prod
+```
+
+### Quick sanity test
+
+```bash
+curl -X POST http://localhost:3001/api/auth/login \
+	-H "Content-Type: application/json" \
+	-d '{"email":"akosua.asante@example.com","password":"password1234","userType":"parent"}'
 ```
 
 ## API Endpoints

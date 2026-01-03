@@ -4,7 +4,8 @@ import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertCircle, ArrowLeft, Check, Eye, EyeOff, KeyRound, ShieldCheck, User } from "lucide-react"
+import { AlertCircle, ArrowLeft, Eye, EyeOff, KeyRound, ShieldCheck, User } from "lucide-react"
+import { toast } from "sonner"
 
 import Lottie from "lottie-react"
 
@@ -16,59 +17,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import loadingAnimation from "@/public/animations/loading.json"
 import { login } from "@/lib/api/auth"
 
-type DemoAccount = {
-  email: string
-  role: "parent" | "hq-admin" | "branch-manager" | "facility-nurse" | "chw" | "data-officer" | "pha"
-  display: string
-  description: string
-}
+type UserRole = "parent" | "hq-admin" | "branch-manager" | "facility-nurse" | "chw" | "data-officer" | "pha"
 
-const DEMO_ACCOUNTS: DemoAccount[] = [
-  {
-    email: "parent@example.com",
-    role: "parent",
-    display: "Parent",
-    description: "Access child vaccination journeys and reminders.",
-  },
-  {
-    email: "admin@health.gov.gh",
-    role: "hq-admin",
-    display: "HQ Admin",
-    description: "Monitor national coverage, drop-off and cold chain alerts.",
-  },
-  {
-    email: "branch.manager@health.gov.gh",
-    role: "branch-manager",
-    display: "Branch Manager",
-    description: "Supervise facility teams and track branch-level KPIs.",
-  },
-  {
-    email: "nurse@health.gov.gh",
-    role: "facility-nurse",
-    display: "Facility Nurse",
-    description: "Capture clinic doses and manage appointment queues.",
-  },
-  {
-    email: "chw@health.gov.gh",
-    role: "chw",
-    display: "Community Health Worker",
-    description: "Plan home visits and record outreach vaccinations offline.",
-  },
-  {
-    email: "data.officer@health.gov.gh",
-    role: "data-officer",
-    display: "Data Officer",
-    description: "Resolve duplicates, audit data quality, and publish reports.",
-  },
-  {
-    email: "pha@health.gov.gh",
-    role: "pha",
-    display: "Public Health Authority",
-    description: "View national analytics and read-only regulatory dashboards.",
-  },
-]
-
-const ROLE_ROUTES: Record<DemoAccount["role"], string> = {
+const ROLE_ROUTES: Record<UserRole, string> = {
   parent: "/parent/dashboard",
   "hq-admin": "/hq/dashboard",
   "branch-manager": "/branch/dashboard",
@@ -91,63 +42,43 @@ export default function UnifiedLoginPage() {
     setError(null)
 
     if (!email || !password || password.length < 6) {
-      setError("Enter your email and a password with at least 6 characters.")
+      const message = "Enter your email and a password with at least 6 characters."
+      setError(message)
+      toast.error(message)
       return
     }
 
     setIsSubmitting(true)
 
     try {
-      // Determine user type from email
-      const matchedAccount = DEMO_ACCOUNTS.find((account) => account.email.toLowerCase() === email.toLowerCase())
-      const userType = matchedAccount?.role ?? "parent"
-      
-      // Try to login via the backend API
-      try {
-        const response = await login({
-          email,
-          password,
-          userType,
-        })
-        
-        // Store additional role info
-        const storedRole = response.user.role === "parent" ? "parent" : "staff"
-        localStorage.setItem("userRole", storedRole)
-        localStorage.setItem("userRoleDetail", response.user.role)
-        
-        // Navigate to the appropriate dashboard
-        const route = ROLE_ROUTES[userType] ?? "/dashboard"
-        router.push(route)
-        return
-      } catch (apiError) {
-        console.warn("Backend login failed, falling back to demo mode:", apiError)
-        // Fall through to demo mode
-      }
-      
-      // Demo mode fallback (when backend is unavailable or for non-parent users)
-      const roleDetail = matchedAccount?.role ?? "parent"
-      const route = ROLE_ROUTES[roleDetail] ?? "/dashboard"
-      const storedRole = roleDetail === "parent" ? "parent" : "staff"
-      const displayName = matchedAccount?.display ?? email.split("@")[0]
+      const response = await login({
+        email,
+        password,
+        userType: "parent", // Backend will return the actual role
+      })
 
-      localStorage.setItem("authToken", "demo-mode-token")
+      const resolvedRole = (response.user.role as UserRole) || "parent"
+      const storedRole = resolvedRole === "parent" ? "parent" : "staff"
+      const route = ROLE_ROUTES[resolvedRole] ?? "/dashboard"
+
       localStorage.setItem("userRole", storedRole)
-      localStorage.setItem("userRoleDetail", roleDetail)
-      localStorage.setItem("userName", displayName)
-      localStorage.setItem("userId", "demo-user-id")
+      localStorage.setItem("userRoleDetail", resolvedRole)
+      localStorage.setItem("userName", response.user.fullName)
+      localStorage.setItem("userId", response.user.id)
 
-      router.push(route)
+      toast.success(`Welcome back, ${response.user.fullName.split(" ")[0]}!`)
+      router.replace(route)
     } catch (pushError) {
-      console.error("Login navigation failed", pushError)
+      console.error("Login failed", pushError)
+      const message =
+        pushError instanceof Error
+          ? pushError.message || "Could not complete sign in. Please try again."
+          : "Could not complete sign in. Please try again."
+      setError(message)
+      toast.error(message)
+    } finally {
       setIsSubmitting(false)
-      setError("Could not complete sign in. Please try again.")
     }
-  }
-
-  const handleDemoAccountClick = (account: DemoAccount) => {
-    setEmail(account.email)
-    setPassword("password123")
-    setError(null)
   }
 
   return (
@@ -190,42 +121,13 @@ export default function UnifiedLoginPage() {
               </p>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Demo accounts</CardTitle>
-              <CardDescription>Click to auto-fill credentials. Use any 6+ character password.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                {DEMO_ACCOUNTS.map((account) => (
-                  <li key={account.email}>
-                    <button
-                      type="button"
-                      onClick={() => handleDemoAccountClick(account)}
-                      className="flex w-full items-center justify-between rounded-md border border-border bg-background px-3 py-3 text-left transition hover:border-primary/40"
-                    >
-                      <span className="flex flex-col gap-1 text-left text-foreground">
-                        <span className="flex items-center gap-2 font-semibold">
-                          <Check className="size-4 text-primary" /> {account.display}
-                        </span>
-                        <span className="text-xs text-muted-foreground">{account.description}</span>
-                      </span>
-                      <span className="text-xs font-mono text-muted-foreground">{account.email}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-muted-foreground">Password hint: any password with six or more characters works in demo mode.</p>
-            </CardContent>
-          </Card>
         </section>
 
         <section className="flex w-full flex-1 items-center justify-center">
           <Card className="relative w-full max-w-lg border-border shadow-sm">
             <CardHeader className="space-y-2 text-center">
               <CardTitle className="text-2xl">Sign in to continue</CardTitle>
-              <CardDescription>Use your clinic-issued email or the demo accounts to explore the system.</CardDescription>
+              <CardDescription>Use your clinic-issued email and password to access the system.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {error ? (
@@ -280,7 +182,7 @@ export default function UnifiedLoginPage() {
 
               <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
                 <p className="font-medium text-foreground">Having trouble?</p>
-                <p>Confirm your email is registered by the clinic admin. Demo mode accepts any password with six or more characters.</p>
+                <p>Confirm your email is registered by the clinic admin. Contact your facility manager if you need access.</p>
               </div>
 
               <div className="text-center text-xs text-muted-foreground">

@@ -14,18 +14,13 @@ export class AuthService {
    * Validate user credentials and generate JWT token
    */
   async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-    const { email, password, userType } = loginDto;
+    const { email, password } = loginDto;
 
     // Get user from database
     const user = await this.databaseService.getUserByEmail(email);
     
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
-    }
-
-    // Check user role matches the login type
-    if (user.role !== userType) {
-      throw new UnauthorizedException(`Invalid login. Please use the correct login portal for your role.`);
     }
 
     // Verify password
@@ -218,8 +213,16 @@ export class AuthService {
    */
   async validateUser(payload: TokenPayload): Promise<UserProfileDto | null> {
     const user = await this.databaseService.getUserById(payload.sub);
-    
-    if (!user || !user.is_active) {
+
+    if (!user) {
+      return null;
+    }
+
+    // Legacy seed data uses `status`, newer records also have `is_active`
+    const statusFlag = typeof user.status === 'string' ? user.status === 'active' : true;
+    const booleanFlag = typeof user.is_active === 'boolean' ? user.is_active : true;
+
+    if (!statusFlag || !booleanFlag) {
       return null;
     }
 

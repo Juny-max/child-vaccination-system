@@ -230,19 +230,48 @@ export class DatabaseService implements OnModuleInit {
         pdf_url,
         status,
         last_verified_at,
-        issued_by:users (
-          id,
-          full_name
-        ),
-        facility:branches (
-          id,
-          name
-        )
+        issued_by_user_id,
+        issued_by_facility_id
       `)
       .eq('child_id', childId)
       .order('issued_date', { ascending: false });
 
     if (error) throw new Error(error.message);
+    
+    // Fetch related user and facility data separately if needed
+    if (data && data.length > 0) {
+      // Get unique user IDs and facility IDs
+      const userIds = [...new Set(data.map(c => c.issued_by_user_id).filter(Boolean))];
+      const facilityIds = [...new Set(data.map(c => c.issued_by_facility_id).filter(Boolean))];
+      
+      // Fetch users
+      const usersMap = new Map();
+      if (userIds.length > 0) {
+        const { data: users } = await this._supabase
+          .from('users')
+          .select('id, full_name')
+          .in('id', userIds);
+        users?.forEach(u => usersMap.set(u.id, u));
+      }
+      
+      // Fetch facilities
+      const facilitiesMap = new Map();
+      if (facilityIds.length > 0) {
+        const { data: facilities } = await this._supabase
+          .from('branches')
+          .select('id, name')
+          .in('id', facilityIds);
+        facilities?.forEach(f => facilitiesMap.set(f.id, f));
+      }
+      
+      // Map the data with related entities
+      return data.map(cert => ({
+        ...cert,
+        issued_by: usersMap.get(cert.issued_by_user_id) || null,
+        facility: facilitiesMap.get(cert.issued_by_facility_id) || null,
+      }));
+    }
+    
     return data;
   }
 
@@ -409,5 +438,50 @@ export class DatabaseService implements OnModuleInit {
     if (error) {
       console.error('Failed to create audit log:', error);
     }
+  }
+
+  /**
+   * Get vaccination completion status for a child
+   * Returns the total required vaccines and completed count
+   */
+  async getVaccinationCompletionStatus(childId: string): Promise<{
+    totalRequired: number;
+    completedCount: number;
+    isComplete: boolean;
+    completedVaccines: string[];
+  }> {
+    // Get total mandatory vaccines from schedule
+    const { data: schedules, error: scheduleError } = await this._supabase
+      .from('vaccination_schedules')
+      .select('id, vaccine:vaccines(id, name)')
+      .eq('is_mandatory', true);
+
+    if (scheduleError) throw new Error(scheduleError.message);
+
+    const totalRequired = schedules?.length || 0;
+
+    // Get completed vaccinations for this child
+    const { data: completed, error: completedError } = await this._supabase
+      .from('vaccination_events')
+      .select(`
+        id,
+        vaccine_id,
+        dose_number,
+        vaccine:vaccines(id, name)
+      `)
+      .eq('child_id', childId)
+      .eq('status', 'completed');
+
+    if (completedError) throw new Error(completedError.message);
+
+    const completedCount = completed?.length || 0;
+    const completedVaccines = completed?.map((v: any) => v.vaccine?.name).filter(Boolean) || [];
+
+    return {
+      totalRequired,
+      completedCount,
+      isComplete: completedCount >= totalRequired && totalRequired > 0,
+      completedVaccines,
+    };
   }
 }

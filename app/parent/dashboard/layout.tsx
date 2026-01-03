@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import Image from "next/image"
+import Lottie from "lottie-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -23,6 +24,7 @@ import {
 } from "lucide-react"
 import { ParentDashboardProvider, useParentDashboard } from "./dashboard-context"
 import { ThemeToggle } from "@/components/theme-toggle"
+import loadingAnimation from "@/public/animations/loading.json"
 
 type DashboardLayoutProps = {
   children: React.ReactNode
@@ -48,8 +50,9 @@ const navItems: NavItem[] = [
 
 function DashboardLayoutContent({ children }: DashboardLayoutProps) {
   const pathname = usePathname()
-  const { userName, greeting, isLoading, logout } = useParentDashboard()
+  const { userName, greeting, isLoading, error, retryFetch, logout } = useParentDashboard()
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
+  const [isRetrying, setIsRetrying] = useState(false)
 
   const currentNavItems = useMemo(() => navItems, [])
 
@@ -57,12 +60,58 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
     setIsMobileNavOpen(false)
   }, [pathname])
 
+  const handleRetry = async () => {
+    setIsRetrying(true)
+    try {
+      await retryFetch()
+    } finally {
+      setIsRetrying(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-muted/40">
         <div className="flex flex-col items-center gap-4">
-          <div className="size-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <div className="size-48">
+            <Lottie animationData={loadingAnimation} loop />
+          </div>
           <p className="text-sm text-muted-foreground">Loading your dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+        <div className="flex max-w-md flex-col items-center gap-6 rounded-lg border border-destructive/30 bg-background p-8 text-center shadow-lg">
+          <div className="flex size-16 items-center justify-center rounded-full bg-destructive/10">
+            <AlertTriangle className="size-8 text-destructive" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-foreground">Unable to Load Dashboard</h2>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button onClick={handleRetry} disabled={isRetrying} className="gap-2">
+              {isRetrying ? (
+                <>
+                  <div className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Retrying...
+                </>
+              ) : (
+                'Try Again'
+              )}
+            </Button>
+            <Button variant="outline" onClick={logout} className="gap-2">
+              <LogOut className="size-4" />
+              Back to Login
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            If the problem persists, please contact support or try again later.
+          </p>
         </div>
       </div>
     )
