@@ -52,6 +52,16 @@ export class RefreshTokenDto {
   refreshToken: string;
 }
 
+export class ChangePasswordDto {
+  @IsString()
+  @MinLength(6)
+  currentPassword: string;
+
+  @IsString()
+  @MinLength(8, { message: 'New password must be at least 8 characters long' })
+  newPassword: string;
+}
+
 // ============================================
 // Response DTOs
 // ============================================
@@ -70,6 +80,7 @@ export class AuthResponseDto {
   tokenType: string;
   expiresIn: number;
   user: UserProfileDto;
+  mustChangePassword?: boolean;
 }
 
 // ============================================

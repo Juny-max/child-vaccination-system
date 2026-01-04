@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
+import { EmailService } from '../common/email.service';
 import {
   ChildSearchResultDto,
   FacilityChildProfileDto,
@@ -12,11 +13,18 @@ import {
   SessionNoteDto,
   UpdateGuardianDto,
   GuardianDto,
+  TodayAppointmentDto,
+  UrgentFollowUpDto,
+  RegisterGuardianDto,
+  RegisteredGuardianDto,
 } from './dto';
 
 @Injectable()
 export class FacilityService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly emailService: EmailService,
+  ) {}
 
   /**
    * Search for children by name, CVCC ID, or guardian phone number
@@ -692,5 +700,291 @@ export class FacilityService {
       region: guardian.region,
       preferredContact: guardian.preferred_contact || 'sms',
     };
+  }
+
+  /**
+   * Get today's appointments for a facility
+   */
+  async getTodaysAppointments(facilityId?: string): Promise<TodayAppointmentDto[]> {
+    const today = new Date().toISOString().split('T')[0];
+
+    let query = this.db.supabase
+      .from('appointments')
+      .select(`
+        id,
+        child_id,
+        scheduled_date,
+        scheduled_time,
+        status,
+        vaccine_id,
+        children (
+          id,
+          full_name,
+          child_guardian!inner (
+            is_primary,
+            guardians (
+              full_name,
+              phone_primary
+            )
+          )
+        ),
+        vaccines (
+          name
+        )
+      `)
+      .eq('scheduled_date', today)
+      .in('status', ['scheduled', 'confirmed'])
+      .order('scheduled_time', { ascending: true });
+
+    if (facilityId) {
+      query = query.eq('facility_id', facilityId);
+    }
+
+    const { data: appointments, error } = await query;
+
+    if (error) {
+      console.error('Error fetching appointments:', error);
+      return [];
+    }
+
+    return (appointments || []).map((apt: any) => {
+      const child = apt.children;
+      const primaryGuardian = child?.child_guardian?.find((cg: any) => cg.is_primary);
+      const guardianData = primaryGuardian?.guardians?.[0];
+
+      return {
+        id: apt.id,
+        childId: child?.id || apt.child_id,
+        childName: child?.full_name || 'Unknown',
+        caregiver: guardianData?.full_name || 'Unknown',
+        scheduledTime: apt.scheduled_time ? apt.scheduled_time.slice(0, 5) : '—',
+        vaccine: apt.vaccines?.name || 'General checkup',
+        contact: guardianData?.phone_primary || 'N/A',
+        status: apt.status,
+      };
+    });
+  }
+
+  /**
+   * Get urgent follow-ups (children with overdue vaccinations)
+   */
+  async getUrgentFollowUps(facilityId?: string): Promise<UrgentFollowUpDto[]> {
+    const today = new Date();
+    
+    // Get all children with scheduled vaccines that are overdue
+    let query = this.db.supabase
+      .from('children')
+      .select(`
+        id,
+        cvcc_id,
+        full_name,
+        date_of_birth,
+        primary_facility_id,
+        child_guardian!inner (
+          is_primary,
+          guardians (
+            full_name,
+            phone_primary
+          )
+        )
+      `);
+
+    if (facilityId) {
+      query = query.eq('primary_facility_id', facilityId);
+    }
+
+    const { data: children, error } = await query;
+
+    if (error) {
+      console.error('Error fetching children for follow-ups:', error);
+      return [];
+    }
+
+    const followUps: UrgentFollowUpDto[] = [];
+
+    // For each child, check their vaccination status
+    for (const child of children || []) {
+      const scheduled = await this.db.getUpcomingVaccinations(
+        child.id,
+        child.date_of_birth,
+      );
+
+      // Find overdue vaccines
+      const overdueVaccines = (scheduled || []).filter((v: any) => v.isOverdue);
+      
+      if (overdueVaccines.length > 0) {
+        const primaryGuardian = child.child_guardian?.find((cg: any) => cg.is_primary);
+        const guardianData = primaryGuardian?.guardians?.[0];
+        
+        // Get the most overdue vaccine
+        const mostOverdue = overdueVaccines.sort((a: any, b: any) => b.daysOverdue - a.daysOverdue)[0];
+        const vaccineName = mostOverdue.vaccine?.[0]?.name || mostOverdue.schedule_name || 'Unknown vaccine';
+
+        followUps.push({
+          id: `URG-${child.cvcc_id?.slice(-4) || child.id.slice(0, 8)}`,
+          childId: child.id,
+          childName: child.full_name,
+          reason: `Overdue for ${vaccineName} by ${mostOverdue.daysOverdue} days`,
+          caregiver: guardianData?.full_name || 'Unknown',
+          contact: guardianData?.phone_primary || 'N/A',
+          daysOverdue: mostOverdue.daysOverdue,
+        });
+      }
+    }
+
+    // Sort by days overdue (most urgent first) and limit
+    return followUps
+      .sort((a, b) => b.daysOverdue - a.daysOverdue)
+      .slice(0, 10);
+  }
+
+  /**
+   * Register a new guardian (mother/caregiver)
+   */
+  async registerGuardian(dto: RegisterGuardianDto): Promise<RegisteredGuardianDto> {
+    // Build the address string
+    const addressParts = [dto.addressLine1];
+    if (dto.landmark) addressParts.push(dto.landmark);
+    addressParts.push(dto.city, dto.region);
+    if (dto.country) addressParts.push(dto.country);
+    
+    let userId: string | null = null;
+    let tempPassword: string | null = null;
+
+    // If email is provided, create a user account with temporary password
+    if (dto.email) {
+      // Generate a temporary password (8 characters)
+      tempPassword = this.generateTempPassword();
+      const passwordHash = await this.hashPassword(tempPassword);
+
+      // Create user account
+      const { data: newUser, error: userError } = await this.db.supabase
+        .from('users')
+        .insert({
+          email: dto.email,
+          phone: dto.phoneNumber,
+          full_name: dto.fullName,
+          role: 'parent',
+          status: 'active',
+          password_hash: passwordHash,
+          must_change_password: true, // Force password change on first login
+        })
+        .select()
+        .single();
+
+      if (userError) {
+        // If email already exists, log but continue with guardian registration
+        if (userError.code === '23505') { // Unique violation
+          console.log('User with this email already exists, linking to existing account');
+          // Get existing user
+          const { data: existingUser } = await this.db.supabase
+            .from('users')
+            .select('id')
+            .eq('email', dto.email)
+            .single();
+          if (existingUser) {
+            userId = existingUser.id;
+          }
+        } else {
+          console.error('Error creating user account:', userError);
+        }
+      } else {
+        userId = newUser.id;
+      }
+    }
+
+    // Insert into guardians table
+    const { data: guardian, error } = await this.db.supabase
+      .from('guardians')
+      .insert({
+        user_id: userId, // Link to user account if created
+        full_name: dto.fullName,
+        phone_primary: dto.phoneNumber,
+        phone_alternate: dto.alternatePhone || null,
+        email: dto.email || null,
+        address_line1: dto.addressLine1,
+        landmark: dto.landmark || null,
+        city: dto.city,
+        region: dto.region,
+        country: dto.country || 'Ghana',
+        postal_code: dto.postalCode || null,
+        ghana_card_number: dto.ghanaCard || null,
+        nhis_number: dto.nhisNumber || null,
+        preferred_contact: dto.preferredContact,
+        emergency_contact_name: dto.emergencyContactName || null,
+        emergency_contact_phone: dto.emergencyContactPhone || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error registering guardian:', error);
+      throw new Error(`Failed to register guardian: ${error.message}`);
+    }
+
+    // Determine what message to show based on preferred contact method
+    let message = '';
+    let emailSent = false;
+
+    if (dto.preferredContact === 'email' && dto.email && tempPassword && userId) {
+      // Send welcome email with credentials
+      emailSent = await this.emailService.sendWelcomeEmail(
+        { email: dto.email, name: dto.fullName },
+        tempPassword,
+      );
+      
+      if (emailSent) {
+        message = `Guardian registered successfully. Login credentials have been sent to ${dto.email}. The parent will be asked to change their password on first login.`;
+      } else {
+        message = `Guardian registered successfully. Account created but email delivery failed. Please manually provide the credentials: Email: ${dto.email}, Temporary Password: ${tempPassword}`;
+      }
+    } else if (dto.preferredContact === 'email' && dto.email && !tempPassword) {
+      message = `Guardian registered successfully. The email ${dto.email} is already registered. The parent can use their existing credentials to log in.`;
+    } else if (dto.preferredContact === 'sms') {
+      message = `Guardian registered successfully. SMS reminders will be sent to ${dto.phoneNumber}. No portal access created (email not provided).`;
+    } else {
+      message = 'Guardian registered successfully.';
+    }
+
+    return {
+      id: guardian.id,
+      fullName: guardian.full_name,
+      phonePrimary: guardian.phone_primary,
+      phoneAlternate: guardian.phone_alternate,
+      email: guardian.email,
+      addressLine1: guardian.address_line1,
+      landmark: guardian.landmark,
+      city: guardian.city,
+      region: guardian.region,
+      country: guardian.country,
+      ghanaCard: guardian.ghana_card_number,
+      nhisNumber: guardian.nhis_number,
+      preferredContact: guardian.preferred_contact,
+      message,
+      emailSent: emailSent || undefined, // Indicate if email was sent successfully
+    };
+  }
+
+  /**
+   * Generate a temporary password
+   */
+  private generateTempPassword(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let password = '';
+    for (let i = 0; i < 8; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  }
+
+  /**
+   * Hash password using SHA-256 (same as auth service)
+   */
+  private async hashPassword(password: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 }

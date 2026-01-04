@@ -102,6 +102,79 @@ export class RecordSessionNoteDto {
   notes: string;
 }
 
+/**
+ * Register new guardian (mother/caregiver) request
+ */
+export class RegisterGuardianDto {
+  @IsString()
+  @IsNotEmpty()
+  fullName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  phoneNumber: string;
+
+  @IsString()
+  @IsOptional()
+  alternatePhone?: string;
+
+  @IsString()
+  @IsOptional()
+  email?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  addressLine1: string;
+
+  @IsString()
+  @IsOptional()
+  landmark?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  city: string;
+
+  @IsString()
+  @IsNotEmpty()
+  region: string;
+
+  @IsString()
+  @IsOptional()
+  country?: string;
+
+  @IsString()
+  @IsOptional()
+  postalCode?: string;
+
+  @IsString()
+  @IsOptional()
+  community?: string;
+
+  @IsString()
+  @IsOptional()
+  ghanaCard?: string;
+
+  @IsString()
+  @IsOptional()
+  nhisNumber?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  preferredContact: 'sms' | 'email';
+
+  @IsString()
+  @IsOptional()
+  emergencyContactName?: string;
+
+  @IsString()
+  @IsOptional()
+  emergencyContactPhone?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
 // ============================================================================
 // RESPONSE DTOs
 // ============================================================================
@@ -280,4 +353,50 @@ export class GuardianDto {
   preferredContact: 'sms' | 'email' | 'whatsapp';
 }
 
+/**
+ * Today's appointment response
+ */
+export class TodayAppointmentDto {
+  id: string;
+  childId: string;
+  childName: string;
+  caregiver: string;
+  scheduledTime: string;
+  vaccine: string;
+  contact: string;
+  status: string;
+}
 
+/**
+ * Urgent follow-up response
+ */
+export class UrgentFollowUpDto {
+  id: string;
+  childId: string;
+  childName: string;
+  reason: string;
+  caregiver: string;
+  contact: string;
+  daysOverdue: number;
+}
+
+/**
+ * Registered guardian response (after successful registration)
+ */
+export class RegisteredGuardianDto {
+  id: string;
+  fullName: string;
+  phonePrimary: string;
+  phoneAlternate: string | null;
+  email: string | null;
+  addressLine1: string;
+  landmark: string | null;
+  city: string;
+  region: string;
+  country: string;
+  ghanaCard: string | null;
+  nhisNumber: string | null;
+  preferredContact: 'sms' | 'email';
+  message: string;
+  emailSent?: boolean; // Indicates if credentials were emailed successfully
+}

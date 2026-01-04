@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FacilityService } from './facility.service';
-import { SearchChildDto, AdministerVaccineDto, RecordGrowthMeasurementDto, RecordSessionNoteDto, UpdateGuardianDto } from './dto';
+import { SearchChildDto, AdministerVaccineDto, RecordGrowthMeasurementDto, RecordSessionNoteDto, UpdateGuardianDto, RegisterGuardianDto } from './dto';
 
 @Controller('facility')
 @UseGuards(AuthGuard('jwt'))
@@ -143,5 +143,32 @@ export class FacilityController {
     @Body() dto: UpdateGuardianDto,
   ) {
     return this.facilityService.updateGuardian(guardianId, dto);
+  }
+
+  /**
+   * GET /api/facility/appointments/today
+   * Get today's appointments for the facility
+   */
+  @Get('appointments/today')
+  async getTodaysAppointments(@Query('facilityId') facilityId?: string) {
+    return this.facilityService.getTodaysAppointments(facilityId);
+  }
+
+  /**
+   * GET /api/facility/follow-ups/urgent
+   * Get urgent follow-ups (children with overdue vaccinations)
+   */
+  @Get('follow-ups/urgent')
+  async getUrgentFollowUps(@Query('facilityId') facilityId?: string) {
+    return this.facilityService.getUrgentFollowUps(facilityId);
+  }
+
+  /**
+   * POST /api/facility/guardians
+   * Register a new guardian (mother/caregiver)
+   */
+  @Post('guardians')
+  async registerGuardian(@Body() dto: RegisterGuardianDto) {
+    return this.facilityService.registerGuardian(dto);
   }
 }

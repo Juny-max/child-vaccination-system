@@ -30,81 +30,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
 
-const appointments = [
-  {
-    id: "APT-001",
-    childName: "Kwame Boateng",
-    caregiver: "Abena Boateng",
-    scheduledTime: "08:30",
-    vaccine: "Pentavalent 3",
-    contact: "+233 247 889 221",
-  },
-  {
-    id: "APT-002",
-    childName: "Efua Agyeman",
-    caregiver: "Demo Agyeman",
-    scheduledTime: "09:15",
-    vaccine: "Measles-Rubella 1",
-    contact: "+233 201 114 532",
-  },
-  {
-    id: "APT-003",
-    childName: "Yaw Asare",
-    caregiver: "Akosua Asare",
-    scheduledTime: "10:45",
-    vaccine: "Yellow Fever",
-    contact: "+233 265 884 901",
-  },
-]
-
-const urgentFollowUps = [
-  {
-    id: "URG-18",
-    childName: "Adjoa Owusu",
-    reason: "Overdue for DPT 3 by 12 days",
-    caregiver: "Mabel Owusu",
-    contact: "+233 505 221 456",
-  },
-  {
-    id: "URG-24",
-    childName: "Kojo Mensah",
-    reason: "Missed Measles dose last visit",
-    caregiver: "Akua Mensah",
-    contact: "+233 504 113 989",
-  },
-]
-
-const clinicChildrenRecords = [
-  {
-    id: "CH-2025-001",
-    name: "Kwame Boateng",
-    caregiver: "Abena Boateng",
-    lastVisit: "03 Nov 2025",
-    contact: "+233 247 889 221",
-  },
-  {
-    id: "CH-2025-002",
-    name: "Efua Agyeman",
-    caregiver: "Demo Agyeman",
-    lastVisit: "27 Oct 2025",
-    contact: "+233 201 114 532",
-  },
-  {
-    id: "CH-2025-003",
-    name: "Yaw Asare",
-    caregiver: "Akosua Asare",
-    lastVisit: "18 Oct 2025",
-    contact: "+233 265 884 901",
-  },
-  {
-    id: "CH-2025-004",
-    name: "Adjoa Owusu",
-    caregiver: "Mabel Owusu",
-    lastVisit: "12 Sep 2025",
-    contact: "+233 505 221 456",
-  },
-]
-
 type CameraState = "idle" | "starting" | "active" | "error"
 
 export default function FacilityDashboardPage() {
@@ -119,6 +44,12 @@ export default function FacilityDashboardPage() {
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const isProcessingScan = useRef(false)
   const scannerId = "qr-scanner-facility"
+  
+  // Today's appointments and urgent follow-ups
+  const [appointments, setAppointments] = useState<facilityApi.TodayAppointment[]>([])
+  const [followUps, setFollowUps] = useState<facilityApi.UrgentFollowUp[]>([])
+  const [isLoadingAppointments, setIsLoadingAppointments] = useState(true)
+  const [isLoadingFollowUps, setIsLoadingFollowUps] = useState(true)
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -149,6 +80,25 @@ export default function FacilityDashboardPage() {
     }
 
     setUserName(name || "Facility Nurse")
+    
+    // Fetch today's appointments and urgent follow-ups
+    const fetchDashboardData = async () => {
+      try {
+        const [appointmentsData, followUpsData] = await Promise.all([
+          facilityApi.getTodaysAppointments(),
+          facilityApi.getUrgentFollowUps()
+        ])
+        setAppointments(appointmentsData)
+        setFollowUps(followUpsData)
+      } catch (error) {
+        console.error("Failed to fetch dashboard data:", error)
+      } finally {
+        setIsLoadingAppointments(false)
+        setIsLoadingFollowUps(false)
+      }
+    }
+    
+    fetchDashboardData()
   }, [router])
 
   useEffect(() => {
@@ -352,8 +302,8 @@ export default function FacilityDashboardPage() {
     }
   }
 
-  const todaysAppointments = useMemo(() => appointments, [])
-  const todaysFollowUps = useMemo(() => urgentFollowUps, [])
+  const todaysAppointments = useMemo(() => appointments, [appointments])
+  const todaysFollowUps = useMemo(() => followUps, [followUps])
 
   const handleLogout = () => {
     localStorage.removeItem("authToken")
@@ -592,7 +542,12 @@ export default function FacilityDashboardPage() {
               <CardDescription>Prepare immunisation cards and vaccines before families arrive.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {todaysAppointments.length === 0 ? (
+              {isLoadingAppointments ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading appointments...</span>
+                </div>
+              ) : todaysAppointments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No booked visits yet. Walk-in clients will appear once registered.</p>
               ) : (
                 todaysAppointments.map((appointment) => (
@@ -624,7 +579,12 @@ export default function FacilityDashboardPage() {
               <CardDescription>Prioritise these children if they attend clinic today.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {todaysFollowUps.length === 0 ? (
+              {isLoadingFollowUps ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-destructive" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading follow-ups...</span>
+                </div>
+              ) : todaysFollowUps.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No flagged children for today.</p>
               ) : (
                 todaysFollowUps.map((followUp) => (
@@ -635,7 +595,7 @@ export default function FacilityDashboardPage() {
                         <p className="text-xs text-muted-foreground">Guardian: {followUp.caregiver}</p>
                       </div>
                       <Badge variant="destructive" className="text-[10px]">
-                        {followUp.id}
+                        {followUp.daysOverdue} days overdue
                       </Badge>
                     </div>
                     <p className="mt-2 text-xs text-destructive">{followUp.reason}</p>

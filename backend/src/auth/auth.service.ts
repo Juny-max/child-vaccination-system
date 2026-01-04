@@ -73,6 +73,7 @@ export class AuthService {
         phoneNumber: user.phone_number,
         lastLogin: user.last_login,
       },
+      mustChangePassword: user.must_change_password || false,
     };
   }
 
@@ -276,5 +277,56 @@ export class AuthService {
     // In production with refresh tokens, you would:
     // 1. Invalidate refresh token
     // 2. Add JWT to blacklist (if using redis)
+  }
+
+  /**
+   * Change user password
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    // Get user from database
+    const user = await this.databaseService.getUserById(userId);
+    
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Verify current password
+    const isPasswordValid = await this.verifyPassword(currentPassword, user.password_hash);
+    
+    if (!isPasswordValid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    // Hash new password
+    const newPasswordHash = await this.hashPassword(newPassword);
+
+    // Update password in database and clear must_change_password flag
+    const { error } = await this.databaseService.supabase
+      .from('users')
+      .update({
+        password_hash: newPasswordHash,
+        must_change_password: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error updating password:', error);
+      throw new BadRequestException('Failed to update password');
+    }
+
+    // Create audit log
+    await this.databaseService.createAuditLog(
+      userId,
+      'update',
+      'users',
+      userId,
+      { after: { password_changed: new Date().toISOString() } }
+    );
+
+    return {
+      success: true,
+      message: 'Password changed successfully',
+    };
   }
 }

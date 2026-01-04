@@ -1,7 +1,7 @@
 import { Controller, Post, Get, Body, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
 import { AuthService } from './auth.service';
-import { LoginDto, RegisterDto, AuthResponseDto, UserProfileDto } from './dto';
+import { LoginDto, RegisterDto, AuthResponseDto, UserProfileDto, ChangePasswordDto } from './dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 interface AuthenticatedRequest extends ExpressRequest {
@@ -79,5 +79,24 @@ export class AuthController {
       valid: true,
       user: req.user,
     };
+  }
+
+  /**
+   * POST /api/auth/change-password
+   * Change current user's password
+   * Requires valid JWT in Authorization header
+   */
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @Request() req: AuthenticatedRequest,
+    @Body() changePasswordDto: ChangePasswordDto
+  ): Promise<{ success: boolean; message: string }> {
+    return this.authService.changePassword(
+      req.user.id,
+      changePasswordDto.currentPassword,
+      changePasswordDto.newPassword
+    );
   }
 }

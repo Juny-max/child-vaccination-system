@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertCircle, ArrowLeft, CheckCircle2, ClipboardEdit, Phone } from "lucide-react"
+import { AlertCircle, ArrowLeft, CheckCircle2, Loader2, Mail, Phone, Save } from "lucide-react"
+import { toast } from "sonner"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import * as facilityApi from "@/lib/api/facility"
 
 type MotherFormState = {
   fullName: string
@@ -57,7 +59,7 @@ export default function RegisterMotherPage() {
   const [userName, setUserName] = useState("")
   const [formData, setFormData] = useState<MotherFormState>(initialState)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [systemMessage, setSystemMessage] = useState<string | null>(null)
+  const [systemMessage, setSystemMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -80,7 +82,7 @@ export default function RegisterMotherPage() {
 
   useEffect(() => {
     if (!systemMessage) return
-    const timeout = window.setTimeout(() => setSystemMessage(null), 6000)
+    const timeout = window.setTimeout(() => setSystemMessage(null), 10000)
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
 
@@ -88,23 +90,60 @@ export default function RegisterMotherPage() {
     setFormData((previous) => ({ ...previous, [field]: value }))
   }
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    
+    // Validate email is required when email is selected as contact method
+    if (formData.preferredContact === "email" && !formData.email) {
+      toast.error("Email address is required when Email is selected as contact method")
+      return
+    }
+    
     setIsSubmitting(true)
 
-    window.setTimeout(() => {
-      setIsSubmitting(false)
-      if (formData.email) {
-        setSystemMessage(
-          `Mother registered successfully. Login instructions emailed to ${formData.email}. The new CVCC ID will sync to the branch list.`
-        )
+    try {
+      const result = await facilityApi.registerGuardian({
+        fullName: formData.fullName,
+        phoneNumber: formData.phoneNumber,
+        alternatePhone: formData.alternatePhone || undefined,
+        email: formData.email || undefined,
+        addressLine1: formData.addressLine1,
+        landmark: formData.landmark || undefined,
+        city: formData.city,
+        region: formData.region,
+        country: formData.country || 'Ghana',
+        postalCode: formData.postalCode || undefined,
+        community: formData.community || undefined,
+        ghanaCard: formData.ghanaCard || undefined,
+        nhisNumber: formData.nhisNumber || undefined,
+        preferredContact: formData.preferredContact,
+        emergencyContactName: formData.emergencyContactName || undefined,
+        emergencyContactPhone: formData.emergencyContactPhone || undefined,
+        notes: formData.notes || undefined,
+      })
+
+      // Show success message with email status if applicable
+      if (result.emailSent) {
+        setSystemMessage({ text: result.message, type: 'success' })
+        toast.success("Credentials sent to parent's email!")
+      } else if (result.preferredContact === 'email' && result.email && !result.emailSent) {
+        // Email was supposed to be sent but may have failed
+        setSystemMessage({ text: result.message, type: 'info' })
+        toast.warning("Registration successful, but please verify email delivery")
       } else {
-        setSystemMessage(
-          "Mother registered successfully. Print the clinic passbook with the generated CVCC ID and QR code before the caregiver leaves."
-        )
+        setSystemMessage({ text: result.message, type: 'success' })
+        toast.success("Mother registered successfully!")
       }
+      
       setFormData(initialState)
-    }, 800)
+    } catch (error) {
+      console.error("Registration error:", error)
+      const message = error instanceof Error ? error.message : "Failed to register mother. Please try again."
+      setSystemMessage({ text: message, type: 'error' })
+      toast.error("Registration failed")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -134,9 +173,9 @@ export default function RegisterMotherPage() {
 
       <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
         {systemMessage ? (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{systemMessage}</AlertDescription>
+          <Alert variant={systemMessage.type === 'error' ? 'destructive' : 'default'} className={systemMessage.type === 'success' ? 'border-green-500 bg-green-50 dark:bg-green-950/20' : ''}>
+            {systemMessage.type === 'success' ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertCircle className="h-4 w-4" />}
+            <AlertDescription className={systemMessage.type === 'success' ? 'text-green-700 dark:text-green-400' : ''}>{systemMessage.text}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -284,7 +323,10 @@ export default function RegisterMotherPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Preferred contact method</Label>
-                  <div className="flex gap-3">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    SMS is recommended for parents without smartphones. Email requires internet access but provides login credentials.
+                  </p>
+                  <div className="flex gap-2">
                     <button
                       type="button"
                       className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
@@ -305,9 +347,14 @@ export default function RegisterMotherPage() {
                       }`}
                       onClick={() => handleChange("preferredContact", "email")}
                     >
-                      Email
+                      <Mail className="h-4 w-4" /> Email
                     </button>
                   </div>
+                  {formData.preferredContact === "email" && !formData.email && (
+                    <p className="text-xs text-destructive mt-1">
+                      Email address is required when Email is selected as contact method.
+                    </p>
+                  )}
                 </div>
               </section>
 
@@ -345,10 +392,18 @@ export default function RegisterMotherPage() {
 
               <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
                 <div className="text-xs text-muted-foreground">
-                  By saving, the record syncs to HQ and branches once backend integration is enabled.
+                  The caregiver will receive vaccination reminders via their preferred contact method.
                 </div>
                 <Button type="submit" className="gap-2" disabled={isSubmitting}>
-                  <ClipboardEdit className="h-4 w-4" /> {isSubmitting ? "Saving..." : "Save mother record"}
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4" /> Save mother record
+                    </>
+                  )}
                 </Button>
               </div>
             </form>

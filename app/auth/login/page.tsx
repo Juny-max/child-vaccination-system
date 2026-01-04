@@ -66,6 +66,13 @@ export default function UnifiedLoginPage() {
       localStorage.setItem("userName", response.user.fullName)
       localStorage.setItem("userId", response.user.id)
 
+      // Check if user must change password (first-time login with temp password)
+      if (response.mustChangePassword) {
+        toast.info("Please set a new password before continuing.")
+        router.replace("/auth/change-password")
+        return
+      }
+
       toast.success(`Welcome back, ${response.user.fullName.split(" ")[0]}!`)
       router.replace(route)
     } catch (pushError) {

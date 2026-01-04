@@ -277,3 +277,108 @@ export async function updateGuardian(
     body: JSON.stringify(data),
   });
 }
+
+/**
+ * Today's appointment
+ */
+export interface TodayAppointment {
+  id: string;
+  childId: string;
+  childName: string;
+  caregiver: string;
+  scheduledTime: string;
+  vaccine: string;
+  contact: string;
+  status: string;
+}
+
+/**
+ * Urgent follow-up
+ */
+export interface UrgentFollowUp {
+  id: string;
+  childId: string;
+  childName: string;
+  reason: string;
+  caregiver: string;
+  contact: string;
+  daysOverdue: number;
+}
+
+/**
+ * Get today's appointments for the facility
+ */
+export async function getTodaysAppointments(facilityId?: string): Promise<TodayAppointment[]> {
+  const url = facilityId 
+    ? `/facility/appointments/today?facilityId=${encodeURIComponent(facilityId)}`
+    : '/facility/appointments/today';
+  return apiRequest<TodayAppointment[]>(url);
+}
+
+/**
+ * Get urgent follow-ups (children with overdue vaccinations)
+ */
+export async function getUrgentFollowUps(facilityId?: string): Promise<UrgentFollowUp[]> {
+  const url = facilityId 
+    ? `/facility/follow-ups/urgent?facilityId=${encodeURIComponent(facilityId)}`
+    : '/facility/follow-ups/urgent';
+  return apiRequest<UrgentFollowUp[]>(url);
+}
+
+// ============================================
+// Guardian Registration
+// ============================================
+
+/**
+ * Request to register a new guardian (mother/caregiver)
+ */
+export interface RegisterGuardianRequest {
+  fullName: string;
+  phoneNumber: string;
+  alternatePhone?: string;
+  email?: string;
+  addressLine1: string;
+  landmark?: string;
+  city: string;
+  region: string;
+  country?: string;
+  postalCode?: string;
+  community?: string;
+  ghanaCard?: string;
+  nhisNumber?: string;
+  preferredContact: 'sms' | 'email';
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  notes?: string;
+}
+
+/**
+ * Response after registering a guardian
+ */
+export interface RegisteredGuardian {
+  id: string;
+  fullName: string;
+  phonePrimary: string;
+  phoneAlternate: string | null;
+  email: string | null;
+  addressLine1: string;
+  landmark: string | null;
+  city: string;
+  region: string;
+  country: string;
+  ghanaCard: string | null;
+  nhisNumber: string | null;
+  preferredContact: 'sms' | 'email';
+  message: string;
+  emailSent?: boolean; // Indicates if credentials were emailed successfully
+}
+
+/**
+ * Register a new guardian (mother/caregiver)
+ */
+export async function registerGuardian(data: RegisterGuardianRequest): Promise<RegisteredGuardian> {
+  return apiRequest<RegisteredGuardian>('/facility/guardians', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}

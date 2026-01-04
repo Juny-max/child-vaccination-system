@@ -31,6 +31,12 @@ export interface AuthResponse {
   tokenType: string;
   expiresIn: number;
   user: UserProfile;
+  mustChangePassword?: boolean;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 // ============================================
@@ -144,4 +150,14 @@ export function isAuthenticated(): boolean {
 export function getCurrentRole(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('userRole');
+}
+
+/**
+ * Change password (for forced password change after first login)
+ */
+export async function changePassword(data: ChangePasswordRequest): Promise<{ success: boolean; message: string }> {
+  return apiRequest('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
