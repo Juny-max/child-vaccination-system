@@ -124,6 +124,12 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
         }
       } catch (err) {
         console.error('LiveAudio session error:', err)
+        // Provide fallback response
+        const fallbackMsg = "I'm having trouble processing that right now. Please try again in a moment, or check your dashboard for information."
+        onAssistantReply(fallbackMsg)
+        if ('speechSynthesis' in window && voicesLoaded) {
+          speakText(fallbackMsg)
+        }
       } finally {
         setIsProcessing(false)
       }

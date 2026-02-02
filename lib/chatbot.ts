@@ -4,6 +4,13 @@
  * Can access parent's child data for personalized answers
  */
 
+// Rate limiting state
+let lastRequestTime = 0
+let requestCount = 0
+const RATE_LIMIT_WINDOW = 60000 // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 10
+const MIN_REQUEST_INTERVAL = 2000 // 2 seconds between requests
+
 // Types for chat messages
 export interface ChatMessage {
   id: string
@@ -139,18 +146,107 @@ export function buildConversationHistory(
 }
 
 /**
- * Call Google Gemini API
+ * Wait with exponential backoff
+ */
+async function waitWithBackoff(attempt: number): Promise<void> {
+  const delay = Math.min(1000 * Math.pow(2, attempt), 10000) // Max 10s
+  await new Promise(resolve => setTimeout(resolve, delay))
+}
+
+/**
+ * Check and enforce rate limiting
+ */
+function checkRateLimit(): { allowed: boolean; waitTime: number } {
+  const now = Date.now()
+  
+  // Reset counter if outside window
+  if (now - lastRequestTime > RATE_LIMIT_WINDOW) {
+    requestCount = 0
+  }
+  
+  // Check minimum interval between requests
+  const timeSinceLastRequest = now - lastRequestTime
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    return { 
+      allowed: false, 
+      waitTime: MIN_REQUEST_INTERVAL - timeSinceLastRequest 
+    }
+  }
+  
+  // Check requests per window
+  if (requestCount >= MAX_REQUESTS_PER_WINDOW) {
+    return { 
+      allowed: false, 
+      waitTime: RATE_LIMIT_WINDOW - (now - lastRequestTime) 
+    }
+  }
+  
+  return { allowed: true, waitTime: 0 }
+}
+
+/**
+ * Generate fallback response based on context
+ */
+function generateFallbackResponse(userMessage: string, context: ChatContext): string {
+  const msg = userMessage.toLowerCase()
+  
+  // Vaccination status questions
+  if (msg.includes('status') || msg.includes('progress') || msg.includes('complete')) {
+    if (context.children.length > 0) {
+      const child = context.children[0]
+      return `${child.name} has completed ${child.completedVaccinations} out of ${child.totalVaccinations} vaccinations (${child.completionPercentage}%). ${child.nextVaccination ? `The next vaccine due is ${child.nextVaccination}.` : ''}`
+    }
+  }
+  
+  // Missed vaccinations
+  if (msg.includes('missed') || msg.includes('overdue') || msg.includes('late')) {
+    if (context.missedVaccinations.length > 0) {
+      const missed = context.missedVaccinations[0]
+      return `${missed.childName} has a missed vaccination: ${missed.vaccine} was due on ${missed.dueDate}. That's ${missed.daysOverdue} days overdue. Please schedule an appointment as soon as possible.`
+    }
+    return "Great news! You don't have any missed vaccinations right now. Keep up the good work!"
+  }
+  
+  // Appointments
+  if (msg.includes('appointment') || msg.includes('next visit') || msg.includes('when')) {
+    if (context.upcomingAppointments.length > 0) {
+      const appt = context.upcomingAppointments[0]
+      return `Your next appointment is for ${appt.childName} on ${appt.date} at ${appt.time} at ${appt.facility} for ${appt.purpose}.`
+    }
+    return "You don't have any upcoming appointments scheduled. Check your dashboard for vaccination schedules."
+  }
+  
+  // Default fallback
+  return "I'm having trouble connecting to my AI service right now. Please check your dashboard for vaccination information, or try asking again in a moment. If this continues, please contact your health facility."
+}
+
+/**
+ * Call Google Gemini API with retry logic and fallbacks
  */
 export async function sendMessageToGemini(
   userMessage: string,
   conversationHistory: ChatMessage[],
-  context: ChatContext
+  context: ChatContext,
+  maxRetries: number = 2
 ): Promise<string> {
   const API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
   
-  if (!API_KEY) {
-    throw new Error('Gemini API key not configured');
+  // Check for API key
+  if (!API_KEY || API_KEY === 'your-api-key-here') {
+    console.warn('Gemini API key not configured, using fallback responses')
+    return generateFallbackResponse(userMessage, context)
   }
+  
+  // Enforce rate limiting
+  const rateCheck = checkRateLimit()
+  if (!rateCheck.allowed) {
+    console.warn(`Rate limit hit, waiting ${rateCheck.waitTime}ms`)
+    await new Promise(resolve => setTimeout(resolve, rateCheck.waitTime))
+  }
+  
+  // Update rate limit tracking
+  lastRequestTime = Date.now()
+  requestCount++
   
   const history = buildConversationHistory(conversationHistory, context);
   
@@ -160,51 +256,97 @@ export async function sendMessageToGemini(
     parts: [{ text: userMessage }]
   });
   
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: history,
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1024,
-        },
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        ],
-      }),
+  // Retry logic with exponential backoff
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: history,
+            generationConfig: {
+              temperature: 0.7,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 150, // Reduced for faster responses
+            },
+            safetySettings: [
+              { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+              { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+              { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+              { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+            ],
+          }),
+        }
+      );
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        
+        // Handle specific error codes
+        if (response.status === 429) {
+          // Rate limit error
+          if (attempt < maxRetries) {
+            console.warn(`Rate limit hit (429), retrying after backoff (attempt ${attempt + 1}/${maxRetries + 1})...`)
+            await waitWithBackoff(attempt)
+            continue
+          }
+          console.error('Rate limit exceeded after retries, using fallback')
+          return generateFallbackResponse(userMessage, context)
+        }
+        
+        if (response.status === 400 || response.status === 401) {
+          // Bad request or auth error - don't retry
+          console.error('API configuration error:', error)
+          return generateFallbackResponse(userMessage, context)
+        }
+        
+        // Other errors - retry
+        if (attempt < maxRetries) {
+          console.warn(`API error (${response.status}), retrying... (attempt ${attempt + 1}/${maxRetries + 1})`)
+          await waitWithBackoff(attempt)
+          continue
+        }
+        
+        // Max retries reached
+        console.error('Gemini API error after retries:', error);
+        return generateFallbackResponse(userMessage, context)
+      }
+      
+      const data = await response.json();
+      
+      // Extract text from response
+      const candidates = data.candidates;
+      if (!candidates || candidates.length === 0) {
+        throw new Error('No response generated');
+      }
+      
+      const content = candidates[0].content;
+      if (!content || !content.parts || content.parts.length === 0) {
+        throw new Error('Empty response from AI');
+      }
+      
+      return content.parts[0].text;
+      
+    } catch (err) {
+      if (attempt < maxRetries) {
+        console.warn(`Network error, retrying... (attempt ${attempt + 1}/${maxRetries + 1})`, err)
+        await waitWithBackoff(attempt)
+        continue
+      }
+      
+      // Max retries reached, use fallback
+      console.error('Failed to get AI response after retries:', err)
+      return generateFallbackResponse(userMessage, context)
     }
-  );
-  
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    console.error('Gemini API error:', error);
-    throw new Error(error.error?.message || 'Failed to get response from AI');
   }
   
-  const data = await response.json();
-  
-  // Extract text from response
-  const candidates = data.candidates;
-  if (!candidates || candidates.length === 0) {
-    throw new Error('No response generated');
-  }
-  
-  const content = candidates[0].content;
-  if (!content || !content.parts || content.parts.length === 0) {
-    throw new Error('Empty response from AI');
-  }
-  
-  return content.parts[0].text;
+  // Fallback if all retries failed
+  return generateFallbackResponse(userMessage, context)
 }
 
 /**
