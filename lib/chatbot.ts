@@ -256,10 +256,10 @@ export async function sendMessageToGemini(
     parts: [{ text: userMessage }]
   });
   
-  // Try stable model first for free tier reliability
+  // Try native audio model first for speech-to-speech, then stable model
   const models = [
-    'gemini-1.5-flash',           // Stable, best for free tier
-    'gemini-2.0-flash-exp',       // Experimental, might have quota issues
+    'gemini-2.0-flash-exp',       // Native audio support for speech
+    'gemini-1.5-flash',           // Stable fallback
   ]
   
   let lastError: any = null

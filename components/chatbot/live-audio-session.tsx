@@ -93,7 +93,7 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
     recog.lang = 'en-US'
     recog.interimResults = false
     recog.maxAlternatives = 1
-    recog.continuous = false
+    recog.continuous = true  // Keep listening continuously
 
     recog.onresult = async (ev: SpeechRecognitionEvent) => {
       const transcript = ev.results[0][0].transcript?.trim()
@@ -137,12 +137,42 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
 
     recog.onerror = (event: SpeechRecognitionErrorEvent) => {
       console.error('Speech recognition error:', event.error)
+      
+      // Don't stop on "no-speech" or "audio-capture" - these are temporary
+      if (event.error === 'no-speech' || event.error === 'audio-capture') {
+        // Auto-restart if still active
+        if (isActive && recognitionRef.current) {
+          try {
+            setTimeout(() => {
+              if (isActive && recognitionRef.current) {
+                recognitionRef.current.start()
+              }
+            }, 100)
+          } catch (e) {}
+        }
+        return
+      }
+      
+      // For other errors, stop
       setIsActive(false)
       setIsProcessing(false)
     }
 
     recog.onend = () => {
-      if (isActive) setIsActive(false)
+      // Auto-restart if user hasn't manually stopped and not processing
+      if (isActive && !isProcessing && recognitionRef.current) {
+        try {
+          setTimeout(() => {
+            if (isActive && !isProcessing && recognitionRef.current) {
+              recognitionRef.current.start()
+            }
+          }, 100)
+        } catch (e) {
+          setIsActive(false)
+        }
+      } else {
+        setIsActive(false)
+      }
     }
 
     recognitionRef.current = recog
@@ -224,9 +254,9 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
   }
 
   const stop = () => {
+    setIsActive(false)  // Set this first to prevent auto-restart
     try { recognitionRef.current?.stop() } catch (e) {}
     try { window.speechSynthesis.cancel() } catch (e) {}
-    setIsActive(false)
     setIsProcessing(false)
     setIsSpeaking(false)
   }
