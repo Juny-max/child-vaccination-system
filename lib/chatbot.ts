@@ -4,12 +4,12 @@
  * Can access parent's child data for personalized answers
  */
 
-// Rate limiting state
+// Rate limiting state (optimized for Gemini free tier: 15 RPM)
 let lastRequestTime = 0
 let requestCount = 0
 const RATE_LIMIT_WINDOW = 60000 // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 10
-const MIN_REQUEST_INTERVAL = 2000 // 2 seconds between requests
+const MAX_REQUESTS_PER_WINDOW = 12 // Conservative limit (free tier allows 15)
+const MIN_REQUEST_INTERVAL = 5000 // 5 seconds between requests (safer for free tier)
 
 // Types for chat messages
 export interface ChatMessage {
@@ -256,17 +256,27 @@ export async function sendMessageToGemini(
     parts: [{ text: userMessage }]
   });
   
-  // Retry logic with exponential backoff
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${API_KEY}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
+  // Try stable model first for free tier reliability
+  const models = [
+    'gemini-1.5-flash',           // Stable, best for free tier
+    'gemini-2.0-flash-exp',       // Experimental, might have quota issues
+  ]
+  
+  let lastError: any = null
+  
+  // Try each model
+  for (const modelName of models) {
+    // Retry logic with exponential backoff per model
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
             contents: history,
             generationConfig: {
               temperature: 0.7,
@@ -289,14 +299,16 @@ export async function sendMessageToGemini(
         
         // Handle specific error codes
         if (response.status === 429) {
-          // Rate limit error
+          // Rate limit error - try next model or use fallback
+          lastError = error
           if (attempt < maxRetries) {
-            console.warn(`Rate limit hit (429), retrying after backoff (attempt ${attempt + 1}/${maxRetries + 1})...`)
+            console.warn(`Rate limit hit (429) on ${modelName}, retrying after backoff (attempt ${attempt + 1}/${maxRetries + 1})...`)
             await waitWithBackoff(attempt)
             continue
           }
-          console.error('Rate limit exceeded after retries, using fallback')
-          return generateFallbackResponse(userMessage, context)
+          // Try next model
+          console.warn(`Rate limit exceeded on ${modelName}, trying next model...`)
+          break // Exit retry loop to try next model
         }
         
         if (response.status === 400 || response.status === 401) {
@@ -330,22 +342,27 @@ export async function sendMessageToGemini(
         throw new Error('Empty response from AI');
       }
       
+      // Success! Return the response
+      console.log(`✓ Response received from ${modelName}`)
       return content.parts[0].text;
       
-    } catch (err) {
-      if (attempt < maxRetries) {
-        console.warn(`Network error, retrying... (attempt ${attempt + 1}/${maxRetries + 1})`, err)
-        await waitWithBackoff(attempt)
-        continue
+      } catch (err) {
+        lastError = err
+        if (attempt < maxRetries) {
+          console.warn(`Network error on ${modelName}, retrying... (attempt ${attempt + 1}/${maxRetries + 1})`, err)
+          await waitWithBackoff(attempt)
+          continue
+        }
+        
+        // Max retries reached for this model, try next
+        console.warn(`Failed with ${modelName} after retries, trying next model...`)
+        break // Exit retry loop to try next model
       }
-      
-      // Max retries reached, use fallback
-      console.error('Failed to get AI response after retries:', err)
-      return generateFallbackResponse(userMessage, context)
     }
   }
   
-  // Fallback if all retries failed
+  // All models failed, use intelligent fallback
+  console.error('All models exhausted, using fallback response. Last error:', lastError)
   return generateFallbackResponse(userMessage, context)
 }
 
