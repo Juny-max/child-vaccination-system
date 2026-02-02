@@ -13,7 +13,7 @@ import {
   type ChatMessage,
   type ChatContext
 } from "@/lib/chatbot"
-import LiveAudioSession from '@/components/chatbot/live-audio-session'
+import GeminiLiveSession from '@/components/chatbot/gemini-live-session'
 import { 
   Bot, 
   Loader2, 
@@ -337,17 +337,27 @@ export default function SupportPage() {
                   className="min-h-[44px] max-h-[120px] flex-1 resize-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
                   rows={1}
                 />
-                <LiveAudioSession
-                  messages={messages}
+                <GeminiLiveSession
                   chatContext={chatContext}
-                  onAssistantReply={(text) => {
-                    const assistantMessage: ChatMessage = {
-                      id: generateMessageId(),
-                      role: 'assistant',
-                      content: text,
-                      timestamp: new Date(),
+                  onTranscriptUpdate={(userText, botText) => {
+                    if (userText) {
+                      const userMessage: ChatMessage = {
+                        id: generateMessageId(),
+                        role: 'user',
+                        content: userText,
+                        timestamp: new Date(),
+                      }
+                      setMessages(prev => [...prev, userMessage])
                     }
-                    setMessages(prev => [...prev, assistantMessage])
+                    if (botText) {
+                      const assistantMessage: ChatMessage = {
+                        id: generateMessageId(),
+                        role: 'assistant',
+                        content: botText,
+                        timestamp: new Date(),
+                      }
+                      setMessages(prev => [...prev, assistantMessage])
+                    }
                   }}
                   enabled={isChatOpen}
                 />

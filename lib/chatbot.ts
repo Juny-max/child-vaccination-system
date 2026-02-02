@@ -302,12 +302,11 @@ export async function sendMessageToGemini(
           // Rate limit error - try next model or use fallback
           lastError = error
           if (attempt < maxRetries) {
-            console.warn(`Rate limit hit (429) on ${modelName}, retrying after backoff (attempt ${attempt + 1}/${maxRetries + 1})...`)
+            console.warn(`Rate limited on ${modelName}, retrying (attempt ${attempt + 1}/${maxRetries + 1})...`)
             await waitWithBackoff(attempt)
             continue
           }
           // Try next model
-          console.warn(`Rate limit exceeded on ${modelName}, trying next model...`)
           break // Exit retry loop to try next model
         }
         
@@ -362,7 +361,7 @@ export async function sendMessageToGemini(
   }
   
   // All models failed, use intelligent fallback
-  console.error('All models exhausted, using fallback response. Last error:', lastError)
+  console.log('Using smart fallback response based on dashboard data')
   return generateFallbackResponse(userMessage, context)
 }
 

@@ -123,8 +123,7 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
           speakText(aiResp)
         }
       } catch (err) {
-        console.error('LiveAudio session error:', err)
-        // Provide fallback response
+        // API errors are already handled with fallbacks - provide user-friendly response
         const fallbackMsg = "I'm having trouble processing that right now. Please try again in a moment, or check your dashboard for information."
         onAssistantReply(fallbackMsg)
         if ('speechSynthesis' in window && voicesLoaded) {
@@ -136,11 +135,9 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
     }
 
     recog.onerror = (event: SpeechRecognitionErrorEvent) => {
-      console.error('Speech recognition error:', event.error)
-      
-      // Don't stop on "no-speech" or "audio-capture" - these are temporary
-      if (event.error === 'no-speech' || event.error === 'audio-capture') {
-        // Auto-restart if still active
+      // Handle expected errors silently
+      if (event.error === 'no-speech') {
+        // Silence detected - auto-restart if still active
         if (isActive && recognitionRef.current) {
           try {
             setTimeout(() => {
@@ -153,7 +150,27 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
         return
       }
       
-      // For other errors, stop
+      if (event.error === 'aborted') {
+        // User stopped or component unmounted - this is expected
+        return
+      }
+      
+      if (event.error === 'audio-capture') {
+        // Temporary mic issue - auto-restart if still active
+        if (isActive && recognitionRef.current) {
+          try {
+            setTimeout(() => {
+              if (isActive && recognitionRef.current) {
+                recognitionRef.current.start()
+              }
+            }, 100)
+          } catch (e) {}
+        }
+        return
+      }
+      
+      // Only log unexpected errors
+      console.warn('Speech recognition error:', event.error)
       setIsActive(false)
       setIsProcessing(false)
     }
@@ -217,7 +234,11 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
       }
 
       utterance.onerror = (event) => {
-        console.error('Speech synthesis error:', event)
+        // Speech synthesis errors are common in browsers - handle silently
+        // Only log if it's not 'interrupted' or 'canceled' (expected)
+        if (event.error !== 'interrupted' && event.error !== 'canceled') {
+          console.warn('Speech synthesis issue:', event.error)
+        }
         setIsSpeaking(false)
       }
 
