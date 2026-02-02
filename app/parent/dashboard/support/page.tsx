@@ -13,6 +13,7 @@ import {
   type ChatMessage,
   type ChatContext
 } from "@/lib/chatbot"
+import LiveAudioSession from '@/components/chatbot/live-audio-session'
 import { 
   Bot, 
   Loader2, 
@@ -210,6 +211,7 @@ export default function SupportPage() {
           </Button>
         </CardHeader>
       </Card>
+      {/* Live audio session is rendered inside input area (see input) */}
 
       {/* Chat Interface */}
       {isChatOpen && (
@@ -335,6 +337,21 @@ export default function SupportPage() {
                   className="min-h-[44px] max-h-[120px] flex-1 resize-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
                   rows={1}
                 />
+                <LiveAudioSession
+                  messages={messages}
+                  chatContext={chatContext}
+                  onAssistantReply={(text) => {
+                    const assistantMessage: ChatMessage = {
+                      id: generateMessageId(),
+                      role: 'assistant',
+                      content: text,
+                      timestamp: new Date(),
+                    }
+                    setMessages(prev => [...prev, assistantMessage])
+                  }}
+                  enabled={isChatOpen}
+                />
+
                 <Button 
                   onClick={() => handleSendMessage()} 
                   disabled={!draft.trim() || isLoading}

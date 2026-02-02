@@ -5,132 +5,77 @@ import Image from "next/image"
 import Link from "next/link"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  ArrowRight,
-  BellRing,
-  Check,
-  HeartPulse,
-  Lock,
-  Menu,
-  MoonStar,
-  QrCode,
-  ShieldCheck,
-  Sun,
-  Syringe,
-  TrendingUp,
-  UserPlus,
-  X,
-} from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { ArrowRight, BellRing, Check, Menu, MoonStar, QrCode, ShieldCheck, Sun, Syringe, TrendingUp, X } from "lucide-react"
 
 const heroMedia = {
   light: "https://www.edc-ent.com/wp-content/uploads/2021/07/343434.jpg",
   dark: "https://www.edc-ent.com/wp-content/uploads/2021/07/343434.jpg",
 }
 
-const impactMetrics = [
-  { label: "Children Registered", value: "1.2M+", detail: "Across 100+ districts" },
-  { label: "Daily Reminders", value: "45K", detail: "SMS & Email alerts sent" },
-  { label: "Cold Chain Incidents", value: "<1%", detail: "Tracked with real-time alerts" },
+const pulseMetrics = [
+  { label: "Children safeguarded", value: "1.24M", detail: "Active immunisation records across Ghana" },
+  { label: "Appointments this month", value: "38,214", detail: "Synced from 428 public facilities" },
+  { label: "Cold-chain compliance", value: "99.1%", detail: "Alerts resolved within national SLA" },
 ]
 
-const workflowSteps = [
+const focusStories = [
   {
-    title: "Child Enrolment",
-    description: "Capture biometrics, guardian consent, GPS and issue secure QR IDs in under 60 seconds.",
-    icon: UserPlus,
+    title: "Clinic command operations",
+    description: "Facility teams supervise rosters, vaccine stock and cold-chain telemetry from a single pane of glass.",
+    image: "/images/greater-accra-hospital.jpg",
+    highlights: ["Live session dashboards", "Batch validation workflows"],
   },
   {
-    title: "Clinic & Field Vaccinations",
-    description: "Record doses, batch numbers, signatures and sync automatically when connectivity returns.",
-    icon: Syringe,
+    title: "Community outreach moments",
+    description: "Community health workers sync geo-tagged visits and defaulter recoveries even after offline missions.",
+    image: "/images/mother-child-outreach.jpg",
+    highlights: ["Offline-first data capture", "Real-time follow-up queues"],
   },
+]
+
+const certificateBenefits = [
+  "Parents download verified records instantly",
+  "QR codes validated at clinics, schools and borders",
+  "Audit-ready history for every issuance",
+]
+
+const platformPillars = [
   {
-    title: "Digital Certificates",
-    description: "Generate tamper-proof certificates with QR verification the moment a schedule is complete.",
-    icon: ShieldCheck,
-  },
-  {
-    title: "Guardian Engagement",
-    description: "Deliver bilingual reminders, AEFI alerts and wellness tips by SMS and Email simultaneously.",
+    title: "Guardian engagement",
+    description: "Automated SMS and email journeys keep caregivers aligned with national dosing schedules.",
     icon: BellRing,
   },
-]
-
-const galleryImages = [
   {
-    src: "https://www.unicef.org/ghana/sites/unicef.org.ghana/files/styles/media_large_image/public/EQ7A6829.webp?itok=RvV6Ti0A",
-    alt: "Nurse administering vaccine to child",
-  },
-  {
-    src: "/images/medic-looking-tablet-screen-healthcare-system.jpg",
-    alt: "Healthcare worker reviewing vaccination records on tablet",
-  },
-  {
-    src: "https://jacarandahealth.org/ypoagriw/2023/10/unnamed34.png",
-    alt: "Mother receiving vaccination reminder on mobile phone",
-  },
-]
-
-const highlights = [
-  {
-    title: "Clinical Grade Security",
-    description: "Full audit trails, role-based branch controls, device binding and TLS 1.3 for every request.",
-    icon: Lock,
-  },
-  {
-    title: "Population Analytics",
-    description: "Dynamic dashboards track coverage, drop-out risk and CHW productivity in real time.",
+    title: "Coverage intelligence",
+    description: "Daily coverage insights highlight gaps so HQ and regions act before drop-offs grow.",
     icon: TrendingUp,
   },
   {
-    title: "AEFI Rapid Response",
-    description: "Any adverse event instantly pages the branch nurse and doctor with actionable playbooks.",
-    icon: HeartPulse,
-  },
-  {
-    title: "QR Verification Everywhere",
-    description: "Hospitals and schools can verify certificates securely using the built-in QR scanner.",
-    icon: QrCode,
+    title: "Tamper-proof records",
+    description: "Role-based access and QR validation ensure confidence in every vaccination certificate.",
+    icon: ShieldCheck,
   },
 ]
 
-const demoAccounts = [
-  {
-    role: "Parent",
-    email: "parent@example.com",
-    detail: "Review child immunisation journeys and reminders.",
-  },
-  {
-    role: "HQ Admin",
-    email: "admin@health.gov.gh",
-    detail: "Monitor national coverage, drop-off and cold chain alerts.",
-  },
-  {
-    role: "Facility Nurse",
-    email: "nurse@health.gov.gh",
-    detail: "Capture clinic doses and manage appointment queues.",
-  },
-  {
-    role: "Community Health Worker",
-    email: "chw@health.gov.gh",
-    detail: "Plan home visits and record outreach vaccinations offline.",
-  },
-  {
-    role: "Data Analyst",
-    email: "analytics@health.gov.gh",
-    detail: "Analyse trends, export reports and audit data quality.",
-  },
-]
+const withAuthRedirect = (path: string) => `/auth/login?redirect=${encodeURIComponent(path)}`
 
 export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const { resolvedTheme, setTheme } = useTheme()
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    document.body.style.overflow = previewOpen ? "hidden" : ""
+    return () => {
+      document.body.style.overflow = ""
+    }
+  }, [previewOpen])
 
   const isDark = useMemo(() => resolvedTheme === "dark", [resolvedTheme])
 
@@ -238,9 +183,10 @@ export default function Home() {
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
-              <Link href="#demo-credentials">
-                <Button variant="outline" size="lg" className="w-full sm:w-auto">
-                  View Demo Accounts
+              <Link href="#insights">
+                <Button variant="outline" size="lg" className="w-full gap-2 sm:w-auto">
+                  Explore Insights
+                  <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
             </div>
@@ -294,84 +240,59 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-background py-16 sm:py-24">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-6 rounded-3xl border border-border bg-card p-6 shadow-sm sm:grid-cols-3 sm:p-10">
-            {impactMetrics.map((metric) => (
-              <div key={metric.label} className="space-y-2">
-                <p className="text-sm uppercase tracking-wider text-muted-foreground">{metric.label}</p>
-                <p className="text-3xl font-semibold md:text-4xl">{metric.value}</p>
-                <p className="text-sm text-muted-foreground">{metric.detail}</p>
+      <section id="insights" className="relative overflow-hidden bg-background py-20 sm:py-24">
+        <div className="absolute inset-0 bg-linear-to-b from-primary/10 via-transparent to-transparent dark:from-primary/5" />
+        <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+              National pulse
+            </span>
+            <h2 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">A clear view of Ghana&apos;s vaccination network</h2>
+            <p className="mt-4 text-lg text-foreground/80">
+              Transparent glass panels surface the essentials so health leaders can read readiness in one glance.
+            </p>
+          </div>
+          <div className="mt-10 grid gap-6 md:grid-cols-3">
+            {pulseMetrics.map((metric) => (
+              <div
+                key={metric.label}
+                className="rounded-3xl border border-primary/20 bg-background/70 p-6 shadow-lg backdrop-blur-xl transition hover:border-primary/40"
+              >
+                <p className="text-xs uppercase tracking-[0.3em] text-primary/80">{metric.label}</p>
+                <p className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">{metric.value}</p>
+                <p className="mt-2 text-sm text-foreground/75">{metric.detail}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="bg-muted/40 py-16 sm:py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-12 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="max-w-3xl space-y-3">
-              <h2 className="text-3xl font-semibold md:text-4xl">End-to-end vaccination workflow built for Ghana</h2>
-              <p className="text-lg text-muted-foreground">
-                Every module is tuned with frontline teams to tackle real operational bottlenecks—from remote community
-                enrolment to national reporting dashboards.
-              </p>
-            </div>
-            <Link href="/dashboard">
-              <Button variant="outline" className="gap-2">
-                View Operational Console
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
+      <section className="bg-muted/30 py-20 sm:py-24">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+              <div className="mb-12 text-center">
+                <h2 className="text-3xl font-semibold text-foreground md:text-4xl">Operational clarity across child vaccination</h2>
+                <p className="mt-3 text-lg text-foreground/80">
+                  Facility clinics, outreach missions and certificate teams share one calm canvas so planners keep every child on schedule.
+                </p>
           </div>
-
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-            {workflowSteps.map((step) => (
-              <Card key={step.title} className="h-full border-border/70 bg-card/80 shadow-none">
-                <CardHeader>
-                  <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <step.icon className="h-5 w-5" />
+          <div className="grid gap-10 md:grid-cols-2">
+            {focusStories.map((story) => (
+              <div key={story.title} className="group relative h-[360px] overflow-hidden rounded-[2rem]">
+                <Image src={story.image} alt={story.title} fill className="object-cover transition duration-500 group-hover:scale-105" />
+                <div className="absolute inset-0 bg-black/20 dark:bg-black/40" />
+                <div className="absolute inset-x-6 bottom-6">
+                  <div className="rounded-3xl border border-white/15 bg-background/75 p-6 shadow-xl backdrop-blur-2xl dark:bg-background/70">
+                    <h3 className="text-2xl font-semibold text-foreground">{story.title}</h3>
+                    <p className="mt-3 text-sm text-foreground/80">{story.description}</p>
+                    <ul className="mt-5 space-y-2 text-sm text-foreground/75">
+                      {story.highlights.map((item) => (
+                        <li key={item} className="flex items-center gap-2">
+                          <Check className="h-4 w-4 text-primary" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <CardTitle className="text-lg">{step.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription className="text-base text-muted-foreground">{step.description}</CardDescription>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-background py-16 sm:py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="max-w-3xl space-y-3">
-              <h2 className="text-3xl font-semibold md:text-4xl">Designed with frontline teams</h2>
-              <p className="text-lg text-muted-foreground">
-                Authentic visuals from Ghanaian clinics, community outreaches and parent engagements keep your teams
-                connected to the mission.
-              </p>
-            </div>
-            <Link href="/auth/login">
-              <Button>Book a guided demo</Button>
-            </Link>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-3">
-            {galleryImages.map((image) => (
-              <div key={image.src} className="group relative overflow-hidden rounded-3xl border border-border/60">
-                <Image
-                  src={image.src}
-                  alt={image.alt}
-                  width={520}
-                  height={520}
-                  className="h-64 w-full object-cover sm:h-80"
-                />
-                <div className="absolute inset-0 bg-linear-to-t from-background/95 via-background/40 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-                <div className="absolute bottom-5 left-5 right-5 opacity-0 transition-opacity group-hover:opacity-100">
-                  <p className="text-sm text-muted-foreground">{image.alt}</p>
                 </div>
               </div>
             ))}
@@ -379,134 +300,183 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-muted/30 py-16 sm:py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-14 space-y-3 text-center">
-            <h2 className="text-3xl font-semibold md:text-4xl">What sets this national platform apart</h2>
-            <p className="text-lg text-muted-foreground">
-              Built hand-in-hand with Ghana Health Service to meet WHO Expanded Programme on Immunization standards.
-            </p>
-          </div>
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-            {highlights.map((item) => (
-              <Card key={item.title} className="border-border/70 bg-card/90 shadow-sm">
-                <CardHeader>
-                  <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <item.icon className="h-5 w-5" />
-                  </div>
-                  <CardTitle className="text-xl">{item.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription className="text-base text-muted-foreground">{item.description}</CardDescription>
-                  <div className="mt-5 flex flex-col gap-2 text-sm text-muted-foreground">
-                    <div className="flex items-start gap-2">
-                      <Check className="mt-0.5 h-4 w-4 text-primary" />
-                      <span>Continuous supervision dashboards for HQ and regions.</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <Check className="mt-0.5 h-4 w-4 text-primary" />
-                      <span>Secure integrations ready for DHIS2 and OpenHIE pipelines.</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-background py-20">
-  <div className="mx-auto flex max-w-5xl flex-col items-center gap-6 rounded-3xl border border-border bg-linear-to-r from-primary/85 via-primary/70 to-primary/80 px-6 py-12 text-center text-primary-foreground shadow-lg sm:px-8 sm:py-14">
-          <p className="text-sm uppercase tracking-[0.3em]">Unified national rollout</p>
-          <h2 className="max-w-3xl text-balance text-3xl font-semibold md:text-4xl">
-            Ready to accelerate Ghana&apos;s child immunisation outcomes?
-          </h2>
-          <p className="max-w-2xl text-base md:text-lg">
-            Deploy within weeks, equip every branch and CHW with the same intelligent toolkit, and deliver verified
-            digital certificates to parents across the country.
-          </p>
-          <div className="flex w-full flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4">
-            <Link href="/auth/login">
-              <Button
-                size="lg"
-                variant="default"
-                className="w-full bg-primary text-white shadow-lg transition duration-150 ease-out hover:-translate-y-1 hover:bg-primary/90 hover:shadow-2xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary/50 sm:w-auto"
-              >
-                Launch Portal
-              </Button>
-            </Link>
-            <Link href="#demo-credentials">
-              <Button
-                size="lg"
-                variant="outline"
-                className="w-full border-primary-foreground/80 text-primary dark:text-primary-foreground hover:bg-primary-foreground/5 sm:w-auto"
-              >
-                Demo Credentials
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section id="demo-credentials" className="bg-background py-16 sm:py-24">
+      <section className="bg-background py-20 sm:py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-10 space-y-3 text-center">
-            <h2 className="text-3xl font-semibold md:text-4xl">Preview the unified portal</h2>
-            <p className="text-lg text-muted-foreground">
-              Use any email below with a password that has six or more characters. We&apos;ll route you to the right workspace automatically.
-            </p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {demoAccounts.map((account) => (
-              <Card key={account.email} className="border-border/70 bg-card/90 shadow-sm">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <Check className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{account.role}</CardTitle>
-                      <CardDescription>{account.detail}</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="rounded-md border border-dashed border-primary/40 bg-muted/30 px-3 py-3 text-sm font-mono text-muted-foreground">
-                    {account.email}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <p className="mt-6 text-center text-sm text-muted-foreground">Tip: demo mode accepts any password as long as it has at least six characters.</p>
-          <div className="mt-6 text-center">
-            <Link href="/auth/login">
-              <Button className="gap-2">
-                Sign in now
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
+          <div className="grid gap-10 md:grid-cols-[0.85fr_1.15fr] md:items-center">
+            <div className="relative h-[340px] overflow-hidden rounded-[2rem] border border-primary/20 bg-background/70 shadow-xl backdrop-blur-xl">
+              <Image src="/images/certificate-preview.png" alt="Digital vaccination certificate" fill className="object-cover" />
+              <div className="absolute inset-0 bg-linear-to-t from-background/85 via-background/40 to-transparent" />
+            </div>
+            <div className="rounded-[2rem] border border-primary/20 bg-background/70 p-8 shadow-xl backdrop-blur-2xl">
+              <Badge variant="outline" className="border-primary/40 text-primary">
+                Digital certificates
+              </Badge>
+              <h3 className="mt-6 text-3xl font-semibold text-foreground sm:text-4xl">Scan-ready proof in seconds</h3>
+              <p className="mt-4 text-base text-foreground/80">
+                Every certificate carries secure QR validation so parents, schools and clinicians trust the record instantly.
+              </p>
+              <ul className="mt-6 space-y-2 text-sm text-foreground/75">
+                {certificateBenefits.map((benefit) => (
+                  <li key={benefit} className="flex items-start gap-2">
+                    <Check className="mt-0.5 h-4 w-4 text-primary" />
+                    <span>{benefit}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-8">
+                <Button size="lg" className="gap-2" onClick={() => setPreviewOpen(true)}>
+                  Preview certificate
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-border bg-muted/40">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-12 text-sm text-muted-foreground sm:px-6 lg:px-8">
-          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row sm:items-start">
-            <div className="text-center sm:text-left">
-              <p className="font-semibold text-foreground">Ghana Child Vaccination System</p>
-              <p>Ministry of Health • Expanded Programme on Immunization</p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-4 sm:justify-end">
-              <Link href="/auth/login" className="transition hover:text-foreground">
-                Portal Login
-              </Link>
-              <Link href="/dashboard/reports" className="transition hover:text-foreground">
-                Reporting Suite
+      <section className="bg-muted/20 py-20 sm:py-24">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <h2 className="text-3xl font-semibold text-foreground md:text-4xl">Glass panels that keep teams aligned</h2>
+            <p className="mt-3 text-lg text-foreground/80">
+              Core pillars sit in translucent shells so their detail stays sharp without overwhelming the interface.
+            </p>
+          </div>
+          <div className="mt-10 grid gap-6 md:grid-cols-3">
+            {platformPillars.map((pillar) => (
+              <div
+                key={pillar.title}
+                className="rounded-3xl border border-primary/15 bg-background/65 p-6 shadow-lg backdrop-blur-xl"
+              >
+                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                  <pillar.icon className="h-5 w-5" />
+                </div>
+                <h3 className="text-xl font-semibold text-foreground">{pillar.title}</h3>
+                <p className="mt-3 text-sm text-foreground/75">{pillar.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="relative overflow-hidden py-20 sm:py-24">
+        <div className="absolute inset-0 bg-linear-to-r from-primary/20 via-transparent to-primary/20" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_65%)] dark:bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.55),_transparent_65%)]" />
+        <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+          <div className="rounded-[2rem] border border-primary/20 bg-background/70 p-10 text-center shadow-2xl backdrop-blur-2xl">
+            <h2 className="text-3xl font-semibold text-foreground sm:text-4xl">Ready to run a calmer command center?</h2>
+            <p className="mt-4 text-base text-foreground/80">
+              Log in to orchestrate clinics, outreach teams and certificates from one trusted workspace.
+            </p>
+            <div className="mt-6 flex justify-center">
+              <Link href="/auth/login">
+                <Button size="lg" className="gap-2">
+                  Portal Login
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
               </Link>
             </div>
           </div>
-          <p className="text-center sm:text-left">© {new Date().getFullYear()} Ghana Health Service. All rights reserved.</p>
+        </div>
+      </section>
+
+      {previewOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 backdrop-blur-xl p-4 md:p-10"
+          onClick={() => setPreviewOpen(false)}
+        >
+          <div
+            className="relative flex w-full max-w-4xl flex-col items-center overflow-hidden rounded-[2rem] border border-white/20 bg-background/85 shadow-2xl backdrop-blur-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              aria-label="Close certificate preview"
+              className="absolute right-6 top-6 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-border/40 bg-background/80 text-foreground/80 transition hover:text-foreground"
+              onClick={() => setPreviewOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="w-full px-6 pt-14 pb-6 sm:px-10">
+              <div className="relative mx-auto w-full max-w-3xl rounded-[1.75rem] border border-border/60 bg-gradient-to-br from-background via-background/70 to-muted/50 p-6 shadow-[12px_12px_36px_rgba(15,23,42,0.20),_-10px_-10px_30px_rgba(255,255,255,0.08)]">
+                <div className="relative aspect-[3/4] w-full sm:aspect-[4/3]">
+                  <Image src="/images/certificate-preview.png" alt="Sample digital vaccination certificate" fill className="object-contain" sizes="(max-width: 768px) 85vw, 60vw" priority />
+                </div>
+              </div>
+            </div>
+            <div className="w-full border-t border-border/60 bg-background/80 p-6 text-center text-sm text-foreground/70">
+              Example certificate for demonstration purposes.
+            </div>
+          </div>
+        </div>
+      )}
+
+      <footer className="border-t border-border bg-background">
+        <div className="mx-auto max-w-7xl px-4 py-16 text-sm text-muted-foreground sm:px-6 lg:px-8">
+          <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+            <div>
+              <p className="text-lg font-semibold text-foreground">Ghana Child Vaccination System</p>
+              <p className="mt-3 max-w-sm">
+                Production-ready infrastructure for nationwide immunisation, operated with Ghana Health Service and district partners.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link href={withAuthRedirect("/dashboard/reports")} prefetch={false} className="transition hover:text-foreground">
+                  Impact Reports
+                </Link>
+                <Link href={withAuthRedirect("/pha/dashboard")} prefetch={false} className="transition hover:text-foreground">
+                  PHA Console
+                </Link>
+                <Link href={withAuthRedirect("/parent/dashboard")} prefetch={false} className="transition hover:text-foreground">
+                  Parent Portal
+                </Link>
+              </div>
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">Quick links</p>
+              <div className="mt-3 grid gap-2">
+                    <Link href="/quick-links#portal-login" className="transition hover:text-foreground">
+                  Portal Login
+                </Link>
+                    <Link href="/quick-links#staff-dashboard" className="transition hover:text-foreground">
+                  Staff Dashboard
+                </Link>
+                    <Link href="/quick-links#facility-console" className="transition hover:text-foreground">
+                  Facility Console
+                </Link>
+              </div>
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">Information</p>
+              <div className="mt-3 grid gap-2">
+                    <Link href="/information#duplicate-resolution" className="transition hover:text-foreground">
+                  Duplicate Resolution
+                </Link>
+                    <Link href="/information#sync-conflicts" className="transition hover:text-foreground">
+                  Sync Conflicts
+                </Link>
+                    <Link href="/information#system-notifications" className="transition hover:text-foreground">
+                  System Notifications
+                </Link>
+              </div>
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">Discover</p>
+              <div className="mt-3 grid gap-2">
+                    <Link href="/discover#chw-mission-control" className="transition hover:text-foreground">
+                  CHW Mission Control
+                </Link>
+                    <Link href="/discover#hq-command-center" className="transition hover:text-foreground">
+                  HQ Command Center
+                </Link>
+                    <Link href="/discover#national-reports" className="transition hover:text-foreground">
+                  National Reports
+                </Link>
+              </div>
+            </div>
+          </div>
+          <p className="mt-10 text-center text-xs text-muted-foreground">
+            © {new Date().getFullYear()} Ghana Health Service. All rights reserved.
+          </p>
         </div>
       </footer>
     </div>
