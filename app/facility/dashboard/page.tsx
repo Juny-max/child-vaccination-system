@@ -395,9 +395,9 @@ export default function FacilityDashboardPage() {
                   <div className="space-y-2">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Matching records</p>
                     <div className="grid gap-2">
-                      {searchResults.map((result) => (
+                      {searchResults.map((result, index) => (
                         <div
-                          key={result.id}
+                          key={`${result.id}-${index}`}
                           className="flex flex-col gap-3 rounded-lg border border-border bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between"
                         >
                           <div className="space-y-1">
