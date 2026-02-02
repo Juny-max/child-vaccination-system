@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai'
 import { Mic, MicOff, Volume2 } from 'lucide-react'
 import { type ChatContext } from '@/lib/chatbot'
@@ -66,33 +66,42 @@ const GeminiLiveSession: React.FC<Props> = ({ chatContext, onTranscriptUpdate, e
   const currentOutputTranscription = useRef('')
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
+  const isStartingRef = useRef(false)
+  const isStoppingRef = useRef(false)
 
-  const stopConversation = useCallback(() => {
-    if (sessionRef.current) {
-      sessionRef.current.close()
-      sessionRef.current = null
-    }
+  const cleanupAudio = useCallback(() => {
     sources.current.forEach(s => s.stop())
     sources.current.clear()
-    
-    // Stop microphone stream
+
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop())
       mediaStreamRef.current = null
     }
-    
-    // Disconnect audio processor
+
     if (scriptProcessorRef.current) {
       scriptProcessorRef.current.disconnect()
       scriptProcessorRef.current = null
     }
-    
-    setStatus(ConnectionStatus.DISCONNECTED)
+
+    nextStartTime.current = 0
     setIsSpeaking(false)
+  }, [])
+
+  const stopConversation = useCallback(() => {
+    isStoppingRef.current = true
+    if (sessionRef.current) {
+      sessionRef.current.close()
+      sessionRef.current = null
+    }
+    cleanupAudio()
+    setStatus(ConnectionStatus.DISCONNECTED)
   }, [])
 
   const startConversation = async () => {
     try {
+      if (isStartingRef.current || status === ConnectionStatus.CONNECTED) return
+      isStartingRef.current = true
+      isStoppingRef.current = false
       setStatus(ConnectionStatus.CONNECTING)
       setError(null)
 
@@ -125,7 +134,7 @@ const GeminiLiveSession: React.FC<Props> = ({ chatContext, onTranscriptUpdate, e
         : 'No missed vaccinations'
 
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -150,6 +159,7 @@ Remember: This is a live voice conversation. Be brief, warm, and helpful.`,
         },
         callbacks: {
           onopen: () => {
+            if (isStoppingRef.current) return
             setStatus(ConnectionStatus.CONNECTED)
             
             // Microphone stream to model
@@ -199,7 +209,7 @@ Remember: This is a live voice conversation. Be brief, warm, and helpful.`,
             }
 
             // Handle Audio Output
-            const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data
+            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data
             if (base64Audio) {
               setIsSpeaking(true)
               const outCtx = audioContexts.current!.out
@@ -234,6 +244,7 @@ Remember: This is a live voice conversation. Be brief, warm, and helpful.`,
             stopConversation()
           },
           onclose: () => {
+            cleanupAudio()
             setStatus(ConnectionStatus.DISCONNECTED)
           }
         }
@@ -244,8 +255,23 @@ Remember: This is a live voice conversation. Be brief, warm, and helpful.`,
       console.error('Failed to start Gemini Live:', err)
       setError(err.message || 'Failed to start microphone or connection.')
       setStatus(ConnectionStatus.DISCONNECTED)
+      cleanupAudio()
+    } finally {
+      isStartingRef.current = false
     }
   }
+
+  useEffect(() => {
+    if (!enabled && status !== ConnectionStatus.DISCONNECTED) {
+      stopConversation()
+    }
+  }, [enabled, status, stopConversation])
+
+  useEffect(() => {
+    return () => {
+      stopConversation()
+    }
+  }, [stopConversation])
 
   if (!enabled) return null
 
