@@ -337,9 +337,9 @@ export default function Home() {
       <section className="bg-muted/20 py-20 sm:py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <h2 className="text-3xl font-semibold text-foreground md:text-4xl">Glass panels that keep teams aligned</h2>
+            <h2 className="text-3xl font-semibold text-foreground md:text-4xl">Pillars that support vaccination delivery</h2>
             <p className="mt-3 text-lg text-foreground/80">
-              Core pillars sit in translucent shells so their detail stays sharp without overwhelming the interface.
+              Core pillars present supply, coverage and record-integrity workflows in translucent panels so facility, outreach and HQ teams see exact responsibilities and act quickly to keep every child on schedule.
             </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
