@@ -118,11 +118,12 @@ export default function RegisterChildPage() {
       setIsSubmitting(false)
       const generatedId = `CH-${Date.now().toString().slice(-6)}`
       setSystemMessage(
-        `Child registered successfully. The full immunisation schedule has been generated. Redirecting to chart ${generatedId}.`
+        `Child registered successfully (${generatedId}). The full immunisation schedule has been generated. Record saved to dashboard.`
       )
       setTimeout(() => {
-        router.push(`/facility/child/${generatedId}`)
-      }, 1000)
+        // Redirect back to facility dashboard instead of non-existent child page
+        router.push('/facility/dashboard')
+      }, 2000)
       setFormData(initialState)
       setSelectedMother(null)
       setSearchMother("")
