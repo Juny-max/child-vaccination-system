@@ -550,8 +550,8 @@ export default function FacilityDashboardPage() {
               ) : todaysAppointments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No booked visits yet. Walk-in clients will appear once registered.</p>
               ) : (
-                todaysAppointments.map((appointment) => (
-                  <div key={appointment.id} className="flex flex-col gap-2 rounded-lg border border-border bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                todaysAppointments.map((appointment, index) => (
+                  <div key={`${appointment.id}-${index}`} className="flex flex-col gap-2 rounded-lg border border-border bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-semibold text-foreground">{appointment.childName}</p>
                       <p className="text-xs text-muted-foreground">Guardian: {appointment.caregiver}</p>
@@ -587,8 +587,8 @@ export default function FacilityDashboardPage() {
               ) : todaysFollowUps.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No flagged children for today.</p>
               ) : (
-                todaysFollowUps.map((followUp) => (
-                  <div key={followUp.id} className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+                todaysFollowUps.map((followUp, index) => (
+                  <div key={`${followUp.id}-${index}`} className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-semibold text-foreground">{followUp.childName}</p>
