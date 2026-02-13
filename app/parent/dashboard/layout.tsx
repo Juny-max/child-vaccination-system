@@ -182,8 +182,6 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
               Logout
             </Button>
           </div>
-          <p className="hidden text-sm text-muted-foreground lg:block">Manage your children&apos;s vaccinations, appointments, and support tools.</p>
-          <p className="text-xs text-muted-foreground sm:text-sm lg:hidden">Manage your children&apos;s vaccinations, appointments, and support tools.</p>
         </div>
       </header>
 
