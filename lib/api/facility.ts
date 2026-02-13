@@ -371,6 +371,7 @@ export interface RegisteredGuardian {
   preferredContact: 'sms' | 'email';
   message: string;
   emailSent?: boolean; // Indicates if credentials were emailed successfully
+  smsSent?: boolean; // Indicates if SMS notification was sent successfully
 }
 
 /**

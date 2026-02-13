@@ -1,0 +1,163 @@
+REGIONAL MARITIME UNIVERSITY
+
+FACULTY OF ENGINEERING
+TOPIC:
+DIGITAL SOLUTION FOR TRACKING AND MANAGING CHILD VACCINATION RECORDS ACROSS MULTIPLE HEALTHCARE BRANCHES
+Project work submitted to the Department of ICT in partial fulfillment for the award of:
+Bachelor of Science (BSc) Information Technology at the Regional Maritime University, Accra-Ghana
+Presented by:
+OWUSU FIANKO JUNIOR: BIT0001626
+YAWLI JULIUS: BIT0002126
+BERDAH FRANCIS: BIT0006226
+DATE:
+
+
+
+
+
+
+
+DECLARATION
+We hereby affirm that this research report represents our original project work. Except the cited references used as information sources, and to the best of our knowledge, it does not include any content previously authored by anyone for the purpose of obtaining a university degree or any other advanced educational credential.
+Owusu Fianko Junior
+ ................................................
+ (Student's Signature)
+
+Yawli Julius
+................................................
+ (Student's Signature)
+
+Berdah Francis
+................................................
+ (Student's Signature)
+
+SUPERVISOR'S DECLARATION
+I do hereby declare that the preparation of this project was supervised in accordance with the guidelines of supervision of projects laid down by the Regional Maritime University
+Mr. Gilbert Osei-Dadzie 
+................................................
+(Supervisor's Signature)
+
+
+
+
+CERTIFICATION 
+This certifies that, aside from the literature review, this project work is entirely original to the authors: Owusu Fianko Junior, Yawli Julius, and Berdah Francis. It fulfills the criteria for the Bachelor of Science (B.Sc.) degree in Information Technology.
+Mr. Isaac Acheampong 
+...............................................................
+(Head of Department's Signature)
+ ICT
+
+
+ACKNOWLEDGEMENT
+We would like to start by expressing our heartfelt gratitude to the All-Powerful God for granting us the knowledge and strength to successfully complete this project. Our deepest thanks go to our family, particularly our parents, who have supported and understood us throughout this journey. We also extend our sincere appreciation to our supervisor, Mr Gilbert Osei-Dadzie for all the guidance and support he provided during the project. We are truly grateful. Additionally, we want to acknowledge Mr. Gilbert Osei-Dadzie and everyone else who contributed in any way; your assistance has been invaluable. Thank you all very much. 
+
+
+
+
+
+
+
+
+
+
+
+DEDICATION.  
+   We dedicate this dissertation to our family and friends, whose support has been invaluable. We extend our heartfelt gratitude to our devoted parents for their encouragement and motivation. Furthermore, we would like to express our appreciation to Mr. Gilbert Osei-Dadzie for the assistance they provided throughout this journey by dedicating this work to them.
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+Table of Contents  
+
+CHAPTER ONE	1
+INTRODUCTION AND BACKGROUND TO PROJECT	1
+1.1 Background to Project	1
+1.2	Problem Statement	2
+1.3	Project Aim 	2
+1.4	Objective	3
+1.5	Research Questions	3
+1.6	Project Outline	3
+1.7          References......................................................................................4
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CHAPTER ONE: GENERAL INTRODUCTION
+1.0 General Introduction
+In the fast changing landscape of healthcare today, effectively tracking and managing vaccination records is essential for safeguarding children's health. Unfortunately, in many developing and resource-limited healthcare systems, vaccination information is frequently documented manually, leading to risks of loss, duplication, or inconsistencies, especially when dealing with various healthcare branches. As populations become more mobile and healthcare networks expand, there is an urgent need for a digital solution that centralizes and simplifies the process of maintaining vaccination records. This project aims to create a digital tool designed to efficiently and securely track and manage child vaccination records across different healthcare branches.
+1.1 Background to the Study
+Childhood vaccination is a fundamental aspect of public health and serves as a cost-effective measure to avert many life-threatening illnesses. According to the World Health Organization (WHO), immunizations save between 4 to 5 million lives each year. However, despite worldwide initiatives to enhance vaccination rates, numerous healthcare facilities, particularly in developing areas, face challenges due to inadequate data management systems. These challenges result in delays and incomplete vaccinations, often stemming from reliance on paper-based records, scattered data, and limited interoperability among health facilities. As digital transformation has reshaped many sectors, implementing a unified digital vaccination tracking system is essential. Such a system would improve the accuracy of records, increase accessibility for healthcare providers and parents, and support data-driven decision-making by public health officials.
+1.2 Problem Definition
+Many healthcare systems currently utilize vaccination tracking methods that are fragmented, mostly manual, and susceptible to human mistakes. These systems often do not provide a comprehensive overview of a child's vaccination history, particularly when families move or access healthcare from various locations. This leads to several problems, such as:  
+* Missed or postponed vaccinations.  
+* Incomplete or incorrect records.  
+* Challenges in monitoring individuals who are overdue for vaccinations.  
+* Absence of real-time data access for healthcare providers.  
+This project aims to address these challenges by implementing a centralized digital solution that facilitates smooth record synchronization and retrieval across different healthcare branches.
+1.3 Aim and Specific Objectives
+Aim:
+To create a digital system for effective monitoring and administration of child vaccination records across various healthcare facilities.
+Specific Objectives:
+1. To evaluate current systems utilized for tracking vaccinations and pinpoint their shortcomings.  
+2. To create a secure and scalable digital platform for managing child vaccination records.  
+3. To develop a prototype of the proposed solution suitable for use across multiple branches.  
+4. To assess the system's usability, reliability, and effectiveness in improving record management.
+1.4 Research Questions
+1. What are the shortcomings of current systems for managing child vaccination records?
+2. In what ways can a digital system enhance both the precision and availability of vaccination records across different branches?
+3. Which design elements are crucial for ensuring security, compatibility, and user-friendliness?
+4. How successful is the prototype in enhancing record tracking and management within a multi-branch healthcare setting??
+1.5 Conceptual Framework
+The project is built on the intersection of health informatics, digital system design, and data management frameworks. The conceptual framework includes:
+* Input Layer: Vaccination data entry via healthcare staff or mobile applications.
+* Processing Layer: Data validation, encryption, and synchronization across a cloud-based system.
+* Output Layer: Access to real-time, centralized vaccination records by authorized healthcare workers.
+* Feedback Mechanism: Notifications, reporting tools, and analytics for follow-ups and policy decisions.
+1.6 Significance of the Study
+This project has implications for:
+* Healthcare Providers: Improved access to complete vaccination history, reducing duplication and improving coverage.
+* Parents/Guardians: Better tracking of their child's immunization schedule and due dates.
+* Policy Makers: Enhanced data analytics for planning immunization campaigns and resource allocation.
+* Researchers: Contributing to knowledge on eHealth systems and their practical application in real-life contexts.
+1.7 Scope of the Study
+The project focuses on the design and implementation of a prototype digital system for managing child vaccination records across multiple healthcare branches. It does not aim to cover adult vaccinations, supply chain logistics for vaccines, or integration with national immunization registries at this stage.
+1.8 Organisation of the Study
+* Chapter One: Introduction, background, and research framework.
+* Chapter Two: Literature review covering existing systems and related technologies.
+* Chapter Three: Research methodology, including system design, data collection, and analysis methods.
+* Subsequent Chapters: System development, testing, results, discussions, and conclusions (not included here).
+
+
+References
+[1] World Health Organization, "Digital solutions for tracking immunization records," World Health Organization, Geneva, Switzerland, 2023. [Online]. Available: https://www.who.int/news-room/fact-sheets/detail/immunization-coverage
+
+
+
+
+
+
+
+

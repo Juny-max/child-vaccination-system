@@ -132,45 +132,58 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-muted/40">
       <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="relative size-10 overflow-hidden rounded-lg border border-border bg-background shadow-sm">
-              <Image
-                src="/images/cvcc-logo.png"
-                alt="Child Vaccination Command Center logo"
-                fill
-                sizes="40px"
-                className="object-contain p-1"
-                priority
-              />
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:py-4">
+          <div className="flex items-center justify-between gap-3 lg:gap-4">
+            <div className="flex items-center gap-2.5 lg:items-start lg:gap-3">
+              <div className="relative size-9 overflow-hidden rounded-lg border border-border bg-background shadow-sm lg:size-10">
+                <Image
+                  src="/images/cvcc-logo.png"
+                  alt="Child Vaccination Command Center logo"
+                  fill
+                  sizes="40px"
+                  className="object-contain p-1"
+                  priority
+                />
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground lg:text-xs">Mother dashboard</p>
+                <h1 className="text-base font-semibold leading-tight sm:text-lg lg:text-xl">
+                  {greeting}, {userName}
+                </h1>
+              </div>
             </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Mother dashboard</p>
-              <h1 className="text-xl font-semibold">
-                {greeting}, {userName}
-              </h1>
-              <p className="text-sm text-muted-foreground">Manage your children&apos;s vaccinations, appointments, and support tools.</p>
+            <div className="flex items-center gap-2 lg:hidden">
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-9"
+                onClick={() => setIsMobileNavOpen(true)}
+                aria-label="Open navigation menu"
+              >
+                <Menu className="size-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="size-9"
+                aria-label="Logout"
+              >
+                {isLoggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+              </Button>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="icon"
-              className="lg:hidden"
-              onClick={() => setIsMobileNavOpen(true)}
-              aria-label="Open navigation menu"
-            >
-              <Menu className="size-5" />
-            </Button>
-            <div className="hidden items-center gap-3 lg:flex">
-              <ThemeToggle />
-              <span className="text-sm text-muted-foreground">Signed in as {userName}</span>
-            </div>
+          <div className="hidden items-center gap-3 lg:flex">
+            <ThemeToggle />
+            <span className="text-sm text-muted-foreground">Signed in as {userName}</span>
             <Button variant="outline" size="sm" onClick={handleLogout} disabled={isLoggingOut} className="gap-2">
               {isLoggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
               Logout
             </Button>
           </div>
+          <p className="hidden text-sm text-muted-foreground lg:block">Manage your children&apos;s vaccinations, appointments, and support tools.</p>
+          <p className="text-xs text-muted-foreground sm:text-sm lg:hidden">Manage your children&apos;s vaccinations, appointments, and support tools.</p>
         </div>
       </header>
 
@@ -181,38 +194,39 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
             aria-hidden="true"
             onClick={() => setIsMobileNavOpen(false)}
           />
-          <div className="fixed inset-y-0 right-0 z-50 flex w-80 max-w-[85vw] flex-col border-l border-border bg-background shadow-xl">
-            <div className="flex items-center justify-between border-b border-border px-4 py-4">
+          <div className="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[82vw] flex-col border-l border-border bg-background shadow-xl">
+            <div className="flex items-center justify-between border-b border-border px-3 py-3">
               <div className="flex items-center gap-2 text-sm">
-                <div className="relative size-9 overflow-hidden rounded-md border border-border bg-background">
+                <div className="relative size-8 overflow-hidden rounded-md border border-border bg-background">
                   <Image
                     src="/images/cvcc-logo.png"
                     alt="Child Vaccination Command Center logo"
                     fill
-                    sizes="36px"
+                    sizes="32px"
                     className="object-contain p-1.5"
                   />
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Parent dashboard</p>
-                  <p className="font-semibold text-foreground">Signed in as {userName}</p>
+                  <p className="text-sm font-semibold text-foreground">Signed in as {userName}</p>
                 </div>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
+                className="size-8"
                 onClick={() => setIsMobileNavOpen(false)}
                 aria-label="Close navigation menu"
               >
-                <X className="size-5" />
+                <X className="size-4" />
               </Button>
             </div>
-            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
-              <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-muted/40 p-4 text-center">
+            <div className="flex-1 space-y-3 overflow-y-auto px-3 py-4">
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 p-3">
+                <p className="text-xs text-muted-foreground">Theme</p>
                 <ThemeToggle />
-                <p className="text-xs text-muted-foreground">Toggle clinic mode for brighter rooms or night feeds.</p>
               </div>
-              <nav className="space-y-2">
+              <nav className="space-y-1.5">
                 {currentNavItems.map((item) => {
                   const Icon = item.icon
                   const isActive = pathname === item.href
@@ -222,22 +236,22 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
                       href={item.href}
                       onClick={() => setIsMobileNavOpen(false)}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors",
+                        "flex w-full items-center gap-2.5 rounded-md border px-3 py-1.5 text-[13px] transition-colors",
                         isActive
                           ? "border-primary bg-primary/10 text-foreground"
                           : "border-transparent bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
                       )}
                     >
-                      <Icon className="size-4" />
+                      <Icon className="size-3.5" />
                       <span className="flex-1 text-left">{item.label}</span>
-                      {item.badge ? <Badge variant="destructive">{item.badge}</Badge> : null}
+                      {item.badge ? <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">{item.badge}</Badge> : null}
                     </Link>
                   )
                 })}
               </nav>
             </div>
-            <div className="border-t border-border p-4">
-              <Button onClick={handleLogout} disabled={isLoggingOut} variant="outline" className="w-full gap-2">
+            <div className="border-t border-border p-3">
+              <Button onClick={handleLogout} disabled={isLoggingOut} variant="outline" className="h-9 w-full gap-2 text-sm">
                 {isLoggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
                 Logout
               </Button>

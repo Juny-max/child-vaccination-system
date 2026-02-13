@@ -2,10 +2,13 @@ services:
   - type: web
     name: child-vaccination-backend
     runtime: node
+    plan: free  # IMPORTANT: Explicitly set free tier
     region: oregon
     rootDir: backend
     buildCommand: pnpm install && pnpm run build
     startCommand: pnpm run start:prod
+    # Free tier: 750 hours/month, spins down after 15min inactivity
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
@@ -19,3 +22,23 @@ services:
         sync: false
       - key: CORS_ORIGINS
         value: https://cvcc-iota.vercel.app,https://child-vaccination-system.vercel.app
+      - key: FRONTEND_URL
+        value: https://cvcc-iota.vercel.app
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: HUBTEL_CLIENT_ID
+        sync: false
+      - key: HUBTEL_CLIENT_SECRET
+        sync: false
+      - key: HUBTEL_SENDER_NAME
+        sync: false
+      - key: HUBTEL_API_URL
+        value: https://smsc.hubtel.com/v1/messages/send

@@ -1,0 +1,340 @@
+REGIONAL MARITIME UNIVERSITY
+FACULTY OF ENGINEERING
+DEPARTMENT OF ICT
+
+PROJECT TITLE:
+DIGITAL SOLUTION FOR TRACKING AND MANAGING CHILD VACCINATION RECORDS ACROSS MULTIPLE HEALTHCARE BRANCHES
+
+SYSTEM NAME (IMPLEMENTED PROTOTYPE):
+CHILD VACCINATION COMMAND CENTER (CVCC)
+
+AUTHORS:
+OWUSU FIANKO JUNIOR (BIT0001626)
+YAWLI JULIUS (BIT0002126)
+BERDAH FRANCIS (BIT0006226)
+
+DATE:
+(Fill in)
+
+
+============================================================
+CHAPTER ONE
+INTRODUCTION AND BACKGROUND TO THE PROJECT (ALIGNED TO IMPLEMENTED SYSTEM)
+============================================================
+
+1.0 General Introduction
+Childhood immunization remains one of the highest-impact public health interventions; however, achieving and sustaining full coverage depends heavily on reliable records, timely follow-up, and the ability of health workers and caregivers to coordinate care. In many settings, especially in low- and middle-income countries, vaccination data is still fragmented across paper booklets, facility registers, and partial digital reporting tools. This fragmentation creates blind spots: children who visit different facilities may have incomplete histories, missed doses are hard to detect early, and health authorities struggle to validate vaccination status quickly.
+
+This project delivers a working prototype called the Child Vaccination Command Center (CVCC): a multi-branch digital platform that supports (1) service delivery at facilities (facility nurse workflows), (2) community outreach (CHW offline workflows with GPS capture and mapping), and (3) caregiver engagement (parent/mother portal). CVCC provides child-level immunization histories, QR-based identification, overdue-dose detection, appointment tracking, and digital vaccination certificates that can be verified through QR scanning. The system is implemented with a modern full-stack architecture (Next.js frontend, NestJS backend, Supabase/PostgreSQL database), designed for role-based access across exactly seven user roles.
+
+
+1.1 Background to the Study
+In Ghana and similar contexts, the standard child welfare clinic process commonly relies on paper-based “weighing cards” or child health record booklets. While these records are familiar and low-cost, they are vulnerable to loss, damage, incomplete updates, and poor cross-facility availability. Meanwhile, families may relocate or seek care across branches for convenience, emergencies, or outreach programs. When vaccination data does not follow the child across branches, health workers risk administering duplicate doses or failing to administer due doses.
+
+Global health guidance emphasizes that monitoring at subnational and facility levels is essential for identifying immunization gaps and reaching underserved populations. Modern digital systems can reduce data entry bottlenecks, support real-time monitoring, and enable reminders and follow-up workflows.
+
+
+1.2 Problem Statement (Observed Gap and Practical Need)
+The problem addressed by CVCC is not simply that “digital immunization systems do not exist” globally; rather, it is that many available systems are:
+- Not configured for continuous child-level tracking across multiple branches in a practical, frontline workflow.
+- Primarily designed for aggregated reporting or for broad HMIS needs rather than day-to-day clinic operations.
+- Weakly integrated with caregiver-facing features (e.g., missed-dose guidance, certificates, appointment requests).
+- Limited in rapid identity verification (e.g., facility staff cannot quickly confirm a child’s status when records are missing).
+- Weakly connected to community outreach realities (CHW door-to-door work, intermittent connectivity, and GPS-located households).
+- Challenged by data quality issues such as duplicate child records, missing fields, and inconsistent updates.
+
+In a multi-branch environment, these limitations lead to:
+- Missed or delayed vaccinations due to poor recall and weak follow-up.
+- Fragmented immunization histories when children attend different facilities.
+- Duplicated vaccinations, especially when paper records are unavailable.
+- Time-consuming manual verification and reporting processes.
+- Reduced trust in vaccination evidence (difficulty validating records/certificates).
+
+
+1.3 Aim of the Project
+To design and implement a secure, role-based digital system that tracks and manages child vaccination records across multiple healthcare branches, improving continuity of care for families and operational efficiency for facility nurses and administrators.
+
+
+1.4 Specific Objectives (Aligned to the Built Prototype)
+1. To digitize child immunization records and make them accessible across participating branches through a centralized database.
+2. To implement a facility nurse workflow that supports: child lookup (search + QR), record review, and clinic-day follow-up prioritization.
+3. To implement a community health worker (CHW) outreach workflow that supports: offline child search/lookup, minimal registration, GPS capture, and offline vaccination capture with later synchronization.
+4. To provide a parent/mother portal that supports: vaccination progress tracking, missed-dose visibility, appointment viewing/request, and caregiver profile management.
+5. To implement QR-based identification and digital certificate workflows to support faster record retrieval and verification.
+6. To provide system foundations for data quality and accountability (e.g., audit logging concepts, deduplication review, and sync-conflict handling) suitable for multi-branch operations.
+
+
+1.5 Research Questions
+1. What operational challenges do multi-branch clinics face when child vaccination records are fragmented across paper and siloed digital systems?
+2. How does a role-based digital platform (nurse portal + parent portal) improve record availability, missed-dose visibility, and service continuity across branches?
+3. How can QR-based identification and digital certificates reduce time-to-verification and minimize duplication errors?
+4. What design and implementation features (security, usability, workflow fit) influence acceptance and sustained use by nurses and caregivers?
+
+
+1.6 Significance of the Study
+This study is significant to:
+- Healthcare providers (Facility Nurses): Faster child lookup, clearer due/overdue insights, and reduced administrative overhead.
+- Community Health Workers (CHWs): Offline-first field tools for outreach rounds, GPS-supported household capture, and reliable upload back to the facility/HQ when connectivity returns.
+- Parents/Guardians: Better awareness of vaccine progress, missed doses, and access to digital proof.
+- Administrators and Public Health Authorities: A foundation for more reliable child-level visibility and branch performance monitoring.
+- Researchers and Students: A practical multi-role eHealth system prototype demonstrating architecture, RBAC, and verification workflows.
+
+
+1.7 Scope of the Study
+Included scope:
+- Childhood vaccination record management and tracking.
+- Multi-branch access to child histories and vaccination status.
+- Role-based user access and dashboards, especially:
+  - Facility Nurse dashboard (clinic workflows)
+  - Parent/Mother dashboard (caregiver workflows)
+- CHW outreach workflow concepts: offline capture, GPS capture, and outreach mapping footprints.
+- Digital vaccination certificates with QR payloads and PDF generation.
+- Appointment tracking/request concept, and missed-dose guidance.
+
+Excluded (out of scope for this prototype stage):
+- Full national-scale deployment and governance.
+- Vaccine inventory/supply chain management.
+- Adult vaccination programs.
+- Full interoperability implementation (e.g., full FHIR integrations), although the system is designed to be integration-ready.
+
+
+1.8 Overview of the Implemented System (CVCC)
+CVCC is implemented as a multi-role platform supported by a centralized database, exposed via a backend API, and accessed through web-based dashboards.
+
+1.8.1 Core Users and Roles (Exactly 7 Roles Implemented)
+CVCC enforces role-based access control across exactly seven roles, each mapped to a dedicated dashboard/workspace:
+- Parent (Mother/Guardian): Tracks children’s status, appointments, missed doses, certificates, profile details, and receives guidance.
+- Facility Nurse: Performs clinic workflows (child lookup by search/QR, vaccination recording, appointments, urgent follow-ups, growth/session notes).
+- Community Health Worker (CHW): Runs outreach rounds with offline-first tools (cached visit lists/records, offline lookup, GPS capture, offline vaccination capture, later sync).
+- Data Officer: Handles data quality operations (duplicate detection review, sync conflict resolution, notification audit).
+- Branch Manager: Supervises branch performance and staff activity (nurses + CHWs), monitors overdue cases, stock alerts, and sync exceptions.
+- HQ Admin: National/central administration and analytics (multi-branch monitoring, user/branch configuration concepts, system health, escalation review).
+- Public Health Authority (PHA): High-level surveillance/reporting dashboard and certificate authenticity verification (manual entry or QR scan).
+
+
+1.8.2 Parent/Mother Dashboard (Key Functionalities)
+The implemented parent portal focuses on caregiver visibility and action:
+- Progress overview: aggregated completion percentage across registered children.
+- Child vaccination timeline: completed doses and upcoming/missed scheduled doses.
+- Missed vaccinations center: lists overdue vaccines and provides make-up visit guidance.
+  - Includes a visit preference concept (facility visit or CHW outreach request) to reflect local service delivery models.
+- Appointments: view upcoming appointments and a request/booking workflow (prototype UI supported by backend appointment endpoints).
+- Certificates:
+  - Displays child certificate status (complete/partial).
+  - Generates a scan-ready QR for verification.
+  - Downloads a PDF certificate for completed schedules.
+- Mother profile:
+  - Update contact preferences, address, and emergency contacts.
+- Support:
+  - AI-powered “Virtual Nurse” assistant (chatbot) to answer vaccination questions and provide guidance using the parent’s context (children, missed doses, upcoming appointments).
+
+
+1.8.3 Facility Nurse Dashboard (Key Functionalities)
+The facility nurse portal supports day-to-day clinic workflows:
+- Patient lookup:
+  - Search by child name, CVCC ID, or guardian phone.
+  - Open child chart to view clinical/vaccination details (via linked child profile pages).
+- QR scanning:
+  - Uses camera scanning to decode a QR payload and locate child records quickly.
+- Today’s appointment list:
+  - Prepares nurses for expected visits and reduces clinic-day delays.
+- Urgent follow-ups:
+  - Flags children with overdue vaccinations for prioritized attention.
+- Quick actions:
+  - Register new mother/guardian.
+  - Register new child.
+
+The backend also supports clinical record entry features relevant to child welfare clinics:
+- Recording vaccination events (administering vaccines).
+- Recording growth monitoring measurements.
+- Recording clinic session notes.
+- Viewing/updating guardian details.
+
+
+1.8.4 Community Health Worker (CHW) Outreach Dashboard (Key Functionalities)
+CVCC treats the CHW as a core, frontline actor for reaching defaulters and registering children who may not visit facilities regularly. The implemented CHW workspace is designed around intermittent connectivity and supports:
+- Offline home with sync status: indicates whether the device is offline/syncing/synced and shows pending records waiting to upload.
+- Visit list for outreach rounds: an offline-downloaded list of assigned households/children with vaccine due and approximate distance.
+- Offline child lookup:
+  - Search locally cached children by child name or mother phone.
+  - Camera-based QR lookup (e.g., scanning a QR on a card/certificate) for faster retrieval even without internet.
+- Minimal offline registration:
+  - Capture mother name/phone and child demographic basics.
+  - Capture household GPS coordinates for mapping and catchment analytics.
+- Offline vaccination capture:
+  - Open an offline child chart, view due/overdue doses, and record administered vaccines.
+  - Store vaccination events locally (including optional notes) and capture GPS coordinates at the point of service.
+- Outreach mapping footprint:
+  - Automatically plots GPS-located vaccinations on a map to show where outreach occurred and support branch/HQ visibility.
+
+
+1.9 Technology Stack and System Architecture (As Built)
+
+1.9.1 Frontend (User Interface)
+- Next.js (App Router) and React with TypeScript for the web application.
+- Tailwind CSS and a component library approach (Radix UI-based components) for consistent UI.
+- QR scanning with html5-qrcode for facility workflows.
+- QR rendering with qrcode.react for parent certificates.
+- PDF generation via jsPDF for certificate downloads.
+- AI support assistant using Google Gemini API integration (context-aware chat interface).
+
+1.9.2 Backend (API and Business Logic)
+- NestJS (TypeScript) providing REST endpoints under /api.
+- JWT-based authentication and role-based access controls (guards + role decorators).
+- Email/SMS readiness via email tooling libraries (e.g., nodemailer/Brevo integration) for notification workflows.
+
+1.9.3 Database
+- Supabase (PostgreSQL) as the managed relational database.
+- Schema includes multi-role users, branches, children, guardians, vaccines, vaccination events, certificates, appointments, notifications, audit logs, and data quality structures (e.g., duplicate candidates) as documented in the project repository.
+
+1.9.4 High-Level Architecture
+- Web Client (Next.js) → API (NestJS) → Database (Supabase/PostgreSQL)
+- Role-based access ensures each user sees only relevant features and data.
+- Centralized storage enables multi-branch access and continuity.
+
+
+1.10 Organization of the Study
+- Chapter One: Introduction, problem context, objectives, scope, and system overview aligned to the implemented CVCC prototype.
+- Chapter Two: Literature review and related work (digital immunization systems, identity/verification, multi-branch record continuity, adoption theories) and positioning of CVCC.
+- Chapter Three onward (to be developed): Methodology, implementation details, testing/evaluation, results and discussion, and conclusions/recommendations.
+
+
+============================================================
+CHAPTER TWO
+LITERATURE REVIEW AND RELATED WORK (POSITIONED TO CVCC)
+============================================================
+
+2.1 Introduction
+This chapter reviews existing research and practice on digital immunization tracking, multi-branch health record coordination, caregiver engagement tools, and identity/verification mechanisms such as QR-based records and digital certificates. It also reviews adoption models (TAM and UTAUT) relevant to frontline healthcare settings. The chapter then identifies gaps that motivate the CVCC system design and explains how CVCC differentiates itself from existing implementations.
+
+
+2.2 Importance of Immunization Coverage and Monitoring
+Immunization coverage remains uneven globally, and routine service disruptions or data gaps can lead to missed opportunities and outbreaks. International guidance emphasizes not only national reporting but also subnational monitoring to identify where children are missing vaccines and why.
+
+A key insight from global coverage reporting is that millions of children remain “zero-dose” (receiving no routine vaccines), and coverage levels can hide significant disparities across regions. This underlines the need for practical tracking solutions that work at the facility and community levels, not only at the national aggregate level.
+
+
+2.3 Evolution of Vaccination Record-Keeping
+Vaccination record-keeping has historically relied on paper cards and handwritten registers. While paper systems are accessible and familiar, they are limited by:
+- Physical loss/damage.
+- Non-standard entries and readability issues.
+- Poor cross-facility accessibility.
+- Slow reporting cycles.
+
+Digital record systems emerged to support centralized storage, better analytics, and improved follow-up. However, implementation success depends on usability, training, connectivity, and alignment with local workflow.
+
+
+2.4 Categories of Digital Vaccination and Immunization Tracking Systems
+
+2.4.1 Electronic Immunization Registries (EIRs)
+EIRs are centralized databases used to store immunization records at district or national scale. They can support coverage monitoring, defaulter tracking, and planning. The challenge is that EIRs often require consistent network access, standardized identifiers, and strong governance to work reliably.
+
+2.4.2 DHIS2 and DHIS2 Tracker
+DHIS2 has historically been used for aggregated health information reporting. To support individual-level tracking, DHIS2 introduced Tracker and Event programs that can follow individuals over time, including immunization program use cases. DHIS2 also emphasizes integrated search to reduce duplicate records and supports workflows such as appointment schedules and reminders.
+
+In practice, many deployments prioritize aggregate reporting due to capacity constraints, leading to limited routine use of detailed child-level longitudinal workflows at facility level. This creates an opportunity for purpose-built, workflow-first systems (or complementary modules) focused on frontline usability, rapid identification, and caregiver engagement.
+
+2.4.3 Mobile (mHealth) Reminder Systems
+Mobile reminder tools (SMS, WhatsApp, app notifications) are widely used to improve adherence. Their effectiveness depends on caregiver phone access, message timing, language, and data accuracy. Reminder systems work best when linked to an accurate schedule engine and an up-to-date child record.
+
+2.4.4 QR/Smart-Card Based Records
+QR-based or smart-card systems support rapid identification and fast retrieval of records. They reduce reliance on paper booklets and can speed up service delivery, especially when caregivers attend different facilities. However, QR systems must be tied to a trusted backend record to avoid “QR without data integrity.”
+
+2.4.5 Digital Certificates and Verification
+Digital certificates can increase trust and reduce fraud by enabling verification. QR payloads embedded in certificates can link to a verifiable record and provide a consistent proof mechanism. This has become increasingly relevant where proof of vaccination is required for school entry, travel, or public health checks.
+
+
+2.5 Multi-Branch Data Challenges in Immunization Systems
+Multi-branch environments face unique data and operational challenges:
+- Interoperability and fragmentation: separate facility registers do not share data.
+- Duplicate children and identity mismatches: the same child may be registered multiple times.
+- Incomplete histories: paper-based records are not always present.
+- Connectivity constraints: some branches may experience intermittent internet.
+- Workforce and digital literacy: adoption depends on ease of use and support.
+
+Systems addressing these challenges often incorporate:
+- Unique child identifiers.
+- Data validation rules and deduplication workflows.
+- Role-based controls and audit trails.
+- Offline-first capture with synchronization.
+
+
+2.6 Theoretical Foundations for Adoption and Use
+
+2.6.1 Technology Acceptance Model (TAM)
+TAM (Davis, 1989) suggests adoption depends strongly on:
+- Perceived Usefulness (PU): whether the system improves performance.
+- Perceived Ease of Use (PEOU): whether the system is simple to use.
+
+In immunization workflows, a system is more likely to be adopted if it reduces paperwork, speeds child lookup, and makes due/missed vaccines obvious.
+
+2.6.2 Unified Theory of Acceptance and Use of Technology (UTAUT)
+UTAUT (Venkatesh et al., 2003) expands adoption factors to include performance expectancy, effort expectancy, social influence, and facilitating conditions. In clinic environments, facilitating conditions—devices, connectivity, and training—are often decisive.
+
+2.6.3 Health Information Systems Success and Evaluation Perspectives
+HIS success models emphasize system quality and information quality, and RE-AIM provides a useful lens for scalability and maintenance. For vaccination tracking, sustainability depends on data correctness, workflow fit, and ongoing support.
+
+
+2.7 Security, Privacy, and Trust in Child Health Systems
+Digital vaccination records contain sensitive personal and health information. Trust is strengthened through:
+- Role-based access control (RBAC) to limit data exposure.
+- Auditability to support accountability.
+- Secure authentication (e.g., JWT sessions) and secure API design.
+- Avoiding unnecessary data collection (data minimization).
+- Secure handling of certificate verification so that verification does not expose full records unnecessarily.
+
+
+2.8 Research Gap and Uniqueness of the CVCC System
+Your supervisor is correct that digital immunization systems exist. The research gap CVCC targets is the “workflow + verification + caregiver engagement” combination in a multi-branch setting, with features tailored to day-to-day Ghana clinic realities.
+
+CVCC is positioned as unique in the following ways (relative to common real-world deployments and typical single-purpose tools):
+1) CHW-linked, offline-first outreach workflow (core differentiator):
+  - CVCC explicitly links outreach work to the same child record continuity goals as facility care.
+  - The CHW workspace supports offline lookup, minimal registration, GPS capture, and offline vaccination capture with a later “sync now” upload model.
+  - This addresses a practical gap in many settings where outreach notes are captured separately (or on paper) and only later re-entered at a facility.
+
+2) Map-aware outreach visibility:
+  - GPS-captured field records can be visualized as an outreach footprint on a map.
+  - This enables branch/HQ teams to identify catchment “cold spots” and plan targeted follow-ups beyond simple aggregate counts.
+
+3) Rapid identity and record retrieval via QR + search:
+   - Facility staff can retrieve records by scanning a QR from a passbook/certificate or by searching CVCC ID/phone/name.
+   - This reduces dependence on paper booklets and supports multi-branch attendance.
+
+4) Digital certificate generation and verification readiness:
+   - Parent dashboard provides QR-based certificates and PDF downloads.
+   - Certificate QR payloads enable fast authenticity checks by authorized authorities.
+
+  - The PHA verification workflow is designed to verify authenticity without necessarily exposing full child identity details, which supports privacy-by-design principles.
+
+5) Caregiver engagement beyond reminders:
+   - Parent portal provides progress visualization, missed-dose center, and structured guidance.
+   - An AI “Virtual Nurse” assistant provides contextual support using the caregiver’s own child/appointment data.
+
+6) Data quality + synchronization governance (Data Officer + HQ escalation):
+  - The system includes dedicated workflows for deduplication review and sync-conflict handling, reflecting realities of mobile/offline capture.
+  - Exceptions can be escalated for HQ review, supporting accountability and safer reconciliation when records change while devices are offline.
+
+7) Modern cloud architecture suitable for multi-branch scale:
+   - Centralized PostgreSQL (Supabase) with a secure API (NestJS) supports consistent data availability.
+   - The design is compatible with future interoperability efforts, even if full integration is not implemented at prototype stage.
+
+Ghana-specific positioning (careful comparison):
+- In Ghana, routine immunization workflows often combine paper-based child record books/cards at the point of service with digital systems used primarily for aggregate reporting and supervisory monitoring.
+- CVCC does not claim “Ghana has no digital systems.” Rather, CVCC differentiates itself by delivering an integrated, child-level, multi-role workflow that directly ties together facility services, CHW outreach (offline + GPS + mapping), caregiver self-service (portal + certificates), and verification (PHA QR checks) in one coordinated prototype.
+
+In summary, CVCC’s novelty is not claiming to invent vaccination tracking; rather, it lies in delivering an integrated, role-based, multi-branch-ready system prototype that combines clinic workflows, caregiver visibility, QR-based verification, and supportive intelligence in one coherent solution.
+
+
+2.9 Conclusion
+This literature review shows that while immunization tracking technologies exist (EIRs, DHIS2 Tracker, mHealth reminders, QR systems), real-world constraints—workflow fit, fragmentation, multi-branch continuity, and data quality—often reduce their effectiveness at facility level. CVCC addresses this gap by focusing on frontline usability (nurse dashboard), caregiver empowerment (mother dashboard), and trusted verification (QR certificates) within a secure, role-based architecture.
+
+
+2.10 References (Starter List – Expand as Needed)
+[1] World Health Organization (WHO). “Immunization coverage” (Fact sheet). Available: https://www.who.int/news-room/fact-sheets/detail/immunization-coverage
+[2] DHIS2. “Individual Data Records with Tracker & Event Programs.” Available: https://www.dhis2.org/tracker
+[3] Davis, F. D. (1989). Perceived usefulness, perceived ease of use, and user acceptance of information technology. MIS Quarterly.
+[4] Venkatesh, V., Morris, M. G., Davis, G. B., & Davis, F. D. (2003). User acceptance of information technology: Toward a unified view. MIS Quarterly.
+
+
+(END)

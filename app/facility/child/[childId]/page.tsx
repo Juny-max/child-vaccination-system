@@ -239,6 +239,9 @@ export default function ChildPatientChartPage() {
   const router = useRouter()
   const params = useParams<{ childId: string }>()
   const childId = params?.childId ?? "new-child"
+  const isUuid = (value: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  const isValidChildId = childId && childId !== "new-child" && isUuid(childId)
   const [userName, setUserName] = useState("")
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [selectedDose, setSelectedDose] = useState<VaccineEntry | null>(null)
@@ -306,6 +309,11 @@ export default function ChildPatientChartPage() {
   useEffect(() => {
     const fetchChildData = async () => {
       if (!childId || childId === "new-child") return
+      if (!isValidChildId) {
+        setIsLoadingChild(false)
+        setLoadError("This child record is a temporary ID. Save to the database to view the full chart.")
+        return
+      }
       
       setIsLoadingChild(true)
       setLoadError(null)
@@ -322,12 +330,16 @@ export default function ChildPatientChartPage() {
     }
     
     fetchChildData()
-  }, [childId])
+  }, [childId, isValidChildId])
   
   // Fetch vaccination data
   useEffect(() => {
     const fetchVaccinationData = async () => {
       if (!childId || childId === "new-child" || !childProfile?.dateOfBirth) return
+      if (!isValidChildId) {
+        setIsLoadingVaccines(false)
+        return
+      }
       
       setIsLoadingVaccines(true)
       
@@ -347,12 +359,16 @@ export default function ChildPatientChartPage() {
     }
     
     fetchVaccinationData()
-  }, [childId, childProfile?.dateOfBirth])
+  }, [childId, childProfile?.dateOfBirth, isValidChildId])
   
   // Fetch growth monitoring data
   useEffect(() => {
     const fetchMeasurements = async () => {
       if (!childId || childId === "new-child") return
+      if (!isValidChildId) {
+        setIsLoadingMeasurements(false)
+        return
+      }
       
       setIsLoadingMeasurements(true)
       
@@ -381,12 +397,15 @@ export default function ChildPatientChartPage() {
     }
     
     fetchMeasurements()
-  }, [childId])
+  }, [childId, isValidChildId])
   
   // Fetch session notes
   useEffect(() => {
     const fetchNotes = async () => {
       if (!childId || childId === "new-child") return
+      if (!isValidChildId) {
+        return
+      }
       
       try {
         const notes = await facilityApi.getSessionNotes(childId)
@@ -397,7 +416,7 @@ export default function ChildPatientChartPage() {
     }
     
     fetchNotes()
-  }, [childId])
+  }, [childId, isValidChildId])
 
   useEffect(() => {
     if (!userName) return

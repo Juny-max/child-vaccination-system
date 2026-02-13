@@ -122,14 +122,24 @@ export default function RegisterMotherPage() {
         notes: formData.notes || undefined,
       })
 
-      // Show success message with email status if applicable
-      if (result.emailSent) {
+      // Show success message with email and SMS status
+      if (result.emailSent && result.smsSent) {
+        setSystemMessage({ text: result.message, type: 'success' })
+        toast.success("Credentials sent via email and SMS!")
+      } else if (result.emailSent) {
         setSystemMessage({ text: result.message, type: 'success' })
         toast.success("Credentials sent to parent's email!")
+      } else if (result.smsSent) {
+        setSystemMessage({ text: result.message, type: 'success' })
+        toast.success("Credentials sent via SMS!")
       } else if (result.preferredContact === 'email' && result.email && !result.emailSent) {
         // Email was supposed to be sent but may have failed
         setSystemMessage({ text: result.message, type: 'info' })
-        toast.warning("Registration successful, but please verify email delivery")
+        toast.warning("Registration successful, but please verify delivery")
+      } else if (result.preferredContact === 'sms' && !result.smsSent) {
+        // SMS was supposed to be sent but may have failed
+        setSystemMessage({ text: result.message, type: 'info' })
+        toast.warning("Registration successful, but please verify SMS delivery")
       } else {
         setSystemMessage({ text: result.message, type: 'success' })
         toast.success("Mother registered successfully!")
