@@ -114,7 +114,6 @@ const GeminiLiveSession: React.FC<Props> = ({ chatContext, onTranscriptUpdate, e
       if (!apiKey || apiKey === 'your-gemini-api-key-here') {
         throw new Error('Gemini API key not configured')
       }
-      */
 
       // Initialize API
       const ai = new GoogleGenAI({ apiKey })
@@ -257,6 +256,7 @@ Remember: This is a live voice conversation. Be brief, warm, and helpful.`,
       })
 
       sessionRef.current = await sessionPromise
+      */
     } catch (err: any) {
       console.error('Failed to start Gemini Live:', err)
       setError(err.message || 'Failed to start microphone or connection.')
