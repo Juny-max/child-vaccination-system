@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
+import { SmsService } from '../common/sms.service';
 import {
   ChildSearchResultDto,
   FacilityChildProfileDto,
@@ -24,6 +25,7 @@ export class FacilityService {
   constructor(
     private readonly db: DatabaseService,
     private readonly emailService: EmailService,
+    private readonly smsService: SmsService,
   ) {}
 
   /**
@@ -925,6 +927,7 @@ export class FacilityService {
     // Determine what message to show based on preferred contact method
     let message = '';
     let emailSent = false;
+    let smsSent = false;
 
     if (dto.preferredContact === 'email' && dto.email && tempPassword && userId) {
       // Send welcome email with credentials
@@ -933,15 +936,63 @@ export class FacilityService {
         tempPassword,
       );
       
-      if (emailSent) {
-        message = `Guardian registered successfully. Login credentials have been sent to ${dto.email}. The parent will be asked to change their password on first login.`;
+      // Also send SMS notification if phone number is available
+      if (dto.phoneNumber) {
+        smsSent = await this.smsService.sendWelcomeSms(
+          dto.phoneNumber,
+          dto.fullName,
+          dto.email,
+          tempPassword,
+        );
+      }
+      
+      if (emailSent && smsSent) {
+        message = `Guardian registered successfully. Login credentials sent to ${dto.email} and ${dto.phoneNumber}. The parent will be asked to change their password on first login.`;
+      } else if (emailSent) {
+        message = `Guardian registered successfully. Login credentials sent to ${dto.email}. The parent will be asked to change their password on first login.`;
+      } else if (smsSent) {
+        message = `Guardian registered successfully. SMS sent to ${dto.phoneNumber} but email delivery failed. Please verify email address: ${dto.email}`;
       } else {
-        message = `Guardian registered successfully. Account created but email delivery failed. Please manually provide the credentials: Email: ${dto.email}, Temporary Password: ${tempPassword}`;
+        message = `Guardian registered successfully. Account created but delivery failed. Please manually provide credentials: Email: ${dto.email}, Password: ${tempPassword}`;
       }
     } else if (dto.preferredContact === 'email' && dto.email && !tempPassword) {
       message = `Guardian registered successfully. The email ${dto.email} is already registered. The parent can use their existing credentials to log in.`;
+      
+      // Send SMS notification about registration
+      if (dto.phoneNumber) {
+        smsSent = await this.smsService.sendRegistrationSms(
+          dto.phoneNumber,
+          dto.fullName,
+        );
+      }
     } else if (dto.preferredContact === 'sms') {
-      message = `Guardian registered successfully. SMS reminders will be sent to ${dto.phoneNumber}. No portal access created (email not provided).`;
+      // Send SMS with credentials if email and password were created
+      if (dto.email && tempPassword && userId) {
+        smsSent = await this.smsService.sendWelcomeSms(
+          dto.phoneNumber,
+          dto.fullName,
+          dto.email,
+          tempPassword,
+        );
+        
+        if (smsSent) {
+          message = `Guardian registered successfully. Login credentials sent via SMS to ${dto.phoneNumber}. The parent will be asked to change their password on first login.`;
+        } else {
+          message = `Guardian registered successfully. Account created but SMS delivery failed. Please manually provide credentials: Email: ${dto.email}, Password: ${tempPassword}`;
+        }
+      } else {
+        // No email/portal access, just send registration confirmation
+        smsSent = await this.smsService.sendRegistrationSms(
+          dto.phoneNumber,
+          dto.fullName,
+        );
+        
+        if (smsSent) {
+          message = `Guardian registered successfully. SMS confirmation sent to ${dto.phoneNumber}. SMS reminders will be sent for vaccination appointments.`;
+        } else {
+          message = `Guardian registered successfully. SMS reminders will be sent to ${dto.phoneNumber}.`;
+        }
+      }
     } else {
       message = 'Guardian registered successfully.';
     }
@@ -962,6 +1013,7 @@ export class FacilityService {
       preferredContact: guardian.preferred_contact,
       message,
       emailSent: emailSent || undefined, // Indicate if email was sent successfully
+      smsSent: smsSent || undefined, // Indicate if SMS was sent successfully
     };
   }
 
