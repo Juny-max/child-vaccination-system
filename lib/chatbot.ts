@@ -245,7 +245,7 @@ export async function sendMessageToGemini(
   });
 
   try {
-    const response = await fetch(`${API_URL}/api/chatbot/message`, {
+    const response = await fetch(`${API_URL}/chatbot/message`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

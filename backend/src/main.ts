@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { LiveAudioWsServer } from './common/live-audio-ws';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -28,6 +29,9 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const port = process.env.PORT || 3001;
+  const httpServer = app.getHttpServer();
+  new LiveAudioWsServer(httpServer);
+
   await app.listen(port);
 
   console.log(`🚀 Backend server running on http://localhost:${port}`);

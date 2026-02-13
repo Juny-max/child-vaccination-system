@@ -1,13 +1,11 @@
 "use client"
 
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai'
 import { Mic, MicOff, Volume2 } from 'lucide-react'
 import { type ChatContext } from '@/lib/chatbot'
 
-// Constants
 const SAMPLE_RATE_IN = 16000
-const SAMPLE_RATE_OUT = 24000
+const DEFAULT_SAMPLE_RATE_OUT = 24000
 
 enum ConnectionStatus {
   DISCONNECTED = 'DISCONNECTED',
@@ -21,7 +19,14 @@ interface Props {
   enabled?: boolean
 }
 
-// Audio utility functions
+type ServerMessage =
+  | { type: 'ready' }
+  | { type: 'audio'; data: string; mimeType: string }
+  | { type: 'input_transcript'; text: string }
+  | { type: 'output_transcript'; text: string }
+  | { type: 'turn_complete' }
+  | { type: 'error'; message: string }
+
 function encode(buffer: Uint8Array): string {
   return btoa(String.fromCharCode(...buffer))
 }
@@ -33,6 +38,13 @@ function decode(base64: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i)
   }
   return bytes
+}
+
+function extractSampleRate(mimeType: string): number {
+  const match = mimeType.match(/rate=(\d+)/)
+  if (!match) return DEFAULT_SAMPLE_RATE_OUT
+  const rate = Number(match[1])
+  return Number.isFinite(rate) ? rate : DEFAULT_SAMPLE_RATE_OUT
 }
 
 async function decodeAudioData(
@@ -48,7 +60,7 @@ async function decodeAudioData(
   for (let i = 0; i < samples.length; i++) {
     channelData[i] = samples[i] / 32768
   }
-  
+
   return audioBuffer
 }
 
@@ -57,17 +69,16 @@ const GeminiLiveSession: React.FC<Props> = ({ chatContext, onTranscriptUpdate, e
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Refs for audio processing
+  const wsRef = useRef<WebSocket | null>(null)
   const audioContexts = useRef<{ in: AudioContext; out: AudioContext } | null>(null)
   const nextStartTime = useRef(0)
   const sources = useRef<Set<AudioBufferSourceNode>>(new Set())
-  const sessionRef = useRef<any>(null)
-  const currentInputTranscription = useRef('')
-  const currentOutputTranscription = useRef('')
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
   const isStartingRef = useRef(false)
   const isStoppingRef = useRef(false)
+  const currentInputTranscription = useRef('')
+  const currentOutputTranscription = useRef('')
 
   const cleanupAudio = useCallback(() => {
     sources.current.forEach(s => s.stop())
@@ -83,19 +94,94 @@ const GeminiLiveSession: React.FC<Props> = ({ chatContext, onTranscriptUpdate, e
       scriptProcessorRef.current = null
     }
 
+    if (audioContexts.current) {
+      audioContexts.current.in.close()
+      audioContexts.current.out.close()
+      audioContexts.current = null
+    }
+
     nextStartTime.current = 0
     setIsSpeaking(false)
   }, [])
 
   const stopConversation = useCallback(() => {
     isStoppingRef.current = true
-    if (sessionRef.current) {
-      sessionRef.current.close()
-      sessionRef.current = null
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'stop' }))
     }
+
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+
     cleanupAudio()
     setStatus(ConnectionStatus.DISCONNECTED)
-  }, [])
+  }, [cleanupAudio])
+
+  const handleServerMessage = useCallback(
+    async (message: ServerMessage) => {
+      if (message.type === 'error') {
+        setError(message.message)
+        stopConversation()
+        return
+      }
+
+      if (message.type === 'input_transcript') {
+        currentInputTranscription.current += message.text
+        return
+      }
+
+      if (message.type === 'output_transcript') {
+        currentOutputTranscription.current += message.text
+        return
+      }
+
+      if (message.type === 'turn_complete') {
+        const userText = currentInputTranscription.current
+        const botText = currentOutputTranscription.current
+
+        if (userText || botText) {
+          onTranscriptUpdate(userText, botText)
+        }
+
+        currentInputTranscription.current = ''
+        currentOutputTranscription.current = ''
+        return
+      }
+
+      if (message.type === 'audio') {
+        const outCtx = audioContexts.current?.out
+        if (!outCtx) return
+
+        setIsSpeaking(true)
+        nextStartTime.current = Math.max(nextStartTime.current, outCtx.currentTime)
+
+        const sampleRate = extractSampleRate(message.mimeType)
+        const audioBuffer = await decodeAudioData(
+          decode(message.data),
+          outCtx,
+          sampleRate,
+          1
+        )
+
+        const sourceNode = outCtx.createBufferSource()
+        sourceNode.buffer = audioBuffer
+        sourceNode.connect(outCtx.destination)
+        
+        sourceNode.addEventListener('ended', () => {
+          sources.current.delete(sourceNode)
+          if (sources.current.size === 0) setIsSpeaking(false)
+        })
+
+        sourceNode.start(nextStartTime.current)
+        nextStartTime.current += audioBuffer.duration
+        sources.current.add(sourceNode)
+      }
+    },
+    [onTranscriptUpdate, stopConversation]
+  )
 
   const startConversation = async () => {
     try {
@@ -105,158 +191,74 @@ const GeminiLiveSession: React.FC<Props> = ({ chatContext, onTranscriptUpdate, e
       setStatus(ConnectionStatus.CONNECTING)
       setError(null)
 
-      // Audio feature temporarily disabled for security
-      // TODO: Implement backend WebSocket proxy for secure audio streaming
-      throw new Error('Audio chat is temporarily unavailable. Please use the text chat feature.')
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+      const baseUrl = API_URL.replace(/\/api\/?$/, '')
+      const wsUrl = baseUrl.replace(/^http/, 'ws')
+      const socket = new WebSocket(`${wsUrl}/ws/live-audio`)
+      wsRef.current = socket
 
-      /* Audio feature code disabled - API key moved to backend for security
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
-      if (!apiKey || apiKey === 'your-gemini-api-key-here') {
-        throw new Error('Gemini API key not configured')
-      }
+      socket.onopen = async () => {
+        if (isStoppingRef.current) return
 
-      // Initialize API
-      const ai = new GoogleGenAI({ apiKey })
-
-      // Initialize Audio Contexts
-      if (!audioContexts.current) {
-        audioContexts.current = {
-          in: new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: SAMPLE_RATE_IN }),
-          out: new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: SAMPLE_RATE_OUT })
-        }
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      mediaStreamRef.current = stream
-
-      // Build context for system instruction
-      const childrenInfo = chatContext.children.map(c => 
-        `${c.name} (${c.age}): ${c.completedVaccinations}/${c.totalVaccinations} vaccinations completed (${c.completionPercentage}%)`
-      ).join(', ')
-      
-      const missedInfo = chatContext.missedVaccinations.length > 0
-        ? `Missed: ${chatContext.missedVaccinations.map(m => `${m.childName} - ${m.vaccine} (${m.daysOverdue} days overdue)`).join(', ')}`
-        : 'No missed vaccinations'
-
-      const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
-          },
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          systemInstruction: `You are Sarah, a warm and empathetic pediatric nurse assistant for the Ghana Child Vaccination Command Center. You're helping ${chatContext.parentName}.
-
-PARENT'S CHILDREN: ${childrenInfo || 'No children registered yet'}
-${missedInfo}
-
-GUIDELINES:
-- Be concise and conversational (1-2 sentences max)
-- Use contractions naturally ("don't", "it's", "we'll")
-- Show empathy and warmth
-- Provide specific, actionable advice
-- For emergencies, advise immediate clinical care
-- Keep responses SHORT for real-time speech
-
-Remember: This is a live voice conversation. Be brief, warm, and helpful.`,
-        },
-        callbacks: {
-          onopen: () => {
-            if (isStoppingRef.current) return
-            setStatus(ConnectionStatus.CONNECTED)
-            
-            // Microphone stream to model
-            const source = audioContexts.current!.in.createMediaStreamSource(stream)
-            const scriptProcessor = audioContexts.current!.in.createScriptProcessor(4096, 1, 1)
-            scriptProcessorRef.current = scriptProcessor
-            
-            scriptProcessor.onaudioprocess = (e) => {
-              const inputData = e.inputBuffer.getChannelData(0)
-              const l = inputData.length
-              const int16 = new Int16Array(l)
-              for (let i = 0; i < l; i++) {
-                int16[i] = inputData[i] * 32768
-              }
-              const pcmBlob = {
-                data: encode(new Uint8Array(int16.buffer)),
-                mimeType: 'audio/pcm;rate=16000',
-              }
-              
-              sessionPromise.then((session) => {
-                session.sendRealtimeInput({ media: pcmBlob })
-              })
-            }
-
-            source.connect(scriptProcessor)
-            scriptProcessor.connect(audioContexts.current!.in.destination)
-          },
-          onmessage: async (message: LiveServerMessage) => {
-            // Handle Transcriptions
-            if (message.serverContent?.inputTranscription) {
-              currentInputTranscription.current += message.serverContent.inputTranscription.text
-            }
-            if (message.serverContent?.outputTranscription) {
-              currentOutputTranscription.current += message.serverContent.outputTranscription.text
-            }
-            
-            if (message.serverContent?.turnComplete) {
-              const userText = currentInputTranscription.current
-              const botText = currentOutputTranscription.current
-              
-              if (userText || botText) {
-                onTranscriptUpdate(userText, botText)
-              }
-              
-              currentInputTranscription.current = ''
-              currentOutputTranscription.current = ''
-            }
-
-            // Handle Audio Output
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data
-            if (base64Audio) {
-              setIsSpeaking(true)
-              const outCtx = audioContexts.current!.out
-              nextStartTime.current = Math.max(nextStartTime.current, outCtx.currentTime)
-              
-              const audioBuffer = await decodeAudioData(decode(base64Audio), outCtx, SAMPLE_RATE_OUT, 1)
-              const sourceNode = outCtx.createBufferSource()
-              sourceNode.buffer = audioBuffer
-              sourceNode.connect(outCtx.destination)
-              
-              sourceNode.addEventListener('ended', () => {
-                sources.current.delete(sourceNode)
-                if (sources.current.size === 0) setIsSpeaking(false)
-              })
-
-              sourceNode.start(nextStartTime.current)
-              nextStartTime.current += audioBuffer.duration
-              sources.current.add(sourceNode)
-            }
-
-            // Handle Interruption
-            if (message.serverContent?.interrupted) {
-              sources.current.forEach(s => s.stop())
-              sources.current.clear()
-              setIsSpeaking(false)
-              nextStartTime.current = 0
-            }
-          },
-          onerror: (e) => {
-            console.warn('Gemini Live API Error:', e)
-            setError('Connection lost. Please try again.')
-            stopConversation()
-          },
-          onclose: () => {
-            cleanupAudio()
-            setStatus(ConnectionStatus.DISCONNECTED)
+        if (!audioContexts.current) {
+          audioContexts.current = {
+            in: new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: SAMPLE_RATE_IN }),
+            out: new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: DEFAULT_SAMPLE_RATE_OUT })
           }
         }
-      })
 
-      sessionRef.current = await sessionPromise
-      */
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        mediaStreamRef.current = stream
+
+        socket.send(JSON.stringify({ type: 'start', context: chatContext }))
+
+        const source = audioContexts.current.in.createMediaStreamSource(stream)
+        const scriptProcessor = audioContexts.current.in.createScriptProcessor(4096, 1, 1)
+        scriptProcessorRef.current = scriptProcessor
+
+        scriptProcessor.onaudioprocess = (e) => {
+          if (socket.readyState !== WebSocket.OPEN) return
+          const inputData = e.inputBuffer.getChannelData(0)
+          const l = inputData.length
+          const int16 = new Int16Array(l)
+          for (let i = 0; i < l; i++) {
+            int16[i] = Math.max(-1, Math.min(1, inputData[i])) * 32768
+          }
+          const pcmBlob = {
+            type: 'audio',
+            data: encode(new Uint8Array(int16.buffer)),
+            mimeType: 'audio/pcm;rate=16000',
+          }
+          socket.send(JSON.stringify(pcmBlob))
+        }
+
+        source.connect(scriptProcessor)
+        scriptProcessor.connect(audioContexts.current.in.destination)
+
+        setStatus(ConnectionStatus.CONNECTED)
+      }
+
+      socket.onmessage = async (event) => {
+        let parsed: ServerMessage | null = null
+        try {
+          parsed = JSON.parse(event.data)
+        } catch {
+          return
+        }
+
+        if (!parsed) return
+        await handleServerMessage(parsed)
+      }
+
+      socket.onerror = () => {
+        setError('Connection error. Please try again.')
+        stopConversation()
+      }
+
+      socket.onclose = () => {
+        cleanupAudio()
+        setStatus(ConnectionStatus.DISCONNECTED)
+      }
     } catch (err: any) {
       console.error('Failed to start Gemini Live:', err)
       setError(err.message || 'Failed to start microphone or connection.')
@@ -325,7 +327,7 @@ Remember: This is a live voice conversation. Be brief, warm, and helpful.`,
 
       {isConnecting && (
         <div className="absolute top-20 bg-white/5 backdrop-blur px-3 py-1.5 rounded-full text-xs text-white/70">
-          Connecting to AI...
+          Connecting to live AI...
         </div>
       )}
       
