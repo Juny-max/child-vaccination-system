@@ -105,10 +105,16 @@ const GeminiLiveSession: React.FC<Props> = ({ chatContext, onTranscriptUpdate, e
       setStatus(ConnectionStatus.CONNECTING)
       setError(null)
 
+      // Audio feature temporarily disabled for security
+      // TODO: Implement backend WebSocket proxy for secure audio streaming
+      throw new Error('Audio chat is temporarily unavailable. Please use the text chat feature.')
+
+      /* Audio feature code disabled - API key moved to backend for security
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
       if (!apiKey || apiKey === 'your-gemini-api-key-here') {
         throw new Error('Gemini API key not configured')
       }
+      */
 
       // Initialize API
       const ai = new GoogleGenAI({ apiKey })

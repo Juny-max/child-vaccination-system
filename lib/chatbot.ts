@@ -226,7 +226,7 @@ function generateFallbackResponse(userMessage: string, context: ChatContext): st
 }
 
 /**
- * Call Google Gemini API with retry logic and fallbacks
+ * Call backend chatbot API (which securely calls Gemini)
  */
 export async function sendMessageToGemini(
   userMessage: string,
@@ -234,24 +234,7 @@ export async function sendMessageToGemini(
   context: ChatContext,
   maxRetries: number = 2
 ): Promise<string> {
-  const API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-  
-  // Check for API key
-  if (!API_KEY || API_KEY === 'your-api-key-here') {
-    console.warn('Gemini API key not configured, using fallback responses')
-    return generateFallbackResponse(userMessage, context)
-  }
-  
-  // Enforce rate limiting
-  const rateCheck = checkRateLimit()
-  if (!rateCheck.allowed) {
-    console.warn(`Rate limit hit, waiting ${rateCheck.waitTime}ms`)
-    await new Promise(resolve => setTimeout(resolve, rateCheck.waitTime))
-  }
-  
-  // Update rate limit tracking
-  lastRequestTime = Date.now()
-  requestCount++
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
   
   const history = buildConversationHistory(conversationHistory, context);
   
@@ -260,114 +243,34 @@ export async function sendMessageToGemini(
     role: 'user',
     parts: [{ text: userMessage }]
   });
-  
-  // Use latest text models (Gemini 2.5 Flash), with fallback
-  const models = [
-    'gemini-2.5-flash',           // Latest fast text model
-    'gemini-1.5-flash',           // Stable fallback
-  ]
-  
-  let lastError: any = null
-  
-  // Try each model
-  for (const modelName of models) {
-    // Retry logic with exponential backoff per model
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-            contents: history,
-            generationConfig: {
-              temperature: 0.9,
-              topK: 40,
-              topP: 0.95,
-              maxOutputTokens: 512, // Allow natural conversational responses
-            },
-            safetySettings: [
-              { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-              { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-              { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-              { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-            ],
-          }),
-        }
-      );
-      
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        
-        // Handle specific error codes
-        if (response.status === 429) {
-          // Rate limit error - try next model or use fallback
-          lastError = error
-          if (attempt < maxRetries) {
-            console.warn(`Rate limited on ${modelName}, retrying (attempt ${attempt + 1}/${maxRetries + 1})...`)
-            await waitWithBackoff(attempt)
-            continue
-          }
-          // Try next model
-          break // Exit retry loop to try next model
-        }
-        
-        if (response.status === 400 || response.status === 401) {
-          // Bad request or auth error - don't retry
-          console.error('API configuration error:', error)
-          return generateFallbackResponse(userMessage, context)
-        }
-        
-        // Other errors - retry
-        if (attempt < maxRetries) {
-          console.warn(`API error (${response.status}), retrying... (attempt ${attempt + 1}/${maxRetries + 1})`)
-          await waitWithBackoff(attempt)
-          continue
-        }
-        
-        // Max retries reached
-        console.error('Gemini API error after retries:', error);
-        return generateFallbackResponse(userMessage, context)
-      }
-      
-      const data = await response.json();
-      
-      // Extract text from response
-      const candidates = data.candidates;
-      if (!candidates || candidates.length === 0) {
-        throw new Error('No response generated');
-      }
-      
-      const content = candidates[0].content;
-      if (!content || !content.parts || content.parts.length === 0) {
-        throw new Error('Empty response from AI');
-      }
-      
-      // Success! Return the response
-      console.log(`✓ Response received from ${modelName}`)
-      return content.parts[0].text;
-      
-      } catch (err) {
-        lastError = err
-        if (attempt < maxRetries) {
-          console.warn(`Network error on ${modelName}, retrying... (attempt ${attempt + 1}/${maxRetries + 1})`, err)
-          await waitWithBackoff(attempt)
-          continue
-        }
-        
-        // Max retries reached for this model, try next
-        console.warn(`Failed with ${modelName} after retries, trying next model...`)
-        break // Exit retry loop to try next model
-      }
+
+  try {
+    const response = await fetch(`${API_URL}/api/chatbot/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        conversationHistory: history,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Backend chatbot API error:', response.status);
+      return generateFallbackResponse(userMessage, context);
     }
+
+    const data = await response.json();
+    
+    if (!data.response) {
+      throw new Error('No response from backend');
+    }
+
+    return data.response;
+  } catch (error) {
+    console.error('Error calling backend chatbot:', error);
+    return generateFallbackResponse(userMessage, context);
   }
-  
-  // All models failed, use intelligent fallback
-  console.log('Using smart fallback response based on dashboard data')
-  return generateFallbackResponse(userMessage, context)
 }
 
 /**

@@ -4,6 +4,8 @@ import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { ParentModule } from './parent/parent.module';
 import { FacilityModule } from './facility/facility.module';
+import { ChatbotController } from './common/chatbot.controller';
+import { ChatbotService } from './common/chatbot.service';
 
 @Module({
   imports: [
@@ -30,7 +32,7 @@ import { FacilityModule } from './facility/facility.module';
     // BranchManagerModule, // Julius will implement
     // DataOfficerModule,   // Julius will implement
   ],
-  controllers: [],
-  providers: [],
+  controllers: [ChatbotController],
+  providers: [ChatbotService],
 })
 export class AppModule {}
