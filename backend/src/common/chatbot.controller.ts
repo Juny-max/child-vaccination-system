@@ -1,9 +1,13 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { ChatbotService } from './chatbot.service';
+import { VaccinationSchedulerService } from './vaccination-scheduler.service';
 
 @Controller('chatbot')
 export class ChatbotController {
-  constructor(private readonly chatbotService: ChatbotService) {}
+  constructor(
+    private readonly chatbotService: ChatbotService,
+    private readonly vaccinationScheduler: VaccinationSchedulerService,
+  ) {}
 
   /**
    * POST /api/chatbot/message
@@ -23,5 +27,15 @@ export class ChatbotController {
       body.conversationHistory,
     );
     return { response };
+  }
+
+  /**
+   * POST /api/chatbot/test-vaccination-reminders
+   * Manually trigger vaccination reminders (for testing)
+   * This will send SMS to parents with vaccinations due today
+   */
+  @Post('test-vaccination-reminders')
+  async testVaccinationReminders() {
+    return this.vaccinationScheduler.sendRemindersNow();
   }
 }

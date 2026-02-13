@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { ParentModule } from './parent/parent.module';
 import { FacilityModule } from './facility/facility.module';
 import { ChatbotController } from './common/chatbot.controller';
 import { ChatbotService } from './common/chatbot.service';
+import { SmsService } from './common/sms.service';
+import { VaccinationSchedulerService } from './common/vaccination-scheduler.service';
 
 @Module({
   imports: [
@@ -14,6 +17,9 @@ import { ChatbotService } from './common/chatbot.service';
       isGlobal: true,
       envFilePath: '.env',
     }),
+
+    // Enable scheduled tasks (cron jobs)
+    ScheduleModule.forRoot(),
 
     // Database (Supabase)
     DatabaseModule,
@@ -33,6 +39,6 @@ import { ChatbotService } from './common/chatbot.service';
     // DataOfficerModule,   // Julius will implement
   ],
   controllers: [ChatbotController],
-  providers: [ChatbotService],
+  providers: [ChatbotService, SmsService, VaccinationSchedulerService],
 })
 export class AppModule {}
