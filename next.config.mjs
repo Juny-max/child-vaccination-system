@@ -33,6 +33,10 @@ const nextConfig = {
         protocol: "https",
         hostname: "jacarandahealth.org",
       },
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+      },
     ],
   },
 }

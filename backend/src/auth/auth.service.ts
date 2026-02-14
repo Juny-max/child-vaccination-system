@@ -44,6 +44,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       fullName: user.full_name,
+      branchId: user.branch_id || undefined,
     };
 
     const accessToken = this.jwtService.sign(payload);
@@ -72,6 +73,7 @@ export class AuthService {
         role: user.role,
         phoneNumber: user.phone_number,
         lastLogin: user.last_login,
+        branchId: user.branch_id || undefined,
       },
       mustChangePassword: user.must_change_password || false,
     };

@@ -76,8 +76,12 @@ export interface Appointment {
   id: string;
   childId: string;
   childName: string;
+  childCvccId?: string;
+  vaccineName?: string;
   facilityId: string;
   facilityName: string;
+  facilityPhone?: string;
+  facilityAddress?: string;
   scheduledDate: string;
   scheduledTime: string;
   purpose: string;
@@ -154,16 +158,21 @@ export interface CreateAppointmentRequest {
   scheduledDate: string;
   scheduledTime: string;
   purpose: string;
+  contactPhone?: string;
   notes?: string;
 }
 
 export interface UpdateMotherDetailsRequest {
+  name?: string;
   primaryPhone?: string;
   secondaryPhone?: string;
   email?: string;
-  address?: string;
-  preferredContact?: 'phone' | 'sms' | 'email';
-  preferredLanguage?: string;
+  addressLine1?: string;
+  landmark?: string;
+  city?: string;
+  region?: string;
+  postalCode?: string;
+  preferredContactMethod?: 'phone' | 'sms' | 'email';
   emergencyContacts?: Array<{
     name: string;
     relationship: string;
@@ -260,9 +269,20 @@ export async function getAppointments(): Promise<Appointment[]> {
  * Create a new appointment
  */
 export async function createAppointment(data: CreateAppointmentRequest): Promise<Appointment> {
+  // Transform frontend data to match backend DTO
+  const backendPayload = {
+    childId: data.childId,
+    facilityId: data.facilityId || undefined,
+    preferredDate: data.scheduledDate,
+    preferredTime: data.scheduledTime,
+    contactPhone: data.contactPhone || undefined,
+    notes: data.notes,
+    // vaccineId is optional - backend will handle it
+  };
+
   return apiRequest<Appointment>('/parent/appointments', {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify(backendPayload),
   });
 }
 

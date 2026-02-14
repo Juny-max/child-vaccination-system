@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import {
@@ -8,12 +8,14 @@ import {
   ArrowLeft,
   BadgeCheck,
   CalendarDays,
+  Camera,
   CheckCircle2,
   ClipboardList,
   Droplet,
   Edit3,
   FileText,
   Flame,
+  Loader2,
   Ruler,
   Scale,
   ShieldAlert,
@@ -31,6 +33,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
+import { supabase } from "@/lib/supabase"
 
 type VaccineStatus = "overdue" | "dueToday" | "upcoming" | "completed"
 
@@ -240,7 +243,7 @@ export default function ChildPatientChartPage() {
   const params = useParams<{ childId: string }>()
   const childId = params?.childId ?? "new-child"
   const isUuid = (value: string) =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
   const isValidChildId = childId && childId !== "new-child" && isUuid(childId)
   const [userName, setUserName] = useState("")
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
@@ -285,6 +288,10 @@ export default function ChildPatientChartPage() {
   })
   const [isSavingGuardian, setIsSavingGuardian] = useState(false)
   const [isLoadingGuardian, setIsLoadingGuardian] = useState(false)
+
+  // State for photo upload
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -928,12 +935,67 @@ export default function ChildPatientChartPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col gap-4 rounded-lg border border-border bg-background/70 p-4 sm:flex-row sm:items-center">
-                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-xl font-semibold text-primary">
-                  {childRecord.name
-                    .split(" ")
-                    .map((segment) => segment[0])
-                    .join("" )
-                    .slice(0, 2)}
+                <div className="group relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xl font-semibold text-primary">
+                  {isUploadingPhoto ? (
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  ) : childRecord.photoUrl ? (
+                    <img src={childRecord.photoUrl} alt={`${childRecord.name} photo`} className="h-full w-full object-cover" />
+                  ) : (
+                    childRecord.name
+                      .split(" ")
+                      .map((segment) => segment[0])
+                      .join("")
+                      .slice(0, 2)
+                  )}
+                  {/* Camera overlay */}
+                  <button
+                    type="button"
+                    disabled={isUploadingPhoto}
+                    onClick={() => photoInputRef.current?.click()}
+                    className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 opacity-0 transition-all group-hover:bg-black/40 group-hover:opacity-100"
+                    title="Update photo"
+                  >
+                    <Camera className="h-5 w-5 text-white drop-shadow" />
+                  </button>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (!file || !childProfile) return
+                      setIsUploadingPhoto(true)
+                      try {
+                        const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg"
+                        const filePath = `${childProfile.childId}.${fileExt}`
+                        const { error: uploadError } = await supabase.storage
+                          .from("child-photos")
+                          .upload(filePath, file, { cacheControl: "3600", upsert: true })
+                        if (uploadError) throw uploadError
+                        const { data: urlData } = supabase.storage
+                          .from("child-photos")
+                          .getPublicUrl(filePath)
+                        // Add cache-buster to force re-render
+                        const newUrl = `${urlData.publicUrl}?t=${Date.now()}`
+                        // Update DB
+                        await supabase
+                          .from("children")
+                          .update({ profile_photo_url: urlData.publicUrl })
+                          .eq("id", childProfile.id)
+                        // Update local state
+                        setChildProfile({ ...childProfile, profilePhoto: newUrl })
+                        setSystemMessage("Profile photo updated successfully.")
+                      } catch (err) {
+                        console.error("Photo upload failed:", err)
+                        setSystemMessage("Failed to update photo. Please try again.")
+                      } finally {
+                        setIsUploadingPhoto(false)
+                        if (photoInputRef.current) photoInputRef.current.value = ""
+                      }
+                    }}
+                  />
                 </div>
                 <div className="flex-1 space-y-1">
                   <p className="text-base font-semibold text-foreground">{childRecord.name}</p>

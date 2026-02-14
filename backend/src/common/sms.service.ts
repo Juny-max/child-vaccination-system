@@ -78,13 +78,14 @@ export class SmsService {
         timeout: 10000, // 10 second timeout
       });
 
-      // Hubtel returns 200 with response data
-      if (response.status === 200 && response.data) {
-        this.logger.log(`SMS sent successfully to ${formattedPhone}`);
-        this.logger.debug(`Hubtel response:`, response.data);
+      // Hubtel returns response data with messageId on success
+      // status: 0 in the response body = success
+      const data = response.data;
+      if (data?.messageId || (response.status >= 200 && response.status < 300)) {
+        this.logger.log(`SMS sent successfully to ${formattedPhone} (messageId: ${data?.messageId || 'N/A'})`);
         return true;
       } else {
-        this.logger.error(`Unexpected Hubtel response:`, response.data);
+        this.logger.error(`Unexpected Hubtel response (HTTP ${response.status}):`, data);
         return false;
       }
     } catch (error) {

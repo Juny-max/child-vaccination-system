@@ -18,6 +18,8 @@ import {
   UrgentFollowUpDto,
   RegisterGuardianDto,
   RegisteredGuardianDto,
+  AppointmentRequestDto,
+  UpdateAppointmentStatusDto,
 } from './dto';
 
 @Injectable()
@@ -784,9 +786,22 @@ export class FacilityService {
         primary_facility_id,
         child_guardian!inner (
           is_primary,
+          relationship,
           guardians (
+            id,
             full_name,
-            phone_primary
+            phone_primary,
+            phone_alternate,
+            email,
+            address_line1,
+            landmark,
+            city,
+            region,
+            community,
+            preferred_contact,
+            nhis_number,
+            emergency_contact_name,
+            emergency_contact_phone
           )
         )
       `);
@@ -815,12 +830,17 @@ export class FacilityService {
       const overdueVaccines = (scheduled || []).filter((v: any) => v.isOverdue);
       
       if (overdueVaccines.length > 0) {
-        const primaryGuardian = child.child_guardian?.find((cg: any) => cg.is_primary);
-        const guardianData = primaryGuardian?.guardians?.[0];
+        const primaryGuardian = child.child_guardian?.find((cg: any) => cg.is_primary)
+          || child.child_guardian?.[0]; // fallback to first guardian if none marked primary
+        // Supabase returns a single object for many-to-one FK joins, not an array
+        const guardianData = primaryGuardian?.guardians as any;
         
         // Get the most overdue vaccine
         const mostOverdue = overdueVaccines.sort((a: any, b: any) => b.daysOverdue - a.daysOverdue)[0];
         const vaccineName = mostOverdue.vaccine?.[0]?.name || mostOverdue.schedule_name || 'Unknown vaccine';
+
+        // Build address string from parts
+        const addressParts = [guardianData?.address_line1, guardianData?.landmark, guardianData?.city, guardianData?.region].filter(Boolean);
 
         followUps.push({
           id: `URG-${child.cvcc_id?.slice(-4) || child.id.slice(0, 8)}`,
@@ -830,6 +850,16 @@ export class FacilityService {
           caregiver: guardianData?.full_name || 'Unknown',
           contact: guardianData?.phone_primary || 'N/A',
           daysOverdue: mostOverdue.daysOverdue,
+          guardianId: guardianData?.id,
+          phoneAlternate: guardianData?.phone_alternate || undefined,
+          email: guardianData?.email || undefined,
+          address: addressParts.length > 0 ? addressParts.join(', ') : undefined,
+          community: guardianData?.community || undefined,
+          preferredContact: guardianData?.preferred_contact || undefined,
+          relationship: primaryGuardian?.relationship || undefined,
+          nhisNumber: guardianData?.nhis_number || undefined,
+          emergencyContactName: guardianData?.emergency_contact_name || undefined,
+          emergencyContactPhone: guardianData?.emergency_contact_phone || undefined,
         });
       }
     }
@@ -1038,5 +1068,240 @@ export class FacilityService {
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Get pending appointment requests for a facility
+   */
+  async getAppointmentRequests(
+    facilityId?: string,
+    status?: string,
+  ): Promise<AppointmentRequestDto[]> {
+    const statusFilter = status || 'scheduled';
+
+    let query = this.db.supabase
+      .from('appointments')
+      .select(`
+        id,
+        child_id,
+        scheduled_date,
+        scheduled_time,
+        status,
+        notes,
+        created_at,
+        vaccine_id,
+        children (
+          id,
+          cvcc_id,
+          full_name,
+          child_guardian!inner (
+            is_primary,
+            guardians (
+              full_name,
+              phone_primary
+            )
+          )
+        ),
+        vaccines (
+          name
+        )
+      `)
+      .eq('status', statusFilter)
+      .order('created_at', { ascending: false });
+
+    if (facilityId) {
+      query = query.eq('facility_id', facilityId);
+    }
+
+    const { data: appointments, error } = await query;
+
+    if (error) {
+      console.error('Error fetching appointment requests:', error);
+      return [];
+    }
+
+    return (appointments || []).map((apt: any) => {
+      const child = apt.children;
+      const primaryGuardian = child?.child_guardian?.find(
+        (cg: any) => cg.is_primary,
+      );
+      const guardianData = primaryGuardian?.guardians;
+
+      return {
+        id: apt.id,
+        childId: child?.id || apt.child_id,
+        childName: child?.full_name || 'Unknown',
+        childCvccId: child?.cvcc_id || 'N/A',
+        vaccine: apt.vaccines?.name || 'Make-up dose',
+        guardianName: guardianData?.full_name || 'Unknown',
+        guardianPhone: guardianData?.phone_primary || 'N/A',
+        scheduledDate: apt.scheduled_date,
+        scheduledTime: apt.scheduled_time
+          ? apt.scheduled_time.slice(0, 5)
+          : '—',
+        status: apt.status,
+        notes: apt.notes || '',
+        createdAt: apt.created_at,
+      };
+    });
+  }
+
+  /**
+   * Update appointment status (confirm, reject, complete)
+   */
+  async updateAppointmentStatus(
+    appointmentId: string,
+    dto: UpdateAppointmentStatusDto,
+  ): Promise<{ success: boolean; message: string }> {
+    const updateData: any = {
+      status: dto.action,
+    };
+
+    // If confirming, allow overriding date/time
+    if (dto.action === 'confirmed') {
+      if (dto.confirmedDate) updateData.scheduled_date = dto.confirmedDate;
+      if (dto.confirmedTime) updateData.scheduled_time = dto.confirmedTime;
+    }
+
+    // If completing, set completed_at
+    if (dto.action === 'completed') {
+      updateData.completed_at = new Date().toISOString();
+    }
+
+    // Append nurse notes if provided
+    if (dto.notes) {
+      const { data: existing } = await this.db.supabase
+        .from('appointments')
+        .select('notes')
+        .eq('id', appointmentId)
+        .single();
+
+      updateData.notes = existing?.notes
+        ? `${existing.notes}\n---\nNurse: ${dto.notes}`
+        : `Nurse: ${dto.notes}`;
+    }
+
+    const { error } = await this.db.supabase
+      .from('appointments')
+      .update(updateData)
+      .eq('id', appointmentId);
+
+    if (error) {
+      console.error('Error updating appointment:', error);
+      throw new NotFoundException('Appointment not found or could not be updated');
+    }
+
+    // Try to send SMS notification to guardian
+    try {
+      // First try via guardian_id on the appointment
+      let guardianPhone: string | null = null;
+      let childName = 'your child';
+
+      const { data: apt } = await this.db.supabase
+        .from('appointments')
+        .select(`
+          scheduled_date,
+          scheduled_time,
+          child_id,
+          guardian_id,
+          notes,
+          children ( full_name ),
+          guardians ( full_name, phone_primary )
+        `)
+        .eq('id', appointmentId)
+        .single();
+
+      if (apt) {
+        childName = (apt.children as any)?.full_name || 'your child';
+
+        // Priority 1: Use the contact phone from booking form (stored as [CONTACT_PHONE:xxx] in notes)
+        const contactMatch = ((apt.notes as string) || '').match(/\[CONTACT_PHONE:(\+?\d+)\]/);
+        if (contactMatch) {
+          guardianPhone = contactMatch[1];
+          console.log(`[Appointment SMS] Using booking contact phone: ${guardianPhone}`);
+        }
+
+        // Priority 2: Guardian phone from appointment FK
+        if (!guardianPhone) {
+          guardianPhone = (apt.guardians as any)?.phone_primary || null;
+        }
+
+        // Priority 3: Fallback via child_guardian junction table
+        if (!guardianPhone && apt.child_id) {
+          const { data: childGuardian } = await this.db.supabase
+            .from('child_guardian')
+            .select('guardians ( phone_primary )')
+            .eq('child_id', apt.child_id)
+            .eq('is_primary', true)
+            .single();
+
+          guardianPhone = (childGuardian?.guardians as any)?.phone_primary || null;
+        }
+      }
+
+      console.log(`[Appointment SMS] Action: ${dto.action}, Phone: ${guardianPhone || 'NOT FOUND'}, Child: ${childName}`);
+
+      if (guardianPhone) {
+        let smsMessage = '';
+        if (dto.action === 'confirmed') {
+          const date = apt?.scheduled_date || '';
+          const time = apt?.scheduled_time
+            ? ` at ${(apt.scheduled_time as string).slice(0, 5)}`
+            : '';
+          smsMessage = `CVCC: Your appointment for ${childName}'s vaccination has been CONFIRMED for ${date}${time}. Please arrive 15 minutes early with the child health record book.`;
+        } else if (dto.action === 'cancelled') {
+          smsMessage = `CVCC: Your appointment request for ${childName}'s vaccination could not be scheduled at this time. Please contact the facility for alternative dates.`;
+        } else if (dto.action === 'completed') {
+          smsMessage = `CVCC: ${childName}'s vaccination appointment has been completed. Thank you for protecting your child!`;
+        }
+
+        if (smsMessage) {
+          const sent = await this.smsService.sendSms(guardianPhone, smsMessage);
+          console.log(`[Appointment SMS] Sent to ${guardianPhone}: ${sent ? 'SUCCESS' : 'FAILED'}`);
+        }
+      } else {
+        console.warn(`[Appointment SMS] No guardian phone found for appointment ${appointmentId}`);
+      }
+    } catch (smsError) {
+      console.error('Failed to send appointment SMS notification:', smsError);
+      // Don't fail the update if SMS fails
+    }
+
+    const actionLabels: Record<string, string> = {
+      confirmed: 'confirmed',
+      cancelled: 'rejected',
+      completed: 'marked as completed',
+    };
+
+    return {
+      success: true,
+      message: `Appointment ${actionLabels[dto.action] || 'updated'} successfully`,
+    };
+  }
+
+  /**
+   * Get branch/facility details by ID
+   */
+  async getBranchDetails(branchId: string) {
+    const { data: branch, error } = await this.db.supabase
+      .from('branches')
+      .select('id, name, code, region, district, address, phone, email')
+      .eq('id', branchId)
+      .single();
+
+    if (error || !branch) {
+      throw new NotFoundException(`Branch with ID ${branchId} not found`);
+    }
+
+    return {
+      id: branch.id,
+      name: branch.name,
+      code: branch.code,
+      region: branch.region,
+      district: branch.district,
+      address: branch.address,
+      phone: branch.phone,
+      email: branch.email,
+    };
   }
 }

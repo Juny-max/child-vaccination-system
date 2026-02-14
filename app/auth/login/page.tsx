@@ -65,6 +65,9 @@ export default function UnifiedLoginPage() {
       localStorage.setItem("userRoleDetail", resolvedRole)
       localStorage.setItem("userName", response.user.fullName)
       localStorage.setItem("userId", response.user.id)
+      if (response.user.branchId) {
+        localStorage.setItem("branchId", response.user.branchId)
+      }
 
       // Check if user must change password (first-time login with temp password)
       if (response.mustChangePassword) {

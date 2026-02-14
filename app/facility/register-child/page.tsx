@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { AlertCircle, ArrowLeft, Baby, Calendar, FileImage, MapPin, Search } from "lucide-react"
+import { AlertCircle, ArrowLeft, Baby, Calendar, FileImage, MapPin, Search, X } from "lucide-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -32,7 +32,9 @@ type ChildFormState = {
   placeOfBirth: string
   deliveryType: string
   birthOrder: string
+  bloodType: string
   profileImageName: string | null
+  profileImageFile: File | null
   notes: string
 }
 
@@ -47,7 +49,9 @@ const initialState: ChildFormState = {
   placeOfBirth: "",
   deliveryType: "",
   birthOrder: "",
+  bloodType: "",
   profileImageName: null,
+  profileImageFile: null,
   notes: "",
 }
 
@@ -62,6 +66,8 @@ export default function RegisterChildPage() {
   const [formData, setFormData] = useState<ChildFormState>(initialState)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -183,6 +189,32 @@ export default function RegisterChildPage() {
 
       // Get current user ID from localStorage
       const userId = localStorage.getItem("userId") || null
+      const branchId = localStorage.getItem("branchId") || null
+
+      // Upload profile image to Supabase Storage if provided
+      let profilePhotoUrl: string | null = null
+      if (formData.profileImageFile) {
+        const fileExt = formData.profileImageFile.name.split(".").pop()?.toLowerCase() || "jpg"
+        const filePath = `${cvccId}.${fileExt}`
+        
+        const { error: uploadError } = await supabase.storage
+          .from("child-photos")
+          .upload(filePath, formData.profileImageFile, {
+            cacheControl: "3600",
+            upsert: true,
+          })
+        
+        if (uploadError) {
+          console.error("Image upload error:", uploadError)
+          // Continue without image — don't block registration
+          toast.warning("Photo upload failed — child will be registered without photo.")
+        } else {
+          const { data: urlData } = supabase.storage
+            .from("child-photos")
+            .getPublicUrl(filePath)
+          profilePhotoUrl = urlData.publicUrl
+        }
+      }
 
       console.log("Attempting to insert child with data:", {
         cvccId,
@@ -211,7 +243,10 @@ export default function RegisterChildPage() {
           place_of_birth: formData.placeOfBirth || null,
           delivery_type: formData.deliveryType || null,
           birth_order: formData.birthOrder || null,
+          blood_type: formData.bloodType || null,
           critical_notes: formData.notes || null,
+          profile_photo_url: profilePhotoUrl,
+          primary_facility_id: branchId,
           created_by_user_id: userId,
           is_active: true,
         })
@@ -257,6 +292,7 @@ export default function RegisterChildPage() {
         setFormData(initialState)
         setSelectedMother(null)
         setSearchMother("")
+        setImagePreview(null)
         router.push('/facility/dashboard')
       }, 1500)
 
@@ -505,19 +541,60 @@ export default function RegisterChildPage() {
                     <option value="breech">Breech</option>
                   </select>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bloodType">Blood type</Label>
+                  <select
+                    id="bloodType"
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={formData.bloodType}
+                    onChange={(event) => handleChange("bloodType", event.target.value)}
+                  >
+                    <option value="">Select blood type</option>
+                    <option value="A+">A+</option>
+                    <option value="A-">A−</option>
+                    <option value="B+">B+</option>
+                    <option value="B-">B−</option>
+                    <option value="AB+">AB+</option>
+                    <option value="AB-">AB−</option>
+                    <option value="O+">O+</option>
+                    <option value="O-">O−</option>
+                  </select>
+                </div>
               </section>
 
               <section className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="profileImage">Profile image</Label>
-                  <label
-                    htmlFor="profileImage"
-                    className="flex cursor-pointer items-center justify-between rounded-md border border-dashed border-border bg-background px-4 py-3 text-sm text-muted-foreground hover:border-primary"
-                  >
-                    <span>{formData.profileImageName ?? "Capture photo or upload from device"}</span>
-                    <FileImage className="h-4 w-4" />
-                  </label>
+                  {imagePreview ? (
+                    <div className="relative w-full">
+                      <div className="relative h-40 w-full overflow-hidden rounded-lg border border-border">
+                        <img src={imagePreview} alt="Preview" className="h-full w-full object-cover" />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImagePreview(null)
+                          handleChange("profileImageFile", null)
+                          handleChange("profileImageName", null)
+                          if (fileInputRef.current) fileInputRef.current.value = ""
+                        }}
+                        className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-white shadow-md hover:bg-destructive/90 transition-colors"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                      <p className="mt-1 text-xs text-muted-foreground truncate">{formData.profileImageName}</p>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="profileImage"
+                      className="flex cursor-pointer items-center justify-between rounded-md border border-dashed border-border bg-background px-4 py-3 text-sm text-muted-foreground hover:border-primary"
+                    >
+                      <span>Capture photo or upload from device</span>
+                      <FileImage className="h-4 w-4" />
+                    </label>
+                  )}
                   <input
+                    ref={fileInputRef}
                     id="profileImage"
                     type="file"
                     accept="image/*"
@@ -525,7 +602,13 @@ export default function RegisterChildPage() {
                     className="hidden"
                     onChange={(event) => {
                       const file = event.target.files?.[0]
-                      handleChange("profileImageName", file ? file.name : null)
+                      if (file) {
+                        handleChange("profileImageName", file.name)
+                        handleChange("profileImageFile", file)
+                        const reader = new FileReader()
+                        reader.onloadend = () => setImagePreview(reader.result as string)
+                        reader.readAsDataURL(file)
+                      }
                     }}
                   />
                   <p className="text-xs text-muted-foreground">Optional but recommended for quick identification during busy clinics.</p>

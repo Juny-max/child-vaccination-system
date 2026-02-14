@@ -12,12 +12,19 @@ import {
   Camera,
   ChevronRight,
   FilePlus2,
+  Heart,
+  Info,
   Loader2,
+  LogOut,
+  Mail,
+  MapPin,
   Phone,
   QrCode,
   Search,
+  Shield,
   Stethoscope,
   User,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -35,6 +42,7 @@ type CameraState = "idle" | "starting" | "active" | "error"
 export default function FacilityDashboardPage() {
   const router = useRouter()
   const [userName, setUserName] = useState("")
+  const [facilityInfo, setFacilityInfo] = useState<{ name: string; region: string } | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [searchResults, setSearchResults] = useState<facilityApi.ChildSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -50,6 +58,8 @@ export default function FacilityDashboardPage() {
   const [followUps, setFollowUps] = useState<facilityApi.UrgentFollowUp[]>([])
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true)
   const [isLoadingFollowUps, setIsLoadingFollowUps] = useState(true)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [contactDetail, setContactDetail] = useState<facilityApi.UrgentFollowUp | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -81,12 +91,24 @@ export default function FacilityDashboardPage() {
 
     setUserName(name || "Facility Nurse")
     
-    // Fetch today's appointments and urgent follow-ups
+    // Fetch facility info
+    const branchId = localStorage.getItem("branchId")
+    if (branchId) {
+      facilityApi.getBranchDetails(branchId)
+        .then(details => {
+          setFacilityInfo({ name: details.name, region: details.region })
+        })
+        .catch(error => {
+          console.error("Failed to fetch facility details:", error)
+        })
+    }
+    
+    // Fetch today's appointments and urgent follow-ups (filtered by facility)
     const fetchDashboardData = async () => {
       try {
         const [appointmentsData, followUpsData] = await Promise.all([
-          facilityApi.getTodaysAppointments(),
-          facilityApi.getUrgentFollowUps()
+          facilityApi.getTodaysAppointments(branchId || undefined),
+          facilityApi.getUrgentFollowUps(branchId || undefined)
         ])
         setAppointments(appointmentsData)
         setFollowUps(followUpsData)
@@ -306,10 +328,13 @@ export default function FacilityDashboardPage() {
   const todaysFollowUps = useMemo(() => followUps, [followUps])
 
   const handleLogout = () => {
+    setIsLoggingOut(true)
     localStorage.removeItem("authToken")
     localStorage.removeItem("userRole")
     localStorage.removeItem("userRoleDetail")
     localStorage.removeItem("userName")
+    localStorage.removeItem("branchId")
+    localStorage.removeItem("userId")
     router.push("/")
   }
 
@@ -323,8 +348,8 @@ export default function FacilityDashboardPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Today&apos;s Clinic · Facility Nurse Console</p>
-              <p className="text-xl font-semibold text-foreground">Jakpa District Health Centre</p>
-              <p className="text-xs text-muted-foreground">Savannah Region</p>
+              <p className="text-xl font-semibold text-foreground">{facilityInfo?.name || "Loading..."}</p>
+              <p className="text-xs text-muted-foreground">{facilityInfo?.region || ""}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -333,8 +358,9 @@ export default function FacilityDashboardPage() {
               <span className="text-sm text-muted-foreground">Welcome, {userName}</span>
               <span className="text-xs text-muted-foreground/80">Role: Facility Nurse</span>
             </div>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleLogout}>
-              Logout
+            <Button variant="outline" size="sm" className="gap-2" onClick={handleLogout} disabled={isLoggingOut}>
+              {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+              {isLoggingOut ? "Signing out..." : "Logout"}
             </Button>
           </div>
         </div>
@@ -528,6 +554,11 @@ export default function FacilityDashboardPage() {
                     <FilePlus2 className="h-4 w-4" /> Register new child
                   </Link>
                 </Button>
+                <Button asChild variant="outline" className="gap-2">
+                  <Link href="/facility/dashboard/appointments">
+                    <CalendarCheck className="h-4 w-4" /> Review appointment requests
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
           </div>
@@ -539,7 +570,12 @@ export default function FacilityDashboardPage() {
               <CardTitle className="flex items-center gap-2 text-lg">
                 <CalendarCheck className="h-5 w-5 text-primary" /> Today&apos;s appointments
               </CardTitle>
-              <CardDescription>Prepare immunisation cards and vaccines before families arrive.</CardDescription>
+              <CardDescription>
+                Prepare immunisation cards and vaccines before families arrive.{" "}
+                <Link href="/facility/dashboard/appointments" className="text-primary hover:underline">
+                  View all requests &rarr;
+                </Link>
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {isLoadingAppointments ? (
@@ -592,16 +628,24 @@ export default function FacilityDashboardPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-semibold text-foreground">{followUp.childName}</p>
-                        <p className="text-xs text-muted-foreground">Guardian: {followUp.caregiver}</p>
+                        <p className="text-xs text-muted-foreground">Guardian: {followUp.caregiver}{followUp.relationship ? ` (${followUp.relationship})` : ""}</p>
                       </div>
-                      <Badge variant="destructive" className="text-[10px]">
+                      <Badge variant="destructive" className="text-[10px] shrink-0">
                         {followUp.daysOverdue} days overdue
                       </Badge>
                     </div>
                     <p className="mt-2 text-xs text-destructive">{followUp.reason}</p>
-                    <Link href={`tel:${followUp.contact.replace(/\s+/g, "")}`} className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-destructive hover:underline">
-                      <Phone className="h-3 w-3" /> Call guardian
-                    </Link>
+                    <div className="mt-3 flex items-center gap-3">
+                      <Link href={`tel:${followUp.contact.replace(/\s+/g, "")}`} className="inline-flex items-center gap-1.5 rounded-md bg-destructive/15 px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/25 transition-colors">
+                        <Phone className="h-3 w-3" /> {followUp.contact !== "N/A" ? followUp.contact : "No phone"}
+                      </Link>
+                      <button
+                        onClick={() => setContactDetail(followUp)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      >
+                        <Info className="h-3 w-3" /> Contact info
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -632,6 +676,132 @@ export default function FacilityDashboardPage() {
           </CardContent>
         </Card>
       </main>
+
+      {/* Guardian Contact Details Modal */}
+      {contactDetail && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setContactDetail(null)}>
+          <div className="w-full max-w-md max-h-[90vh] flex flex-col rounded-xl border border-border bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-foreground">Guardian Contact Details</h3>
+                <p className="text-xs text-muted-foreground">for {contactDetail.childName}</p>
+              </div>
+              <button onClick={() => setContactDetail(null)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="space-y-4 px-5 py-5 overflow-y-auto flex-1 min-h-0">
+              {/* Guardian name & relationship */}
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                  <User className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{contactDetail.caregiver}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{contactDetail.relationship || "Guardian"}</p>
+                </div>
+              </div>
+
+              <hr className="border-border" />
+
+              {/* Contact channels */}
+              <div className="space-y-3">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Contact channels</p>
+
+                {/* Primary phone */}
+                <Link href={`tel:${contactDetail.contact.replace(/\s+/g, "")}`} className="flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-muted transition-colors">
+                  <Phone className="h-4 w-4 text-green-600" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">{contactDetail.contact}</p>
+                    <p className="text-[11px] text-muted-foreground">Primary phone {contactDetail.preferredContact === "sms" ? "· Prefers SMS" : ""}</p>
+                  </div>
+                  <span className="text-[10px] font-medium text-green-600 bg-green-50 dark:bg-green-950/30 px-2 py-0.5 rounded-full">Call</span>
+                </Link>
+
+                {/* Alternate phone */}
+                {contactDetail.phoneAlternate && (
+                  <Link href={`tel:${contactDetail.phoneAlternate.replace(/\s+/g, "")}`} className="flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-muted transition-colors">
+                    <Phone className="h-4 w-4 text-blue-600" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">{contactDetail.phoneAlternate}</p>
+                      <p className="text-[11px] text-muted-foreground">Alternate phone</p>
+                    </div>
+                    <span className="text-[10px] font-medium text-blue-600 bg-blue-50 dark:bg-blue-950/30 px-2 py-0.5 rounded-full">Call</span>
+                  </Link>
+                )}
+
+                {/* Email */}
+                {contactDetail.email && (
+                  <Link href={`mailto:${contactDetail.email}`} className="flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-muted transition-colors">
+                    <Mail className="h-4 w-4 text-violet-600" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">{contactDetail.email}</p>
+                      <p className="text-[11px] text-muted-foreground">Email address {contactDetail.preferredContact === "email" ? "· Preferred" : ""}</p>
+                    </div>
+                    <span className="text-[10px] font-medium text-violet-600 bg-violet-50 dark:bg-violet-950/30 px-2 py-0.5 rounded-full">Email</span>
+                  </Link>
+                )}
+              </div>
+
+              {/* Important info */}
+              <div className="space-y-3">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Important information</p>
+
+                {/* Address */}
+                {contactDetail.address && (
+                  <div className="flex items-start gap-3 rounded-lg bg-muted/50 p-3">
+                    <MapPin className="h-4 w-4 mt-0.5 text-amber-600 shrink-0" />
+                    <div>
+                      <p className="text-sm text-foreground">{contactDetail.address}</p>
+                      {contactDetail.community && <p className="text-[11px] text-muted-foreground mt-0.5">Community: {contactDetail.community}</p>}
+                    </div>
+                  </div>
+                )}
+
+                {/* NHIS */}
+                {contactDetail.nhisNumber && (
+                  <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-3">
+                    <Shield className="h-4 w-4 text-teal-600 shrink-0" />
+                    <div>
+                      <p className="text-sm text-foreground">{contactDetail.nhisNumber}</p>
+                      <p className="text-[11px] text-muted-foreground">NHIS Number</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Emergency contact */}
+                {contactDetail.emergencyContactName && (
+                  <div className="flex items-center gap-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 p-3">
+                    <Heart className="h-4 w-4 text-red-600 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">{contactDetail.emergencyContactName}</p>
+                      <p className="text-[11px] text-muted-foreground">Emergency contact</p>
+                    </div>
+                    {contactDetail.emergencyContactPhone && (
+                      <Link href={`tel:${contactDetail.emergencyContactPhone.replace(/\s+/g, "")}`} className="text-[10px] font-medium text-red-600 bg-red-100 dark:bg-red-950/40 px-2 py-0.5 rounded-full hover:bg-red-200 dark:hover:bg-red-900/40 transition-colors">
+                        {contactDetail.emergencyContactPhone}
+                      </Link>
+                    )}
+                  </div>
+                )}
+
+                {/* No extra info fallback */}
+                {!contactDetail.address && !contactDetail.nhisNumber && !contactDetail.emergencyContactName && !contactDetail.phoneAlternate && !contactDetail.email && (
+                  <p className="text-xs text-muted-foreground italic py-2">No additional contact information on file for this guardian.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-border px-5 py-3 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setContactDetail(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { AlertTriangle, CalendarDays, ClipboardList, Loader2, PhoneCall } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -15,6 +15,7 @@ type MissedVaccination = parentApi.MissedVaccination
 export default function MissedVaccinationsPage() {
   const { children, missedVaccinations, isLoading } = useParentDashboard()
   const primaryChild = children[0]
+  const formRef = useRef<HTMLDivElement>(null)
 
   const monthsOld = useMemo(() => calculateMonthsOld(primaryChild?.dateOfBirth), [primaryChild?.dateOfBirth])
   const isCHWRecommended = monthsOld !== null && monthsOld <= 24
@@ -28,6 +29,7 @@ export default function MissedVaccinationsPage() {
   const [reason, setReason] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!selectedVaccine) {
@@ -42,24 +44,52 @@ export default function MissedVaccinationsPage() {
     setContactNumber("")
     setReason("")
     setConfirmation(null)
+    setError(null)
+
+    // Scroll to form smoothly
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
   }, [selectedVaccine, isCHWRecommended, primaryChild?.facilityName])
 
   const minDate = useMemo(() => new Date().toISOString().split("T")[0], [])
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!selectedVaccine) return
+    if (!selectedVaccine || !primaryChild) return
 
     setIsSubmitting(true)
+    setError(null)
 
-    window.setTimeout(() => {
+    try {
+      // Validate childId exists
+      if (!selectedVaccine.childId) {
+        throw new Error('Child ID is missing from selected vaccine')
+      }
+
+      // Create appointment via API
+      // Store contact phone separately so the system can send SMS to this number
+      await parentApi.createAppointment({
+        childId: selectedVaccine.childId,
+        facilityId: primaryChild.facilityId,
+        scheduledDate: preferredDate,
+        scheduledTime: preferredTime,
+        purpose: `Make-up dose: ${selectedVaccine.vaccine}`,
+        contactPhone: contactNumber || undefined,
+        notes: `Visit preference: ${visitPreference}. Additional notes: ${reason || 'None'}`,
+      })
+
       setIsSubmitting(false)
       setConfirmation(
-        `Your child's ${selectedVaccine.vaccine} make-up dose request has been sent to ${
+        `Your child's ${selectedVaccine.vaccine} make-up dose request has been saved and sent to ${
           visitPreference === "facility" ? preferredFacility : "the community health outreach coordinator"
         }. We will confirm the schedule via SMS once a nurse reviews it.`,
       )
-    }, 800)
+    } catch (err) {
+      setIsSubmitting(false)
+      setError(err instanceof Error ? err.message : 'Failed to schedule appointment. Please try again.')
+      console.error('Failed to create appointment:', err)
+    }
   }
 
   return (
@@ -122,15 +152,16 @@ export default function MissedVaccinationsPage() {
       )}
 
       {selectedVaccine ? (
-        <Card className="border-primary/30">
-          <CardHeader>
-            <CardTitle className="text-lg">Schedule make-up dose</CardTitle>
-            <CardDescription>
-              {selectedVaccine.vaccine} • overdue by {selectedVaccine.daysOverdue} days. Complete this form to route the
-              request to your facility team.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <div ref={formRef}>
+          <Card className="border-primary/30">
+            <CardHeader>
+              <CardTitle className="text-lg">Schedule make-up dose</CardTitle>
+              <CardDescription>
+                {selectedVaccine.vaccine} • overdue by {selectedVaccine.daysOverdue} days. Complete this form to route the
+                request to your facility team.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
             <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="rounded-lg border border-border bg-background/80 p-4 text-sm text-muted-foreground">
                 {isCHWRecommended ? (
@@ -272,14 +303,21 @@ export default function MissedVaccinationsPage() {
                 </Button>
               </div>
 
+              {error ? (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                  ⚠️ {error}
+                </div>
+              ) : null}
+
               {confirmation ? (
                 <div className="rounded-md border border-primary/40 bg-primary/10 p-4 text-sm text-foreground">
-                  {confirmation}
+                  ✓ {confirmation}
                 </div>
               ) : null}
             </form>
           </CardContent>
         </Card>
+        </div>
       ) : null}
 
       <Card>

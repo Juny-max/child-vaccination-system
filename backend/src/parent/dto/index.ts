@@ -14,6 +14,7 @@ import {
   IsNotEmpty,
   MinLength,
   ValidateNested,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -140,8 +141,12 @@ export class AppointmentDto {
   purpose: string;
   childId: string;
   childName: string;
+  childCvccId?: string;
+  vaccineName?: string;
   facilityId: string;
   facilityName: string;
+  facilityPhone?: string;
+  facilityAddress?: string;
   scheduledDate: string;
   scheduledTime: string;
   status: AppointmentStatus;
@@ -308,12 +313,22 @@ export class EmergencyContactRequestDto {
  * Request an appointment
  */
 export class CreateAppointmentDto {
-  @IsUUID()
+  @Matches(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
+    message: 'childId must be a valid UUID format',
+  })
   childId: string;
 
   @IsOptional()
-  @IsUUID()
+  @Matches(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
+    message: 'vaccineId must be a valid UUID format',
+  })
   vaccineId?: string;
+
+  @IsOptional()
+  @Matches(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
+    message: 'facilityId must be a valid UUID format',
+  })
+  facilityId?: string;
 
   @IsDateString()
   preferredDate: string;
@@ -321,6 +336,10 @@ export class CreateAppointmentDto {
   @IsOptional()
   @IsString()
   preferredTime?: string;
+
+  @IsOptional()
+  @IsString()
+  contactPhone?: string;
 
   @IsOptional()
   @IsString()
@@ -340,7 +359,7 @@ export class CancelAppointmentDto {
  * Download certificate request
  */
 export class DownloadCertificateDto {
-  @IsUUID()
+  @IsUUID('all')  // Accept all UUID formats
   certificateId: string;
 
   @IsOptional()

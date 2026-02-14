@@ -2,7 +2,17 @@
 // Facility Nurse Module DTOs - Data Transfer Objects
 // ============================================================================
 
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+export enum AppointmentAction {
+  CONFIRM = 'confirmed',
+  REJECT = 'cancelled',
+  COMPLETE = 'completed',
+}
 
 // ============================================================================
 // REQUEST DTOs
@@ -378,6 +388,18 @@ export class UrgentFollowUpDto {
   caregiver: string;
   contact: string;
   daysOverdue: number;
+
+  // Extended guardian contact info
+  guardianId?: string;
+  phoneAlternate?: string;
+  email?: string;
+  address?: string;
+  community?: string;
+  preferredContact?: string;
+  relationship?: string;
+  nhisNumber?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
 }
 
 /**
@@ -400,4 +422,46 @@ export class RegisteredGuardianDto {
   message: string;
   emailSent?: boolean; // Indicates if credentials were emailed successfully
   smsSent?: boolean; // Indicates if SMS notification was sent successfully
+}
+
+// ============================================================================
+// APPOINTMENT REVIEW DTOs
+// ============================================================================
+
+/**
+ * Update appointment status (confirm/reject/complete)
+ */
+export class UpdateAppointmentStatusDto {
+  @IsEnum(AppointmentAction)
+  action: AppointmentAction;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  confirmedDate?: string;
+
+  @IsOptional()
+  @IsString()
+  confirmedTime?: string;
+}
+
+/**
+ * Appointment request response DTO (for nurse review)
+ */
+export class AppointmentRequestDto {
+  id: string;
+  childId: string;
+  childName: string;
+  childCvccId: string;
+  vaccine: string;
+  guardianName: string;
+  guardianPhone: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  status: string;
+  notes: string;
+  createdAt: string;
 }

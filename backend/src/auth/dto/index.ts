@@ -73,6 +73,7 @@ export class UserProfileDto {
   role: string;
   phoneNumber?: string;
   lastLogin?: string;
+  branchId?: string;
 }
 
 export class AuthResponseDto {
@@ -92,6 +93,7 @@ export interface TokenPayload {
   email: string;
   role: string;
   fullName: string;
+  branchId?: string; // facility/branch the user belongs to
   iat?: number; // issued at
   exp?: number; // expiration
 }

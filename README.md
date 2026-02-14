@@ -117,6 +117,17 @@ npx ts-node scripts/reset-password.ts
 
 The script lists all users, lets you pick an email, and updates the password hash in Supabase using the same SHA-256 routine as the backend.
 
+### Viewing all users, roles and facilities (terminal)
+
+To see every user in the system with their role, assigned facility, and login status:
+
+```powershell
+cd backend
+npx ts-node scripts/list-users.ts
+```
+
+The output groups users by role and shows their email, assigned facility (branch), status, and last login date. Useful for verifying which nurse belongs to which hospital.
+
 ### Starting the backend for daily work
 
 ```powershell

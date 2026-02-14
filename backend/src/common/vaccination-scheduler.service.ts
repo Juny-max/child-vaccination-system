@@ -15,33 +15,40 @@ export class VaccinationSchedulerService {
   /**
    * Send SMS reminders for vaccinations due today
    * Runs every day at 8:00 AM Ghana time
+   * @param testPhoneNumber Optional phone number to override all recipients (for testing)
    */
   @Cron('0 8 * * *', {
     name: 'vaccination-due-today-reminders',
     timeZone: 'Africa/Accra',
   })
-  async sendVaccinationDueTodayReminders() {
+  async sendVaccinationDueTodayReminders(testPhoneNumber?: string) {
     this.logger.log('Starting daily vaccination reminder check...');
+    if (testPhoneNumber) {
+      this.logger.log(`[TEST MODE] All SMS will be sent to: ${testPhoneNumber}`);
+    }
 
     try {
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
       
-      // Get all children with their birth dates and guardian info
+      // Get all children with their birth dates and guardian info (through child_guardian junction table)
       const { data: children, error: childrenError } = await this.db['_supabase']
         .from('children')
         .select(`
           id,
           full_name,
           date_of_birth,
-          guardian_id,
-          guardian:guardians (
-            id,
-            full_name,
-            phone_primary,
-            preferred_contact
+          child_guardian!inner (
+            is_primary,
+            guardian:guardians (
+              id,
+              full_name,
+              phone_primary,
+              preferred_contact
+            )
           )
         `)
-        .eq('status', 'active');
+        .eq('is_active', true)
+        .eq('child_guardian.is_primary', true);
 
       if (childrenError) {
         this.logger.error('Error fetching children:', childrenError);
@@ -80,8 +87,9 @@ export class VaccinationSchedulerService {
             continue;
           }
 
-          // Get guardian information
-          const guardian = child.guardian as any;
+          // Get guardian information from child_guardian junction table
+          const childGuardianLink = child.child_guardian as any;
+          const guardian = childGuardianLink?.[0]?.guardian;
           
           if (!guardian || !guardian.phone_primary) {
             this.logger.warn(`No guardian phone for child ${child.full_name}`);
@@ -96,8 +104,11 @@ export class VaccinationSchedulerService {
             
             const message = `REMINDER: ${child.full_name}'s ${vaccineName} vaccination is DUE TODAY (${vaccination.schedule_name}). Please visit your health facility today. - CVCC Ghana`;
 
+            // Use test phone number if provided (for testing), otherwise use actual guardian phone
+            const recipientPhone = testPhoneNumber || guardian.phone_primary;
+
             const smsSent = await this.smsService.sendSms(
-              guardian.phone_primary,
+              recipientPhone,
               message,
             );
 
@@ -110,7 +121,7 @@ export class VaccinationSchedulerService {
                 recipient_type: 'guardian',
                 recipient_id: guardian.id,
                 channel: 'sms',
-                phone_number: guardian.phone_primary,
+                phone_number: recipientPhone,
                 subject: `Vaccination Due Today - ${child.full_name}`,
                 content: message,
                 status: 'sent',
@@ -202,16 +213,22 @@ export class VaccinationSchedulerService {
 
   /**
    * Manual trigger for testing (can be called via endpoint)
+   * @param testPhoneNumber Optional phone number to override all recipients (for testing)
    */
-  async sendRemindersNow(): Promise<{
+  async sendRemindersNow(testPhoneNumber?: string): Promise<{
     success: boolean;
     message: string;
   }> {
     this.logger.log('Manual vaccination reminder trigger...');
-    await this.sendVaccinationDueTodayReminders();
+    if (testPhoneNumber) {
+      this.logger.log(`Using test phone number: ${testPhoneNumber}`);
+    }
+    await this.sendVaccinationDueTodayReminders(testPhoneNumber);
     return {
       success: true,
-      message: 'Vaccination reminders sent. Check logs for details.',
+      message: testPhoneNumber 
+        ? `Vaccination reminders sent to test number ${testPhoneNumber}. Check logs for details.`
+        : 'Vaccination reminders sent. Check logs for details.',
     };
   }
 }

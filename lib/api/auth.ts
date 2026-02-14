@@ -24,6 +24,7 @@ export interface UserProfile {
   role: string;
   phoneNumber?: string;
   lastLogin?: string;
+  branchId?: string;
 }
 
 export interface AuthResponse {

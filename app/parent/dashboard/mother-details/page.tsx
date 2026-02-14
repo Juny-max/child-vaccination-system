@@ -372,8 +372,8 @@ export default function MotherDetailsPage() {
           primaryPhone: sanitized.primaryPhone,
           secondaryPhone: sanitized.secondaryPhone || undefined,
           email: sanitized.email,
-          address: sanitized.address,
-          preferredContact: sanitized.preferredContactMethod,
+          addressLine1: sanitized.address,
+          preferredContactMethod: sanitized.preferredContactMethod,
         })
       } catch (error) {
         console.error('Failed to update profile:', error)

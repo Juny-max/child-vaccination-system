@@ -303,6 +303,16 @@ export interface UrgentFollowUp {
   caregiver: string;
   contact: string;
   daysOverdue: number;
+  guardianId?: string;
+  phoneAlternate?: string;
+  email?: string;
+  address?: string;
+  community?: string;
+  preferredContact?: string;
+  relationship?: string;
+  nhisNumber?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
 }
 
 /**
@@ -381,5 +391,87 @@ export async function registerGuardian(data: RegisterGuardianRequest): Promise<R
   return apiRequest<RegisteredGuardian>('/facility/guardians', {
     method: 'POST',
     body: JSON.stringify(data),
+  });
+}
+
+// ============================================
+// Appointment Management (Nurse Review)
+// ============================================
+
+/**
+ * Appointment request from parent (for nurse review)
+ */
+export interface AppointmentRequest {
+  id: string;
+  childId: string;
+  childName: string;
+  childCvccId: string;
+  vaccine: string;
+  guardianName: string;
+  guardianPhone: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  status: string;
+  notes: string;
+  createdAt: string;
+}
+
+/**
+ * Get pending appointment requests for review
+ */
+export async function getAppointmentRequests(
+  facilityId?: string,
+  status?: string,
+): Promise<AppointmentRequest[]> {
+  const params = new URLSearchParams();
+  if (facilityId) params.append('facilityId', facilityId);
+  if (status) params.append('status', status);
+  const qs = params.toString();
+  return apiRequest<AppointmentRequest[]>(
+    `/facility/appointments/requests${qs ? `?${qs}` : ''}`,
+  );
+}
+
+/**
+ * Update appointment status (confirm/reject/complete)
+ */
+export async function updateAppointmentStatus(
+  appointmentId: string,
+  action: 'confirmed' | 'cancelled' | 'completed',
+  options?: { notes?: string; confirmedDate?: string; confirmedTime?: string },
+): Promise<{ success: boolean; message: string }> {
+  return apiRequest<{ success: boolean; message: string }>(
+    `/facility/appointments/${appointmentId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        action,
+        ...options,
+      }),
+    },
+  );
+}
+
+// ============================================
+// Branch/Facility Details
+// ============================================
+
+export interface BranchDetails {
+  id: string;
+  name: string;
+  code: string;
+  region: string;
+  district: string;
+  address: string;
+  phone: string;
+  email: string;
+}
+
+/**
+ * Get branch/facility details by ID
+ */
+export async function getBranchDetails(branchId: string): Promise<BranchDetails> {
+  return apiRequest<BranchDetails>(`/facility/branch/${branchId}`, {
+    method: 'GET',
   });
 }

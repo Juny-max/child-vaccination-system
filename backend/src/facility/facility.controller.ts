@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Body,
   Query,
   Param,
@@ -11,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FacilityService } from './facility.service';
-import { SearchChildDto, AdministerVaccineDto, RecordGrowthMeasurementDto, RecordSessionNoteDto, UpdateGuardianDto, RegisterGuardianDto } from './dto';
+import { SearchChildDto, AdministerVaccineDto, RecordGrowthMeasurementDto, RecordSessionNoteDto, UpdateGuardianDto, RegisterGuardianDto, UpdateAppointmentStatusDto } from './dto';
 
 @Controller('facility')
 @UseGuards(AuthGuard('jwt'))
@@ -170,5 +171,38 @@ export class FacilityController {
   @Post('guardians')
   async registerGuardian(@Body() dto: RegisterGuardianDto) {
     return this.facilityService.registerGuardian(dto);
+  }
+
+  /**
+   * GET /api/facility/appointments/requests
+   * Get pending appointment requests for review by nurses
+   */
+  @Get('appointments/requests')
+  async getAppointmentRequests(
+    @Query('facilityId') facilityId?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.facilityService.getAppointmentRequests(facilityId, status);
+  }
+
+  /**
+   * PATCH /api/facility/appointments/:id/status
+   * Confirm, reject, or complete an appointment
+   */
+  @Patch('appointments/:id/status')
+  async updateAppointmentStatus(
+    @Param('id') appointmentId: string,
+    @Body() dto: UpdateAppointmentStatusDto,
+  ) {
+    return this.facilityService.updateAppointmentStatus(appointmentId, dto);
+  }
+
+  /**
+   * GET /api/facility/branch/:id
+   * Get branch/facility details by ID
+   */
+  @Get('branch/:id')
+  async getBranchDetails(@Param('id') branchId: string) {
+    return this.facilityService.getBranchDetails(branchId);
   }
 }

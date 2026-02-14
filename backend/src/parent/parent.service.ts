@@ -377,6 +377,27 @@ export class ParentService {
     // Get actual vaccination completion status (not from certificate table)
     const vaccinationStatus = await this.db.getVaccinationCompletionStatus(childId);
 
+    if (!certificates || certificates.length === 0) {
+      return [
+        {
+          certificateId: `TEMP-${child.childId}`,
+          childId: child.childId,
+          childName: child.name,
+          issuedDate: 'Not issued yet',
+          issuedBy: 'Not issued yet',
+          issuedByFacility: 'Not issued yet',
+          completionStatus: vaccinationStatus.isComplete
+            ? CertificateCompletionStatus.COMPLETE
+            : CertificateCompletionStatus.PARTIAL,
+          qrPayload: `${child.childId}|${child.name}`,
+          vaccinesCompleted: vaccinationStatus.completedVaccines,
+          lastVerified: null,
+          pdfUrl: null,
+          vaccinationProgress: `${vaccinationStatus.completedCount}/${vaccinationStatus.totalRequired}`,
+        },
+      ];
+    }
+
     return (certificates || []).map((cert: any) => ({
       certificateId: cert.certificate_id,
       childId: child.childId, // Use human-readable CVCC ID instead of UUID
@@ -437,20 +458,40 @@ export class ParentService {
 
     const appointments = await this.db.getAppointments(guardian.id);
 
-    return (appointments || []).map((apt: any) => ({
-      id: apt.id,
-      purpose: apt.vaccine?.name
-        ? `${apt.vaccine.name} vaccination`
-        : 'Health visit',
-      childId: apt.child?.id || '',
-      childName: apt.child?.full_name || 'Unknown',
-      facilityId: apt.facility?.id || '',
-      facilityName: apt.facility?.name || 'TBD',
-      scheduledDate: apt.scheduled_date,
-      scheduledTime: apt.scheduled_time || 'TBD',
-      status: apt.status,
-      notes: apt.notes,
-    }));
+    return (appointments || []).map((apt: any) => {
+      // Extract purpose from notes if it contains "Make-up dose:" info
+      let purpose = 'Health visit';
+      if (apt.vaccine?.name) {
+        purpose = `${apt.vaccine.name} vaccination`;
+      } else if (apt.notes) {
+        // Check for make-up dose pattern in notes
+        const makeupMatch = apt.notes.match(/Make-up dose:\s*([^.\n]+)/);
+        if (makeupMatch) {
+          purpose = `${makeupMatch[1].trim()} make-up dose`;
+        }
+      }
+
+      // Clean notes: remove [CONTACT_PHONE:xxx] tag before sending to frontend
+      let cleanNotes = apt.notes || '';
+      cleanNotes = cleanNotes.replace(/\[CONTACT_PHONE:[^\]]*\]\n?/g, '').trim();
+
+      return {
+        id: apt.id,
+        purpose,
+        childId: apt.child?.id || '',
+        childName: apt.child?.full_name || 'Unknown',
+        childCvccId: apt.child?.cvcc_id || undefined,
+        vaccineName: apt.vaccine?.name || undefined,
+        facilityId: apt.facility?.id || '',
+        facilityName: apt.facility?.name || 'Not assigned',
+        facilityPhone: apt.facility?.phone || undefined,
+        facilityAddress: apt.facility?.address || undefined,
+        scheduledDate: apt.scheduled_date,
+        scheduledTime: apt.scheduled_time || '',
+        status: apt.status,
+        notes: cleanNotes || null,
+      };
+    });
   }
 
   /**
@@ -471,16 +512,23 @@ export class ParentService {
 
     const client = this.db.supabase;
 
+    // Prepend contact phone as a parseable tag in notes if provided
+    let notes = request.notes || '';
+    if (request.contactPhone) {
+      notes = `[CONTACT_PHONE:${request.contactPhone}]${notes ? '\n' + notes : ''}`;
+    }
+
     const { data, error } = await client
       .from('appointments')
       .insert({
         child_id: request.childId,
         guardian_id: guardian.id,
         vaccine_id: request.vaccineId,
+        facility_id: request.facilityId || null,
         scheduled_date: request.preferredDate,
         scheduled_time: request.preferredTime,
         status: 'scheduled',
-        notes: request.notes,
+        notes: notes,
       })
       .select()
       .single();
