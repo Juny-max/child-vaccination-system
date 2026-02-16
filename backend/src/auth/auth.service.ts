@@ -12,6 +12,7 @@ export class AuthService {
 
   /**
    * Validate user credentials and generate JWT token
+   * Enhanced with security audit logging
    */
   async login(loginDto: LoginDto): Promise<AuthResponseDto> {
     const { email, password } = loginDto;
@@ -20,6 +21,25 @@ export class AuthService {
     const user = await this.databaseService.getUserByEmail(email);
     
     if (!user) {
+      // Log failed login attempt - invalid email
+      try {
+        await this.databaseService.createAuditLog(
+          'system',
+          'access',
+          'users',
+          'unknown',
+          { 
+            after: { 
+              event: 'failed_login',
+              reason: 'invalid_email',
+              email,
+              timestamp: new Date().toISOString()
+            } 
+          }
+        );
+      } catch (auditError) {
+        console.warn('Audit log failed (non-critical):', auditError);
+      }
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -27,11 +47,48 @@ export class AuthService {
     const isPasswordValid = await this.verifyPassword(password, user.password_hash);
     
     if (!isPasswordValid) {
+      // Log failed login attempt - invalid password
+      try {
+        await this.databaseService.createAuditLog(
+          user.id,
+          'access',
+          'users',
+          user.id,
+          { 
+            after: { 
+              event: 'failed_login',
+              reason: 'invalid_password',
+              email,
+              timestamp: new Date().toISOString()
+            } 
+          }
+        );
+      } catch (auditError) {
+        console.warn('Audit log failed (non-critical):', auditError);
+      }
       throw new UnauthorizedException('Invalid email or password');
     }
 
     // Check if user is active (schema uses 'status' column)
     if (user.status !== 'active') {
+      // Log attempt to access deactivated account
+      try {
+        await this.databaseService.createAuditLog(
+          user.id,
+          'access',
+          'users',
+          user.id,
+          { 
+            after: { 
+              event: 'failed_login',
+              reason: 'account_deactivated',
+              timestamp: new Date().toISOString()
+            } 
+          }
+        );
+      } catch (auditError) {
+        console.warn('Audit log failed (non-critical):', auditError);
+      }
       throw new UnauthorizedException('Your account has been deactivated. Please contact support.');
     }
 
@@ -49,14 +106,20 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload);
 
-    // Create audit log (non-blocking, don't fail login if audit fails)
+    // Create successful login audit log
     try {
       await this.databaseService.createAuditLog(
         user.id,
         'login',
         'users',
         user.id,
-        { after: { login_time: new Date().toISOString() } }
+        { 
+          after: { 
+            event: 'successful_login',
+            login_time: new Date().toISOString(),
+            role: user.role
+          } 
+        }
       );
     } catch (auditError) {
       console.warn('Audit log failed (non-critical):', auditError);
@@ -171,11 +234,30 @@ export class AuthService {
 
   /**
    * Refresh JWT token
+   * Enhanced with audit logging
    */
   async refreshToken(userId: string): Promise<{ accessToken: string }> {
     const user = await this.databaseService.getUserById(userId);
     
     if (!user || !user.is_active) {
+      // Log suspicious token refresh attempt
+      try {
+        await this.databaseService.createAuditLog(
+          userId,
+          'access',
+          'users',
+          userId,
+          { 
+            after: { 
+              event: 'failed_token_refresh',
+              reason: 'invalid_user_or_inactive',
+              timestamp: new Date().toISOString()
+            } 
+          }
+        );
+      } catch (auditError) {
+        console.warn('Audit log failed (non-critical):', auditError);
+      }
       throw new UnauthorizedException('Invalid token');
     }
 
@@ -187,6 +269,24 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload);
+
+    // Log successful token refresh
+    try {
+      await this.databaseService.createAuditLog(
+        userId,
+        'access',
+        'users',
+        userId,
+        { 
+          after: { 
+            event: 'token_refreshed',
+            timestamp: new Date().toISOString()
+          } 
+        }
+      );
+    } catch (auditError) {
+      console.warn('Audit log failed (non-critical):', auditError);
+    }
 
     return { accessToken };
   }
@@ -264,25 +364,37 @@ export class AuthService {
   }
 
   /**
-   * Logout user (optional - for token blacklisting in production)
+   * Logout user
+   * Enhanced with security audit logging
    */
   async logout(userId: string): Promise<void> {
-    // Create audit log for logout using 'update' action
-    await this.databaseService.createAuditLog(
-      userId,
-      'update',
-      'users',
-      userId,
-      { after: { logout_time: new Date().toISOString() } }
-    );
+    // Create comprehensive audit log for logout
+    try {
+      await this.databaseService.createAuditLog(
+        userId,
+        'update',
+        'users',
+        userId,
+        { 
+          after: { 
+            event: 'user_logout',
+            logout_time: new Date().toISOString()
+          } 
+        }
+      );
+    } catch (auditError) {
+      console.warn('Audit log failed (non-critical):', auditError);
+    }
 
     // In production with refresh tokens, you would:
     // 1. Invalidate refresh token
     // 2. Add JWT to blacklist (if using redis)
+    // 3. Clear session data from database
   }
 
   /**
    * Change user password
+   * Enhanced with security audit logging
    */
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
     // Get user from database
@@ -296,6 +408,24 @@ export class AuthService {
     const isPasswordValid = await this.verifyPassword(currentPassword, user.password_hash);
     
     if (!isPasswordValid) {
+      // Log failed password change attempt
+      try {
+        await this.databaseService.createAuditLog(
+          userId,
+          'access',
+          'users',
+          userId,
+          { 
+            after: { 
+              event: 'failed_password_change',
+              reason: 'incorrect_current_password',
+              timestamp: new Date().toISOString()
+            } 
+          }
+        );
+      } catch (auditError) {
+        console.warn('Audit log failed (non-critical):', auditError);
+      }
       throw new BadRequestException('Current password is incorrect');
     }
 
@@ -317,14 +447,24 @@ export class AuthService {
       throw new BadRequestException('Failed to update password');
     }
 
-    // Create audit log
-    await this.databaseService.createAuditLog(
-      userId,
-      'update',
-      'users',
-      userId,
-      { after: { password_changed: new Date().toISOString() } }
-    );
+    // Create comprehensive audit log for successful password change
+    try {
+      await this.databaseService.createAuditLog(
+        userId,
+        'update',
+        'users',
+        userId,
+        { 
+          after: { 
+            event: 'password_changed',
+            password_changed: new Date().toISOString(),
+            must_change_password_cleared: true
+          } 
+        }
+      );
+    } catch (auditError) {
+      console.warn('Audit log failed (non-critical):', auditError);
+    }
 
     return {
       success: true,

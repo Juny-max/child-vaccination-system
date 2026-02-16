@@ -15,6 +15,7 @@ import {
   Syringe,
   User,
 } from "lucide-react"
+import * as chwStorage from "@/lib/chw-offline-storage"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -45,21 +46,14 @@ type VaccineDose = {
   administeredDate?: string
 }
 
-type PendingVaccination = {
-  childId: string
-  childName: string
-  vaccineId: string
-  vaccineName: string
-  recordedDate: string
-  latitude?: number
-  longitude?: number
-  notes?: string
-}
+type PendingVaccination = chwStorage.CHWVaccinationRecord
 
-const PENDING_VACCINATION_STORAGE_KEY = "chwPendingVaccinations"
-const VACCINATION_SAVED_EVENT = "chw-pending-vaccination-added"
+const composePendingVaccinationKey = (entry: PendingVaccination) => 
+  `${entry.childId}-${entry.vaccineId}-${entry.recordedDate}`
 
-const composePendingVaccinationKey = (entry: PendingVaccination) => `${entry.childId}-${entry.vaccineId}-${entry.recordedDate}`
+// No longer needed - using IndexedDB
+// const PENDING_VACCINATION_STORAGE_KEY = "chwPendingVaccinations"
+const VACCINATION_SAVED_EVENT = "chw-vaccination-saved"
 
 const offlineChildren: Record<string, ChildSnapshot> = {
   "CHW-0001": {
@@ -105,39 +99,7 @@ const readAllPendingVaccinations = (): PendingVaccination[] => {
 
   const raw = window.localStorage.getItem(PENDING_VACCINATION_STORAGE_KEY)
   if (!raw) {
-    return []
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as PendingVaccination[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch (error) {
-    console.warn("Failed to parse stored pending vaccinations", error)
-    return []
-  }
-}
-
-const persistPendingVaccination = (entry: PendingVaccination) => {
-  if (typeof window === "undefined") {
-    return
-  }
-
-  const existing = readAllPendingVaccinations().filter(
-    (candidate) => composePendingVaccinationKey(candidate) !== composePendingVaccinationKey(entry),
-  )
-  const updated = [entry, ...existing]
-  window.localStorage.setItem(PENDING_VACCINATION_STORAGE_KEY, JSON.stringify(updated))
-  window.dispatchEvent(new Event(VACCINATION_SAVED_EVENT))
-}
-
-const captureVaccinationCoordinate = (): Promise<VaccinationCoordinate | null> => {
-  if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.geolocation) {
-    return Promise.resolve(null)
-  }
-
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
+    re(position) => {
         resolve({
           latitude: Number(position.coords.latitude.toFixed(6)),
           longitude: Number(position.coords.longitude.toFixed(6)),
@@ -164,7 +126,7 @@ export default function ChwChildChartPage() {
     const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
-    const name = localStorage.getItem("userName")
+    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
     if (!token) {
       router.push("/auth/login")
@@ -192,8 +154,27 @@ export default function ChwChildChartPage() {
       return
     }
 
-    const stored = readAllPendingVaccinations().filter((entry) => entry.childId === childSnapshot.id)
-    setPendingVaccinations(stored)
+    // Load pending vaccinations from IndexedDB
+    const loadPendingVaccinations = async () => {
+      try {
+        const stored = await chwStorage.getCHWVaccinationsByChild(childSnapshot.id)
+        setPendingVaccinations(stored)
+      } catch (error) {
+        console.error('Failed to load pending vaccinations:', error)
+      }
+    }
+
+    loadPendingVaccinations()
+
+    // Listen for new vaccinations saved
+    const handleVaccinationSaved = () => {
+      loadPendingVaccinations()
+    }
+
+    window.addEventListener(VACCINATION_SAVED_EVENT, handleVaccinationSaved)
+    return () => {
+      window.removeEventListener(VACCINATION_SAVED_EVENT, handleVaccinationSaved)
+    }
   }, [childSnapshot])
 
   const openAdministerModal = (dose: VaccineDose) => {
@@ -214,32 +195,36 @@ export default function ChwChildChartPage() {
 
     setSaving(true)
 
-    const coordinates = await captureVaccinationCoordinate()
-    const recordedDate = new Date().toISOString().split("T")[0]
+    try {
+      const coordinates = await captureVaccinationCoordinate()
+      const recordedDate = new Date().toISOString().split("T")[0]
 
-    const newEntry: PendingVaccination = {
-      childId: childSnapshot.id,
-      childName: childSnapshot.name,
-      vaccineId: selectedVaccine.id,
-      vaccineName: selectedVaccine.name,
-      recordedDate,
-      latitude: coordinates?.latitude,
-      longitude: coordinates?.longitude,
-      notes: notes.trim() ? notes.trim() : undefined,
-    }
+      const newEntry: Omit<PendingVaccination, 'timestamp'> = {
+        childId: childSnapshot.id,
+        childName: childSnapshot.name,
+        vaccineId: selectedVaccine.id,
+        vaccineName: selectedVaccine.name,
+        recordedDate,
+        latitude: coordinates?.latitude,
+        longitude: coordinates?.longitude,
+        notes: notes.trim() ? notes.trim() : undefined,
+      }
 
-    window.setTimeout(() => {
-      setPendingVaccinations((previous) => {
-        const filtered = previous.filter(
-          (candidate) => composePendingVaccinationKey(candidate) !== composePendingVaccinationKey(newEntry),
-        )
-        return [newEntry, ...filtered]
-      })
-      persistPendingVaccination(newEntry)
-      setSystemMessage(`${selectedVaccine.name} saved locally. Will sync when online.`)
-      setSaving(false)
+      // Save to IndexedDB (more secure than localStorage)
+      await chwStorage.saveCHWVaccination(newEntry)
+      
+      // Update UI immediately
+      const stored = await chwStorage.getCHWVaccinationsByChild(childSnapshot.id)
+      setPendingVaccinations(stored)
+      
+      setSystemMessage(`${selectedVaccine.name} saved securely. Will sync when online.`)
       closeAdministerModal()
-    }, 800)
+    } catch (error) {
+      console.error('Failed to save vaccination:', error)
+      setSystemMessage('Failed to save vaccination. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (!childSnapshot) {

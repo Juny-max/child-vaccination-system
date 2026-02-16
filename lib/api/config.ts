@@ -5,14 +5,13 @@
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
 /**
- * Get authorization headers with JWT token
+ * Get authorization headers (cookies sent automatically)
  */
 export function getAuthHeaders(): HeadersInit {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-  
   return {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    // JWT token is now sent automatically via HttpOnly cookies
+    // No need to manually set Authorization header
   };
 }
 
@@ -24,9 +23,9 @@ export async function handleResponse<T>(response: Response, skipAuthRedirect = f
     if (response.status === 401 && !skipAuthRedirect) {
       // Token expired or invalid - redirect to login
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('userName');
+        // Clear all localStorage for security
+        localStorage.clear();
+        sessionStorage.clear();
         window.location.href = '/auth/login';
       }
       throw new Error('Session expired. Please login again.');
@@ -55,6 +54,7 @@ export async function apiRequest<T>(
       ...getAuthHeaders(),
       ...options.headers,
     },
+    credentials: 'include', // CRITICAL: Send HttpOnly cookies with every request
   });
   
   return handleResponse<T>(response, skipAuthRedirect);

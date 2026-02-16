@@ -45,11 +45,10 @@ export default function AppointmentRequestsPage() {
   const [rejectNotes, setRejectNotes] = useState("")
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
 
-    if (!token || role !== "staff" || detail !== "facility-nurse") {
+    if (role !== "staff" || detail !== "facility-nurse") {
       router.push("/auth/login")
       return
     }

@@ -128,6 +128,28 @@ npx ts-node scripts/list-users.ts
 
 The output groups users by role and shows their email, assigned facility (branch), status, and last login date. Useful for verifying which nurse belongs to which hospital.
 
+### Testing SMTP email delivery (terminal)
+
+To verify the email service is working and messages can be delivered:
+
+```powershell
+cd backend
+npx ts-node scripts/test-email.ts
+```
+
+The script prints your active SMTP settings and sends a test message to the inbox you enter.
+
+### Deleting a user safely (terminal)
+
+If direct deletion fails with foreign key errors (for example from `audit_logs`), use:
+
+```powershell
+cd backend
+npx ts-node scripts/delete-user.ts
+```
+
+The script prompts for an email, removes or nullifies dependent references, and then deletes the user record.
+
 ### Starting the backend for daily work
 
 ```powershell

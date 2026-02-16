@@ -51,7 +51,7 @@ export default function Dashboard() {
   useEffect(() => {
     const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
-    const name = localStorage.getItem("userName")
+    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
     const detail = localStorage.getItem("userRoleDetail")
 
     if (!token) {
@@ -253,6 +253,7 @@ export default function Dashboard() {
     localStorage.removeItem("userRole")
     localStorage.removeItem("userRoleDetail")
     localStorage.removeItem("userName")
+    sessionStorage.removeItem("userName")
     router.push("/")
   }
 

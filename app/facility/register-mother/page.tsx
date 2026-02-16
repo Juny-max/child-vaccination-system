@@ -10,9 +10,11 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
+import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 
 type MotherFormState = {
   fullName: string
@@ -60,17 +62,15 @@ export default function RegisterMotherPage() {
   const [formData, setFormData] = useState<MotherFormState>(initialState)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [systemMessage, setSystemMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null)
+  const [showErrorModal, setShowErrorModal] = useState(false)
+  const [errorModalMessage, setErrorModalMessage] = useState("")
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [successModalMessage, setSuccessModalMessage] = useState("")
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
-    const name = localStorage.getItem("userName")
-
-    if (!token) {
-      router.push("/auth/login")
-      return
-    }
+    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
     if (role !== "staff" || detail !== "facility-nurse") {
       router.push("/facility/dashboard")
@@ -125,13 +125,16 @@ export default function RegisterMotherPage() {
       // Show success message with email and SMS status
       if (result.emailSent && result.smsSent) {
         setSystemMessage({ text: result.message, type: 'success' })
-        toast.success("Credentials sent via email and SMS!")
+        setSuccessModalMessage(result.message)
+        setShowSuccessModal(true)
       } else if (result.emailSent) {
         setSystemMessage({ text: result.message, type: 'success' })
-        toast.success("Credentials sent to parent's email!")
+        setSuccessModalMessage(result.message)
+        setShowSuccessModal(true)
       } else if (result.smsSent) {
         setSystemMessage({ text: result.message, type: 'success' })
-        toast.success("Credentials sent via SMS!")
+        setSuccessModalMessage(result.message)
+        setShowSuccessModal(true)
       } else if (result.preferredContact === 'email' && result.email && !result.emailSent) {
         // Email was supposed to be sent but may have failed
         setSystemMessage({ text: result.message, type: 'info' })
@@ -142,7 +145,8 @@ export default function RegisterMotherPage() {
         toast.warning("Registration successful, but please verify SMS delivery")
       } else {
         setSystemMessage({ text: result.message, type: 'success' })
-        toast.success("Mother registered successfully!")
+        setSuccessModalMessage(result.message)
+        setShowSuccessModal(true)
       }
       
       setFormData(initialState)
@@ -150,7 +154,8 @@ export default function RegisterMotherPage() {
       console.error("Registration error:", error)
       const message = error instanceof Error ? error.message : "Failed to register mother. Please try again."
       setSystemMessage({ text: message, type: 'error' })
-      toast.error("Registration failed")
+      setErrorModalMessage(message)
+      setShowErrorModal(true)
     } finally {
       setIsSubmitting(false)
     }
@@ -430,6 +435,40 @@ export default function RegisterMotherPage() {
           </Button>
         </div>
       </main>
+
+      <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto mb-2 h-28 w-28">
+              <DotLottieReact src="/Sign%20for%20error%20_%20Flat%20style.lottie" autoplay loop className="h-full w-full" />
+            </div>
+            <DialogTitle className="text-center text-xl">Registration Failed</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-muted-foreground">{errorModalMessage}</p>
+            <Button className="w-full" onClick={() => setShowErrorModal(false)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto mb-2 h-28 w-28">
+              <DotLottieReact src="/Done.lottie" autoplay loop className="h-full w-full" />
+            </div>
+            <DialogTitle className="text-center text-xl">Mother Registered Successfully</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-muted-foreground">{successModalMessage}</p>
+            <Button className="w-full" onClick={() => setShowSuccessModal(false)}>
+              Great, continue
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -28,9 +28,8 @@ export interface UserProfile {
 }
 
 export interface AuthResponse {
-  accessToken: string;
-  tokenType: string;
-  expiresIn: number;
+  tokenType?: string;
+  expiresIn?: number;
   user: UserProfile;
   mustChangePassword?: boolean;
 }
@@ -46,11 +45,13 @@ export interface ChangePasswordRequest {
 
 /**
  * Login with email and password
+ * JWT token is now stored in HttpOnly cookie by the backend
  */
 export async function login(credentials: LoginRequest): Promise<AuthResponse> {
-  // Clear any existing token before login to prevent 401 errors
+  // Clear any existing data before login
   if (typeof window !== 'undefined') {
-    localStorage.removeItem('authToken');
+    localStorage.clear();
+    sessionStorage.clear();
   }
   
   const response = await apiRequest<AuthResponse>('/auth/login', {
@@ -58,11 +59,12 @@ export async function login(credentials: LoginRequest): Promise<AuthResponse> {
     body: JSON.stringify(credentials),
   }, true); // Skip auth redirect for login endpoint
   
-  // Store auth data in localStorage
+  // Store non-sensitive user info for UI purposes only
+  // JWT token is in HttpOnly cookie, not accessible to JavaScript
   if (typeof window !== 'undefined') {
-    localStorage.setItem('authToken', response.accessToken);
     localStorage.setItem('userRole', response.user.role);
-    localStorage.setItem('userName', response.user.fullName);
+    sessionStorage.setItem('userName', response.user.fullName);
+    localStorage.removeItem('userName');
     localStorage.setItem('userId', response.user.id);
   }
   
@@ -71,6 +73,7 @@ export async function login(credentials: LoginRequest): Promise<AuthResponse> {
 
 /**
  * Register a new parent account
+ * JWT token is now stored in HttpOnly cookie by the backend
  */
 export async function register(data: RegisterRequest): Promise<AuthResponse> {
   const response = await apiRequest<AuthResponse>('/auth/register', {
@@ -78,11 +81,12 @@ export async function register(data: RegisterRequest): Promise<AuthResponse> {
     body: JSON.stringify(data),
   });
   
-  // Store auth data in localStorage
+  // Store non-sensitive user info for UI purposes only
+  // JWT token is in HttpOnly cookie, not accessible to JavaScript
   if (typeof window !== 'undefined') {
-    localStorage.setItem('authToken', response.accessToken);
     localStorage.setItem('userRole', response.user.role);
-    localStorage.setItem('userName', response.user.fullName);
+    sessionStorage.setItem('userName', response.user.fullName);
+    localStorage.removeItem('userName');
     localStorage.setItem('userId', response.user.id);
   }
   
@@ -105,21 +109,20 @@ export async function verifyToken(): Promise<{ valid: boolean; user: UserProfile
 
 /**
  * Refresh JWT token
+ * Token is automatically refreshed in HttpOnly cookie by backend
  */
-export async function refreshToken(): Promise<{ accessToken: string }> {
-  const response = await apiRequest<{ accessToken: string }>('/auth/refresh', {
+export async function refreshToken(): Promise<{ accessToken?: string }> {
+  const response = await apiRequest<{ accessToken?: string }>('/auth/refresh', {
     method: 'POST',
   });
   
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('authToken', response.accessToken);
-  }
-  
+  // No need to store token - it's in HttpOnly cookie
   return response;
 }
 
 /**
- * Logout current user
+ * Logout current user and clear all local data
+ * Backend will clear the HttpOnly cookie
  */
 export async function logout(): Promise<void> {
   try {
@@ -127,22 +130,25 @@ export async function logout(): Promise<void> {
   } catch {
     // Ignore errors on logout
   } finally {
-    // Clear local storage
+    // Clear ALL local storage and session storage for security
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('userRole');
-      localStorage.removeItem('userName');
-      localStorage.removeItem('userId');
+      localStorage.clear();
+      sessionStorage.clear();
+      // Redirect to login page
+      window.location.href = '/auth/login';
     }
   }
 }
 
 /**
  * Check if user is authenticated
+ * Checks for user data in localStorage (cookie is HttpOnly)
+ * For true authentication check, use verifyToken() API call
  */
 export function isAuthenticated(): boolean {
   if (typeof window === 'undefined') return false;
-  return !!localStorage.getItem('authToken');
+  // Check if user data exists (indicates previous login)
+  return !!localStorage.getItem('userId');
 }
 
 /**

@@ -335,6 +335,62 @@ export async function getUrgentFollowUps(facilityId?: string): Promise<UrgentFol
   return apiRequest<UrgentFollowUp[]>(url);
 }
 
+export interface GuardianOption {
+  id: string;
+  name: string;
+  phone: string;
+  community: string;
+}
+
+export interface GetGuardiansParams {
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface RegisterChildRequest {
+  guardianId: string;
+  fullName: string;
+  dateOfBirth: string;
+  gender: 'male' | 'female' | 'intersex' | 'undisclosed';
+  birthWeight?: number;
+  birthLength?: number;
+  headCircumference?: number;
+  placeOfBirth?: string;
+  deliveryType?: string;
+  birthOrder?: string;
+  bloodType?: string;
+  notes?: string;
+  profilePhotoUrl?: string;
+  branchId?: string;
+}
+
+export interface RegisterChildResponse {
+  id: string;
+  cvccId: string;
+  guardianId: string;
+  guardianName: string;
+  guardianPhone: string;
+  smsSent: boolean;
+  message: string;
+}
+
+export async function getGuardians(params: GetGuardiansParams = {}): Promise<GuardianOption[]> {
+  const searchParams = new URLSearchParams();
+  if (params.query?.trim()) searchParams.set('query', params.query.trim());
+  if (typeof params.limit === 'number') searchParams.set('limit', String(params.limit));
+  if (typeof params.offset === 'number') searchParams.set('offset', String(params.offset));
+  const qs = searchParams.toString();
+  return apiRequest<GuardianOption[]>(`/facility/guardians${qs ? `?${qs}` : ''}`);
+}
+
+export async function registerChild(data: RegisterChildRequest): Promise<RegisterChildResponse> {
+  return apiRequest<RegisterChildResponse>('/facility/children', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // ============================================
 // Guardian Registration
 // ============================================

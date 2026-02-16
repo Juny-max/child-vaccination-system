@@ -74,15 +74,9 @@ export default function FacilityDashboardPage() {
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
-    const name = localStorage.getItem("userName")
-
-    if (!token) {
-      router.push("/auth/login")
-      return
-    }
+    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
     if (role !== "staff" || detail !== "facility-nurse") {
       if (role === "parent") {
@@ -359,10 +353,10 @@ export default function FacilityDashboardPage() {
 
   const handleLogout = () => {
     setIsLoggingOut(true)
-    localStorage.removeItem("authToken")
     localStorage.removeItem("userRole")
     localStorage.removeItem("userRoleDetail")
     localStorage.removeItem("userName")
+    sessionStorage.removeItem("userName")
     localStorage.removeItem("branchId")
     localStorage.removeItem("userId")
     router.push("/")

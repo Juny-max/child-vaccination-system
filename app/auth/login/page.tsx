@@ -63,7 +63,8 @@ export default function UnifiedLoginPage() {
 
       localStorage.setItem("userRole", storedRole)
       localStorage.setItem("userRoleDetail", resolvedRole)
-      localStorage.setItem("userName", response.user.fullName)
+      sessionStorage.setItem("userName", response.user.fullName)
+      localStorage.removeItem("userName")
       localStorage.setItem("userId", response.user.id)
       if (response.user.branchId) {
         localStorage.setItem("branchId", response.user.branchId)

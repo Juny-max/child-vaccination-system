@@ -15,6 +15,7 @@ import {
   UserPlus,
   ClipboardList,
 } from "lucide-react"
+import * as chwStorage from "@/lib/chw-offline-storage"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -71,8 +72,7 @@ type VaccinationMapPoint = {
   longitude: number
 }
 
-const PENDING_VACCINATION_STORAGE_KEY = "chwPendingVaccinations"
-const VACCINATION_SAVED_EVENT = "chw-pending-vaccination-added"
+const VACCINATION_SAVED_EVENT = "chw-vaccination-saved"
 
 const OutreachMap = dynamic(
   () => import("@/components/chw/outreach-map").then((module) => module.OutreachMap),
@@ -98,7 +98,7 @@ export default function ChwDashboardPage() {
     const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
-    const name = localStorage.getItem("userName")
+    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
     if (!token) {
       router.push("/auth/login")
@@ -136,58 +136,44 @@ export default function ChwDashboardPage() {
   }, [systemMessage])
 
   useEffect(() => {
-    const readFromStorage = () => {
+    const loadFromIndexedDB = async () => {
       if (typeof window === "undefined") {
         return
       }
 
-      const raw = window.localStorage.getItem(PENDING_VACCINATION_STORAGE_KEY)
-      if (!raw) {
-        setVaccinationLogs([])
-        return
-      }
-
       try {
-        const parsed = JSON.parse(raw) as Array<{
-          childId: string
-          childName: string
-          vaccineId: string
-          vaccineName: string
-          recordedDate: string
-          latitude?: number
-          longitude?: number
-        }>
+        // Migrate legacy localStorage data to IndexedDB on first load
+        await chwStorage.migrateFromLocalStorage()
+        
+        // Load all vaccinations with GPS coordinates
+        const records = await chwStorage.getCHWVaccinationsWithGPS()
+        
+        const mapPoints: VaccinationMapPoint[] = records.map((record) => ({
+          childId: record.childId,
+          childName: record.childName,
+          vaccineId: record.vaccineId,
+          vaccineName: record.vaccineName,
+          recordedDate: record.recordedDate,
+          latitude: record.latitude!,
+          longitude: record.longitude!,
+        }))
 
-        const withCoordinates: VaccinationMapPoint[] = parsed
-          .filter((entry) => typeof entry.latitude === "number" && typeof entry.longitude === "number")
-          .map((entry) => ({
-            childId: entry.childId,
-            childName: entry.childName,
-            vaccineId: entry.vaccineId,
-            vaccineName: entry.vaccineName,
-            recordedDate: entry.recordedDate,
-            latitude: entry.latitude as number,
-            longitude: entry.longitude as number,
-          }))
-
-        setVaccinationLogs(withCoordinates)
+        setVaccinationLogs(mapPoints)
       } catch (error) {
-        console.warn("Failed to parse vaccination logs for outreach map", error)
+        console.error("Failed to load vaccination logs for outreach map", error)
         setVaccinationLogs([])
       }
     }
 
     const handleUpdate = () => {
-      readFromStorage()
+      loadFromIndexedDB()
     }
 
-    readFromStorage()
+    loadFromIndexedDB()
     window.addEventListener(VACCINATION_SAVED_EVENT, handleUpdate)
-    window.addEventListener("storage", handleUpdate)
 
     return () => {
       window.removeEventListener(VACCINATION_SAVED_EVENT, handleUpdate)
-      window.removeEventListener("storage", handleUpdate)
     }
   }, [])
 
@@ -235,6 +221,7 @@ export default function ChwDashboardPage() {
     localStorage.removeItem("userRole")
     localStorage.removeItem("userRoleDetail")
     localStorage.removeItem("userName")
+    sessionStorage.removeItem("userName")
     router.push("/")
   }
 

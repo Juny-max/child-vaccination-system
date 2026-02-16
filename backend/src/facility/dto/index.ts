@@ -185,6 +185,64 @@ export class RegisterGuardianDto {
   notes?: string;
 }
 
+/**
+ * Register child request
+ */
+export class RegisterChildDto {
+  @IsString()
+  @IsNotEmpty()
+  guardianId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  fullName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  dateOfBirth: string;
+
+  @IsString()
+  @IsNotEmpty()
+  gender: 'male' | 'female' | 'intersex' | 'undisclosed';
+
+  @IsOptional()
+  birthWeight?: number;
+
+  @IsOptional()
+  birthLength?: number;
+
+  @IsOptional()
+  headCircumference?: number;
+
+  @IsString()
+  @IsOptional()
+  placeOfBirth?: string;
+
+  @IsString()
+  @IsOptional()
+  deliveryType?: string;
+
+  @IsString()
+  @IsOptional()
+  birthOrder?: string;
+
+  @IsString()
+  @IsOptional()
+  bloodType?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @IsString()
+  @IsOptional()
+  profilePhotoUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  branchId?: string;
+}
+
 // ============================================================================
 // RESPONSE DTOs
 // ============================================================================
@@ -422,6 +480,29 @@ export class RegisteredGuardianDto {
   message: string;
   emailSent?: boolean; // Indicates if credentials were emailed successfully
   smsSent?: boolean; // Indicates if SMS notification was sent successfully
+}
+
+/**
+ * Guardian option for child registration picker
+ */
+export class GuardianOptionDto {
+  id: string;
+  name: string;
+  phone: string;
+  community: string;
+}
+
+/**
+ * Registered child response
+ */
+export class RegisteredChildDto {
+  id: string;
+  cvccId: string;
+  guardianId: string;
+  guardianName: string;
+  guardianPhone: string;
+  smsSent: boolean;
+  message: string;
 }
 
 // ============================================================================

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import * as facilityApi from "@/lib/api/facility"
 import { supabase } from "@/lib/supabase"
 
 type MotherOption = {
@@ -57,12 +58,16 @@ const initialState: ChildFormState = {
 }
 
 export default function RegisterChildPage() {
+  const GUARDIANS_PAGE_SIZE = 20
   const router = useRouter()
   const [userName, setUserName] = useState("")
   const [searchMother, setSearchMother] = useState("")
   const [selectedMother, setSelectedMother] = useState<MotherOption | null>(null)
   const [mothers, setMothers] = useState<MotherOption[]>([])
-  const [isLoadingMothers, setIsLoadingMothers] = useState(true)
+  const [guardiansOffset, setGuardiansOffset] = useState(0)
+  const [hasMoreGuardians, setHasMoreGuardians] = useState(false)
+  const [isLoadingMoreGuardians, setIsLoadingMoreGuardians] = useState(false)
+  const [isLoadingMothers, setIsLoadingMothers] = useState(false)
   const [motherLoadError, setMotherLoadError] = useState<string | null>(null)
   const [formData, setFormData] = useState<ChildFormState>(initialState)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -73,15 +78,9 @@ export default function RegisterChildPage() {
   const [registeredChildId, setRegisteredChildId] = useState<string | null>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
-    const name = localStorage.getItem("userName")
-
-    if (!token) {
-      router.push("/auth/login")
-      return
-    }
+    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
     if (role !== "staff" || detail !== "facility-nurse") {
       router.push("/facility/dashboard")
@@ -99,59 +98,73 @@ export default function RegisterChildPage() {
 
   useEffect(() => {
     let isActive = true
-    const fetchMothers = async () => {
-      setIsLoadingMothers(true)
+    const trimmedQuery = searchMother.trim()
+
+    if (!trimmedQuery) {
+      setMothers([])
+      setGuardiansOffset(0)
+      setHasMoreGuardians(false)
+      setIsLoadingMothers(false)
       setMotherLoadError(null)
-      
-      try {
-        // Query guardians table for mother/caregiver details
-        const { data, error, count } = await supabase
-          .from("guardians")
-          .select("id, full_name, phone_primary, community", { count: 'exact' })
-          .order("full_name", { ascending: true })
-
-        if (!isActive) return
-
-        console.log("Guardians query result:", { data, error, count, dataLength: data?.length })
-
-        if (error) {
-          console.error("Supabase error loading guardians:", error)
-          setMotherLoadError(`Database query failed: ${error.message}. Check RLS policies on guardians table.`)
-          setMothers([])
-        } else if (!data || data.length === 0) {
-          console.warn("Query succeeded but returned 0 rows. Count:", count)
-          console.warn("This might be a Row Level Security (RLS) issue. Check if guardians table has RLS enabled.")
-          setMothers([])
-        } else {
-          console.log(`Successfully loaded ${data.length} mothers from guardians table`)
-          const mapped = data.map((guardian) => ({
-            id: guardian.id,
-            name: guardian.full_name,
-            phone: guardian.phone_primary,
-            community: guardian.community || "Unknown community",
-          }))
-          setMothers(mapped)
-        }
-      } catch (err) {
-        console.error("Exception while fetching mothers:", err)
-        setMotherLoadError("Unexpected error loading mothers. Check console for details.")
-        setMothers([])
-      } finally {
-        setIsLoadingMothers(false)
+      return () => {
+        isActive = false
       }
     }
 
-    fetchMothers()
+    const timer = window.setTimeout(async () => {
+      setIsLoadingMothers(true)
+      setMotherLoadError(null)
+
+      try {
+        const data = await facilityApi.getGuardians({
+          query: trimmedQuery,
+          limit: GUARDIANS_PAGE_SIZE,
+          offset: 0,
+        })
+
+        if (!isActive) return
+
+        setMothers(data || [])
+        setGuardiansOffset((data || []).length)
+        setHasMoreGuardians((data || []).length === GUARDIANS_PAGE_SIZE)
+      } catch {
+        if (!isActive) return
+        setMotherLoadError("Unable to load guardians. Please refresh or re-login.")
+        setMothers([])
+        setGuardiansOffset(0)
+        setHasMoreGuardians(false)
+      } finally {
+        if (isActive) setIsLoadingMothers(false)
+      }
+    }, 300)
+
     return () => {
       isActive = false
+      window.clearTimeout(timer)
     }
-  }, [])
+  }, [searchMother])
 
-  const filteredMothers = useMemo(() => {
-    if (!searchMother) return mothers
-    const haystack = searchMother.trim().toLowerCase()
-    return mothers.filter((mother) => `${mother.name} ${mother.phone} ${mother.community}`.toLowerCase().includes(haystack))
-  }, [mothers, searchMother])
+  const filteredMothers = useMemo(() => mothers, [mothers])
+
+  const loadMoreGuardians = async () => {
+    if (isLoadingMoreGuardians || !hasMoreGuardians) return
+    setIsLoadingMoreGuardians(true)
+    try {
+      const data = await facilityApi.getGuardians({
+        query: searchMother,
+        limit: GUARDIANS_PAGE_SIZE,
+        offset: guardiansOffset,
+      })
+
+      setMothers((previous) => [...previous, ...(data || [])])
+      setGuardiansOffset((previous) => previous + (data || []).length)
+      setHasMoreGuardians((data || []).length === GUARDIANS_PAGE_SIZE)
+    } catch {
+      setMotherLoadError("Unable to load more guardians right now.")
+    } finally {
+      setIsLoadingMoreGuardians(false)
+    }
+  }
 
   const handleSelectMother = (mother: MotherOption) => {
     setSelectedMother(mother)
@@ -183,15 +196,6 @@ export default function RegisterChildPage() {
     setSystemMessage(null)
 
     try {
-      // Generate unique CVCC ID (format: CVCC-YYYYMMDD-XXXX)
-      const today = new Date()
-      const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '')
-      const randomSuffix = Math.floor(1000 + Math.random() * 9000)
-      const cvccId = `CVCC-${dateStr}-${randomSuffix}`
-      const qrPayload = JSON.stringify({ cvccId, name: formData.childName, dob: formData.dateOfBirth })
-
-      // Get current user ID from localStorage
-      const userId = localStorage.getItem("userId") || null
       const branchId = localStorage.getItem("branchId") || null
 
       // Validate branchId exists (required for linking child to facility)
@@ -205,7 +209,7 @@ export default function RegisterChildPage() {
       let profilePhotoUrl: string | null = null
       if (formData.profileImageFile) {
         const fileExt = formData.profileImageFile.name.split(".").pop()?.toLowerCase() || "jpg"
-        const filePath = `${cvccId}.${fileExt}`
+        const filePath = `child-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}.${fileExt}`
         
         const { error: uploadError } = await supabase.storage
           .from("child-photos")
@@ -226,73 +230,31 @@ export default function RegisterChildPage() {
         }
       }
 
-      console.log("Attempting to insert child with data:", {
-        cvccId,
+      const result = await facilityApi.registerChild({
+        guardianId: selectedMother.id,
         fullName: formData.childName,
         dateOfBirth: formData.dateOfBirth,
         gender: formData.gender,
-        userId,
+        birthWeight: formData.birthWeight ? parseFloat(formData.birthWeight) : undefined,
+        birthLength: formData.birthLength ? parseFloat(formData.birthLength) : undefined,
+        headCircumference: formData.headCircumference ? parseFloat(formData.headCircumference) : undefined,
+        placeOfBirth: formData.placeOfBirth || undefined,
+        deliveryType: formData.deliveryType || undefined,
+        birthOrder: formData.birthOrder || undefined,
+        bloodType: formData.bloodType || undefined,
+        notes: formData.notes || undefined,
+        profilePhotoUrl: profilePhotoUrl || undefined,
+        branchId: branchId || undefined,
       })
 
-      // Check Supabase client auth status
-      const { data: { session } } = await supabase.auth.getSession()
-      console.log("Current Supabase session:", session ? "Authenticated" : "Anonymous (using anon key)")
-
-      // Insert child record
-      const { data: childData, error: childError } = await supabase
-        .from("children")
-        .insert({
-          cvcc_id: cvccId,
-          qr_code_payload: qrPayload,
-          full_name: formData.childName,
-          date_of_birth: formData.dateOfBirth,
-          gender: formData.gender,
-          birth_weight: formData.birthWeight ? parseFloat(formData.birthWeight) : null,
-          birth_length: formData.birthLength ? parseFloat(formData.birthLength) : null,
-          head_circumference: formData.headCircumference ? parseFloat(formData.headCircumference) : null,
-          place_of_birth: formData.placeOfBirth || null,
-          delivery_type: formData.deliveryType || null,
-          birth_order: formData.birthOrder || null,
-          blood_type: formData.bloodType || null,
-          critical_notes: formData.notes || null,
-          profile_photo_url: profilePhotoUrl,
-          primary_facility_id: branchId,
-          created_by_user_id: userId,
-          is_active: true,
-        })
-        .select()
-        .single()
-
-      if (childError) {
-        console.error("Detailed child insertion error:", {
-          message: childError.message,
-          details: childError.details,
-          hint: childError.hint,
-          code: childError.code,
-        })
-        throw new Error(`Child insertion failed: ${childError.message}. Details: ${childError.details || 'none'}. Hint: ${childError.hint || 'none'}`)
-      }
-
-      console.log("Child inserted:", childData)
-
-      // Link child to guardian
-      const { error: linkError } = await supabase
-        .from("child_guardian")
-        .insert({
-          child_id: childData.id,
-          guardian_id: selectedMother.id,
-          relationship: "mother",
-          is_primary: true,
-        })
-
-      if (linkError) {
-        console.error("Error linking child to guardian:", linkError)
-        // Child was created but linking failed - show partial success
-        toast.warning(`Child ${cvccId} created but guardian link failed. Please update manually.`)
+      if (result.smsSent) {
+        toast.success(`Child registered. SMS sent to ${result.guardianPhone}.`)
+      } else {
+        toast.warning("Child registered, but SMS delivery failed. Please verify guardian phone number.")
       }
 
       // Show success modal
-      setRegisteredChildId(cvccId)
+      setRegisteredChildId(result.cvccId)
       setShowSuccessModal(true)
       setIsSubmitting(false)
 
@@ -370,50 +332,57 @@ export default function RegisterChildPage() {
                 <AlertDescription>{motherLoadError}</AlertDescription>
               </Alert>
             ) : null}
+            {!searchMother.trim() ? (
+              <div className="rounded-lg border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+                Search for a mother by name, phone, or community to display results.
+              </div>
+            ) : null}
             {isLoadingMothers ? (
               <div className="rounded-lg border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
-                Loading mothers from the Maternal Register...
+                <div className="flex flex-col items-center gap-3 py-2">
+                  <DotLottieReact src="/Free%20Searching%20Animation.lottie" autoplay loop className="h-24 w-24" />
+                  <p>Searching mothers in the Maternal Register...</p>
+                </div>
               </div>
-            ) : mothers.length === 0 ? (
+            ) : searchMother.trim() && mothers.length === 0 ? (
               <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 p-4 space-y-2">
-                <p className="text-sm font-semibold text-amber-900">⚠️ No mothers loaded from database</p>
+                <p className="text-sm font-semibold text-amber-900">⚠️ No guardians available</p>
                 <p className="text-xs text-amber-800">
-                  The query returned 0 rows even though the <code className="px-1 py-0.5 bg-amber-100 rounded text-[10px]">guardians</code> table 
-                  has {motherLoadError ? 'data' : '6 records'}.
-                </p>
-                <p className="text-xs text-amber-800 font-medium">Possible causes:</p>
-                <ul className="text-xs text-amber-800 list-disc list-inside space-y-1">
-                  <li><strong>Row Level Security (RLS)</strong> is blocking the query. Check Supabase → guardians table → RLS policies.</li>
-                  <li>Your user role doesn't have SELECT permission on the guardians table.</li>
-                  <li>You need to disable RLS or add a policy allowing facility nurses to read guardians.</li>
-                </ul>
-                <p className="text-xs text-amber-800">
-                  Check browser console (F12) for detailed error messages.
+                  No guardians matched your search. Try a different name, phone, or community.
                 </p>
               </div>
-            ) : filteredMothers.length === 0 ? (
+            ) : searchMother.trim() && filteredMothers.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
                 No mothers match &quot;{searchMother}&quot;. Try a different search or clear the search to see all {mothers.length} registered mothers.
               </div>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {filteredMothers.map((mother) => (
-                  <button
-                    key={mother.id}
-                    type="button"
-                    className={`rounded-lg border p-4 text-left transition ${
-                      isMotherSelected(mother.id) ? "border-primary bg-primary/10" : "border-border bg-background"
-                    }`}
-                    onClick={() => handleSelectMother(mother)}
-                  >
-                    <p className="text-sm font-semibold text-foreground">{mother.name}</p>
-                    <p className="text-xs text-muted-foreground">{mother.phone}</p>
-                    <p className="text-xs text-muted-foreground">Community: {mother.community}</p>
-                    <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">ID: {mother.id.slice(0, 8)}...</p>
-                  </button>
-                ))}
-              </div>
-            )}
+            ) : searchMother.trim() ? (
+              <>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {filteredMothers.map((mother) => (
+                    <button
+                      key={mother.id}
+                      type="button"
+                      className={`rounded-lg border p-4 text-left transition ${
+                        isMotherSelected(mother.id) ? "border-primary bg-primary/10" : "border-border bg-background"
+                      }`}
+                      onClick={() => handleSelectMother(mother)}
+                    >
+                      <p className="text-sm font-semibold text-foreground">{mother.name}</p>
+                      <p className="text-xs text-muted-foreground">{mother.phone}</p>
+                      <p className="text-xs text-muted-foreground">Community: {mother.community}</p>
+                      <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">ID: {mother.id.slice(0, 8)}...</p>
+                    </button>
+                  ))}
+                </div>
+                {hasMoreGuardians ? (
+                  <div className="flex justify-center">
+                    <Button type="button" variant="outline" onClick={loadMoreGuardians} disabled={isLoadingMoreGuardians}>
+                      {isLoadingMoreGuardians ? "Loading more..." : "Load more mothers"}
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
             <div className="text-xs text-muted-foreground">
               Mother missing? <Link href="/facility/register-mother" className="text-primary hover:underline">Register a new caregiver</Link> first.
             </div>

@@ -345,7 +345,7 @@ export default function HqDashboardPage() {
     const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
-    const name = localStorage.getItem("userName")
+    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
     if (!token) {
       router.push("/auth/login")
@@ -442,6 +442,7 @@ export default function HqDashboardPage() {
     localStorage.removeItem("userRole")
     localStorage.removeItem("userRoleDetail")
     localStorage.removeItem("userName")
+    sessionStorage.removeItem("userName")
     router.push("/")
   }
 

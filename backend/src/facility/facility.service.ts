@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { SmsService } from '../common/sms.service';
@@ -18,6 +18,9 @@ import {
   UrgentFollowUpDto,
   RegisterGuardianDto,
   RegisteredGuardianDto,
+  RegisterChildDto,
+  RegisteredChildDto,
+  GuardianOptionDto,
   AppointmentRequestDto,
   UpdateAppointmentStatusDto,
 } from './dto';
@@ -871,6 +874,136 @@ export class FacilityService {
   }
 
   /**
+   * List guardians for facility child registration picker
+   */
+  async listGuardians(
+    query?: string,
+    limit = 20,
+    offset = 0,
+  ): Promise<GuardianOptionDto[]> {
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const safeOffset = Math.max(offset, 0);
+
+    let guardianQuery = this.db.supabase
+      .from('guardians')
+      .select('id, full_name, phone_primary, community')
+      .order('full_name', { ascending: true })
+      .range(safeOffset, safeOffset + safeLimit - 1);
+
+    const trimmed = query?.trim();
+    if (trimmed) {
+      const escaped = trimmed.replace(/[%_]/g, '\\$&');
+      guardianQuery = guardianQuery.or(
+        `full_name.ilike.%${escaped}%,phone_primary.ilike.%${escaped}%,community.ilike.%${escaped}%`,
+      );
+    }
+
+    const { data, error } = await guardianQuery;
+
+    if (error) {
+      throw new Error(`Failed to load guardians: ${error.message}`);
+    }
+
+    return (data || []).map((guardian: any) => ({
+      id: guardian.id,
+      name: guardian.full_name,
+      phone: guardian.phone_primary || 'N/A',
+      community: guardian.community || 'Unknown community',
+    }));
+  }
+
+  /**
+   * Register child and notify guardian
+   */
+  async registerChild(
+    dto: RegisterChildDto,
+    userId: string,
+    branchIdFromToken?: string,
+  ): Promise<RegisteredChildDto> {
+    const facilityId = branchIdFromToken || dto.branchId;
+    if (!facilityId) {
+      throw new BadRequestException('Facility information missing. Please re-login and try again.');
+    }
+
+    const { data: guardian, error: guardianError } = await this.db.supabase
+      .from('guardians')
+      .select('id, full_name, phone_primary')
+      .eq('id', dto.guardianId)
+      .single();
+
+    if (guardianError || !guardian) {
+      throw new BadRequestException('Selected guardian was not found. Please refresh and try again.');
+    }
+
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const cvccId = `CVCC-${dateStr}-${randomSuffix}`;
+    const qrPayload = JSON.stringify({ cvccId });
+
+    const { data: child, error: childError } = await this.db.supabase
+      .from('children')
+      .insert({
+        cvcc_id: cvccId,
+        qr_code_payload: qrPayload,
+        full_name: dto.fullName,
+        date_of_birth: dto.dateOfBirth,
+        gender: dto.gender,
+        birth_weight: dto.birthWeight ?? null,
+        birth_length: dto.birthLength ?? null,
+        head_circumference: dto.headCircumference ?? null,
+        place_of_birth: dto.placeOfBirth || null,
+        delivery_type: dto.deliveryType || null,
+        birth_order: dto.birthOrder || null,
+        blood_type: dto.bloodType || null,
+        critical_notes: dto.notes || null,
+        profile_photo_url: dto.profilePhotoUrl || null,
+        primary_facility_id: facilityId,
+        created_by_user_id: userId,
+        is_active: true,
+      })
+      .select('id')
+      .single();
+
+    if (childError || !child) {
+      throw new Error(`Failed to register child: ${childError?.message || 'Unknown error'}`);
+    }
+
+    const { error: linkError } = await this.db.supabase
+      .from('child_guardian')
+      .insert({
+        child_id: child.id,
+        guardian_id: dto.guardianId,
+        relationship: 'mother',
+        is_primary: true,
+      });
+
+    if (linkError) {
+      await this.db.supabase.from('children').delete().eq('id', child.id);
+      throw new Error(`Failed to link child to guardian: ${linkError.message}`);
+    }
+
+    let smsSent = false;
+    if (guardian.phone_primary) {
+      smsSent = await this.smsService.sendSms(
+        guardian.phone_primary,
+        `CVCC: ${dto.fullName} has been registered successfully. Child ID: ${cvccId}. You will receive vaccination reminders by SMS.`,
+      );
+    }
+
+    return {
+      id: child.id,
+      cvccId,
+      guardianId: guardian.id,
+      guardianName: guardian.full_name,
+      guardianPhone: guardian.phone_primary || 'N/A',
+      smsSent,
+      message: smsSent
+        ? `Child registered successfully. SMS sent to ${guardian.phone_primary}.`
+        : 'Child registered successfully. SMS notification could not be delivered.',
+    };
+  }
+
+  /**
    * Register a new guardian (mother/caregiver)
    */
   async registerGuardian(dto: RegisterGuardianDto): Promise<RegisteredGuardianDto> {
@@ -951,7 +1084,19 @@ export class FacilityService {
 
     if (error) {
       console.error('Error registering guardian:', error);
-      throw new Error(`Failed to register guardian: ${error.message}`);
+      if (error.code === '23505') {
+        if (error.message?.includes('guardians_user_id_key')) {
+          throw new ConflictException(
+            'This email is already linked to an existing caregiver profile. Please search and use the existing mother record instead of creating a duplicate.',
+          );
+        }
+        if (error.message?.includes('guardians_phone_primary_key')) {
+          throw new ConflictException(
+            'This phone number is already linked to an existing caregiver profile.',
+          );
+        }
+      }
+      throw new BadRequestException(`Failed to register guardian: ${error.message}`);
     }
 
     // Determine what message to show based on preferred contact method

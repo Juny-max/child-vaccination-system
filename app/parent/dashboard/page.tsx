@@ -12,6 +12,33 @@ import type { Certificate } from "@/lib/api/parent"
 import { AlertTriangle, Award, CalendarDays, ChevronRight, Clock3, FileDown, QrCode, MessageCircle, Sparkles, Syringe } from "lucide-react"
 import { generateCertificatePdf } from "@/lib/certificate-pdf"
 
+function toAppointmentDateTime(date: string, time?: string): Date {
+  const normalizedTime = time && time !== "TBD" ? time : "00:00:00"
+  return new Date(`${date}T${normalizedTime}`)
+}
+
+function formatAppointmentDate(date: string): string {
+  if (!date) return "Not set"
+  const parsed = toAppointmentDateTime(date)
+  if (Number.isNaN(parsed.getTime())) return date
+  return parsed.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+function formatAppointmentTime(time?: string): string {
+  if (!time || time === "TBD") return "Time TBD"
+  const [hoursRaw, minutesRaw = "00"] = time.split(":")
+  const hours = Number.parseInt(hoursRaw, 10)
+  if (Number.isNaN(hours)) return time
+  const ampm = hours >= 12 ? "PM" : "AM"
+  const displayHour = hours % 12 || 12
+  return `${displayHour}:${minutesRaw} ${ampm}`
+}
+
 export default function ParentDashboardOverview() {
   const { userName, dashboard, appointments, certificates, missedVaccinations } = useParentDashboard()
 
@@ -23,7 +50,23 @@ export default function ParentDashboardOverview() {
   const onTrackCount = childrenData.filter((child) => !child.hasMissedVaccinations && child.vaccinationProgress.percentage > 0).length
   const completionPercentage = totalVaccines ? Math.round((totalCompleted / totalVaccines) * 100) : 0
 
-  const nextAppointment = appointments[0]
+  const nextAppointment = useMemo(() => {
+    const activeAppointments = appointments.filter((appointment) =>
+      ["scheduled", "confirmed"].includes(appointment.status),
+    )
+
+    return activeAppointments.sort((first, second) => {
+      const firstDate = toAppointmentDateTime(first.scheduledDate, first.scheduledTime).getTime()
+      const secondDate = toAppointmentDateTime(second.scheduledDate, second.scheduledTime).getTime()
+      return firstDate - secondDate
+    })[0]
+  }, [appointments])
+
+  const nextAppointmentChild = useMemo(() => {
+    if (!nextAppointment) return null
+    return childrenData.find((child) => child.id === nextAppointment.childId) ?? null
+  }, [childrenData, nextAppointment])
+
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const logoDataUrlRef = useRef<string | null>(null)
@@ -326,11 +369,40 @@ export default function ParentDashboardOverview() {
               <>
                 <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
                   <p className="text-sm text-muted-foreground">Scheduled for</p>
-                  <h3 className="text-lg font-semibold">{nextAppointment.scheduledDate}</h3>
-                  <p className="text-sm text-muted-foreground">{nextAppointment.scheduledTime}</p>
-                  <p className="text-sm text-muted-foreground">{nextAppointment.facilityName}</p>
+                  <h3 className="text-lg font-semibold">{formatAppointmentDate(nextAppointment.scheduledDate)}</h3>
+                  <p className="text-sm text-muted-foreground">{formatAppointmentTime(nextAppointment.scheduledTime)}</p>
+                  <p className="text-sm text-muted-foreground">{nextAppointment.facilityName || "Facility pending assignment"}</p>
                 </div>
-                <p className="text-sm text-muted-foreground">{nextAppointment.purpose}</p>
+                <div className="space-y-2 text-sm">
+                  <p>
+                    <span className="text-muted-foreground">Child:</span>{" "}
+                    <span className="font-medium text-foreground">{nextAppointment.childName || nextAppointmentChild?.name || "Not specified"}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Child ID:</span>{" "}
+                    <span className="font-medium text-foreground">{nextAppointment.childCvccId || nextAppointment.childId}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Vaccine:</span>{" "}
+                    <span className="font-medium text-foreground">{nextAppointment.vaccineName || "General health visit"}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Purpose:</span>{" "}
+                    <span className="font-medium text-foreground">{nextAppointment.purpose}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Status:</span>{" "}
+                    <Badge variant={nextAppointment.status === "confirmed" ? "default" : "secondary"}>
+                      {nextAppointment.status === "confirmed" ? "Confirmed" : "Pending review"}
+                    </Badge>
+                  </p>
+                  {nextAppointment.facilityPhone ? (
+                    <p>
+                      <span className="text-muted-foreground">Facility contact:</span>{" "}
+                      <span className="font-medium text-foreground">{nextAppointment.facilityPhone}</span>
+                    </p>
+                  ) : null}
+                </div>
               </>
             ) : (
               <p className="text-sm text-muted-foreground">No upcoming appointments scheduled.</p>

@@ -298,15 +298,9 @@ export default function ChildPatientChartPage() {
   const photoInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
-    const name = localStorage.getItem("userName")
-
-    if (!token) {
-      router.push("/auth/login")
-      return
-    }
+    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
     if (role !== "staff" || detail !== "facility-nurse") {
       router.push("/facility/dashboard")

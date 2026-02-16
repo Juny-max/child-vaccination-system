@@ -218,6 +218,7 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem('authToken')
         localStorage.removeItem('userRole')
         localStorage.removeItem('userName')
+        sessionStorage.removeItem('userName')
         router.push('/auth/login')
       }
     } finally {
@@ -232,14 +233,8 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
 
   // Initial data fetch
   useEffect(() => {
-    const token = localStorage.getItem('authToken')
     const role = localStorage.getItem('userRole')
-    const name = localStorage.getItem('userName')
-
-    if (!token) {
-      router.push('/auth/login')
-      return
-    }
+    const name = sessionStorage.getItem('userName') || localStorage.getItem('userName')
 
     if (role !== 'parent') {
       router.push('/dashboard')

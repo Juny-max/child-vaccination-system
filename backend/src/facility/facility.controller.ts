@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FacilityService } from './facility.service';
-import { SearchChildDto, AdministerVaccineDto, RecordGrowthMeasurementDto, RecordSessionNoteDto, UpdateGuardianDto, RegisterGuardianDto, UpdateAppointmentStatusDto } from './dto';
+import { SearchChildDto, AdministerVaccineDto, RecordGrowthMeasurementDto, RecordSessionNoteDto, UpdateGuardianDto, RegisterGuardianDto, UpdateAppointmentStatusDto, RegisterChildDto } from './dto';
 
 @Controller('facility')
 @UseGuards(AuthGuard('jwt'))
@@ -171,6 +171,32 @@ export class FacilityController {
   @Post('guardians')
   async registerGuardian(@Body() dto: RegisterGuardianDto) {
     return this.facilityService.registerGuardian(dto);
+  }
+
+  /**
+   * GET /api/facility/guardians
+   * List guardians for child registration picker
+   */
+  @Get('guardians')
+  async listGuardians(
+    @Query('query') query?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.facilityService.listGuardians(
+      query,
+      limit ? Number.parseInt(limit, 10) : undefined,
+      offset ? Number.parseInt(offset, 10) : undefined,
+    );
+  }
+
+  /**
+   * POST /api/facility/children
+   * Register a new child and notify guardian via SMS
+   */
+  @Post('children')
+  async registerChild(@Body() dto: RegisterChildDto, @Request() req: any) {
+    return this.facilityService.registerChild(dto, req.user.id, req.user.branchId);
   }
 
   /**
