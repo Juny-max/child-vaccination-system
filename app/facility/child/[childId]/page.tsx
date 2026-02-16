@@ -34,6 +34,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
 import { supabase } from "@/lib/supabase"
+import * as offlineSync from "@/lib/offline-vaccination-sync"
+import { toast } from "sonner"
 
 type VaccineStatus = "overdue" | "dueToday" | "upcoming" | "completed"
 
@@ -261,6 +263,8 @@ export default function ChildPatientChartPage() {
   const [scheduledVaccines, setScheduledVaccines] = useState<facilityApi.ScheduledVaccine[]>([])
   const [isLoadingVaccines, setIsLoadingVaccines] = useState(true)
   const [isSavingVaccine, setIsSavingVaccine] = useState(false)
+  const [pendingSyncCount, setPendingSyncCount] = useState(0)
+  const [isOnline, setIsOnline] = useState(true)
   
   // State for growth monitoring
   const [measurements, setMeasurements] = useState<AnthropometricMeasurement[]>([])
@@ -446,6 +450,60 @@ export default function ChildPatientChartPage() {
     const timeout = window.setTimeout(() => setMeasurementStatus(null), 5000)
     return () => window.clearTimeout(timeout)
   }, [measurementStatus])
+
+  // Background sync for offline vaccinations
+  useEffect(() => {
+    const updatePendingCount = async () => {
+      try {
+        const count = await offlineSync.getPendingCount()
+        setPendingSyncCount(count)
+      } catch (error) {
+        console.error("Failed to get pending count:", error)
+      }
+    }
+
+    // Update count on mount
+    updatePendingCount()
+
+    // Monitor network status
+    const handleOnline = () => {
+      setIsOnline(true)
+      toast.info("Connection restored. Syncing offline records...")
+    }
+
+    const handleOffline = () => {
+      setIsOnline(false)
+      toast.warning("You're offline. Vaccinations will be saved locally.")
+    }
+
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
+
+    // Start background sync
+    const cleanup = offlineSync.startBackgroundSync((result) => {
+      if (result.success > 0) {
+        toast.success(
+          `${result.success} offline vaccination${result.success > 1 ? "s" : ""} synced successfully!`
+        )
+        updatePendingCount()
+        
+        // Refresh vaccination data after sync
+        if (childProfile?.dateOfBirth) {
+          facilityApi.getVaccinationHistory(childId).then(setVaccinationHistory)
+          facilityApi.getScheduledVaccinations(childId, childProfile.dateOfBirth).then(setScheduledVaccines)
+        }
+      }
+      if (result.failed > 0) {
+        toast.error(`${result.failed} vaccination${result.failed > 1 ? "s" : ""} failed to sync.`)
+      }
+    })
+
+    return () => {
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
+      cleanup()
+    }
+  }, [childId, childProfile?.dateOfBirth])
 
   const childRecord = useMemo<ChildRecord>(() => {
     // If we have fetched profile data, use it
@@ -710,29 +768,56 @@ export default function ChildPatientChartPage() {
         notes: administerForm.aefiFlag ? administerForm.aefiNotes : undefined,
       }
 
-      // Call the API to save the vaccination
-      await facilityApi.administerVaccine(childId, requestData)
+      // Try to save online first
+      try {
+        await facilityApi.administerVaccine(childId, requestData)
 
-      // Refetch vaccination data to update the timeline
-      if (childProfile?.dateOfBirth) {
-        const [history, scheduled] = await Promise.all([
-          facilityApi.getVaccinationHistory(childId),
-          facilityApi.getScheduledVaccinations(childId, childProfile.dateOfBirth),
-        ])
-        
-        setVaccinationHistory(history)
-        setScheduledVaccines(scheduled)
+        // Refetch vaccination data to update the timeline
+        if (childProfile?.dateOfBirth) {
+          const [history, scheduled] = await Promise.all([
+            facilityApi.getVaccinationHistory(childId),
+            facilityApi.getScheduledVaccinations(childId, childProfile.dateOfBirth),
+          ])
+          
+          setVaccinationHistory(history)
+          setScheduledVaccines(scheduled)
+        }
+
+        closeAdministerModal()
+        toast.success(
+          administerForm.aefiFlag
+            ? `Dose recorded and AEFI alert sent to branch manager for ${selectedDose.vaccine}.`
+            : `${selectedDose.vaccine} recorded successfully!`
+        )
+      } catch (apiError: any) {
+        // Check if it's a network error
+        const isNetworkError = 
+          !navigator.onLine ||
+          apiError?.message?.includes("fetch") ||
+          apiError?.message?.includes("network") ||
+          apiError?.code === "NETWORK_ERROR"
+
+        if (isNetworkError) {
+          // Save offline
+          await offlineSync.savePendingVaccination(childId, requestData)
+          
+          // Update pending count
+          const count = await offlineSync.getPendingCount()
+          setPendingSyncCount(count)
+          
+          closeAdministerModal()
+          toast.warning(
+            `${selectedDose.vaccine} saved offline. Will sync when connection is restored.`,
+            { duration: 5000 }
+          )
+        } else {
+          // Other error (validation, server error, etc.)
+          throw apiError
+        }
       }
-
-      closeAdministerModal()
-      setSystemMessage(
-        administerForm.aefiFlag
-          ? `Dose recorded and AEFI alert sent to branch manager for ${selectedDose.vaccine}.`
-          : `${selectedDose.vaccine} recorded as administered. Vaccination history updated.`
-      )
     } catch (error) {
       console.error("Failed to save vaccination:", error)
-      setSystemMessage("Failed to save vaccination. Please try again.")
+      toast.error("Failed to save vaccination. Please try again.")
     } finally {
       setIsSavingVaccine(false)
     }
@@ -894,6 +979,18 @@ export default function ChildPatientChartPage() {
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
+            {!isOnline && (
+              <Badge variant="secondary" className="gap-1">
+                <AlertCircle className="h-3 w-3" />
+                Offline
+              </Badge>
+            )}
+            {pendingSyncCount > 0 && (
+              <Badge variant="outline" className="gap-1">
+                <Syringe className="h-3 w-3" />
+                {pendingSyncCount} pending sync
+              </Badge>
+            )}
             <div className="flex flex-col items-end">
               <span className="text-sm text-muted-foreground">{userName}</span>
               <span className="text-xs text-muted-foreground/80">Facility Nurse</span>

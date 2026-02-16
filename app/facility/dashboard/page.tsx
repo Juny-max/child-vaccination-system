@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Html5Qrcode } from "html5-qrcode"
+import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import {
   AlertCircle,
   AlertTriangle,
@@ -23,6 +24,7 @@ import {
   Search,
   Shield,
   Stethoscope,
+  Syringe,
   User,
   X,
 } from "lucide-react"
@@ -33,9 +35,17 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
+import * as offlineSync from "@/lib/offline-vaccination-sync"
 
 type CameraState = "idle" | "starting" | "active" | "error"
 
@@ -47,6 +57,7 @@ export default function FacilityDashboardPage() {
   const [searchResults, setSearchResults] = useState<facilityApi.ChildSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
+  const [showErrorModal, setShowErrorModal] = useState(false)
   const [cameraState, setCameraState] = useState<CameraState>("idle")
   const [cameraError, setCameraError] = useState<string | null>(null)
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -60,6 +71,7 @@ export default function FacilityDashboardPage() {
   const [isLoadingFollowUps, setIsLoadingFollowUps] = useState(true)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [contactDetail, setContactDetail] = useState<facilityApi.UrgentFollowUp | null>(null)
+  const [pendingSyncCount, setPendingSyncCount] = useState(0)
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -123,6 +135,24 @@ export default function FacilityDashboardPage() {
     fetchDashboardData()
   }, [router])
 
+  // Check for pending offline vaccinations
+  useEffect(() => {
+    const updatePendingCount = async () => {
+      try {
+        const count = await offlineSync.getPendingCount()
+        setPendingSyncCount(count)
+      } catch (error) {
+        console.error("Failed to get pending count:", error)
+      }
+    }
+
+    updatePendingCount()
+    
+    // Update count every 10 seconds
+    const interval = setInterval(updatePendingCount, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
   useEffect(() => {
     if (!systemMessage) return
     const timeout = window.setTimeout(() => setSystemMessage(null), 5000)
@@ -156,7 +186,7 @@ export default function FacilityDashboardPage() {
       setSearchResults(results)
 
       if (results.length === 0) {
-        setSystemMessage("No matching child found. Confirm spelling or scan the QR code on the health passbook.")
+        setShowErrorModal(true)
       } else {
         setSystemMessage(`${results.length} result${results.length > 1 ? "s" : ""} ready. Select a child to open their chart.`)
       }
@@ -417,7 +447,18 @@ export default function FacilityDashboardPage() {
               </form>
 
               <div className="space-y-3">
-                {searchResults.length > 0 ? (
+                {isSearching ? (
+                  <div className="flex flex-col items-center justify-center py-6">
+                    <div className="w-48 h-48">
+                      <DotLottieReact
+                        src="/Free Searching Animation.lottie"
+                        loop
+                        autoplay
+                      />
+                    </div>
+                    <p className="text-sm text-muted-foreground">Searching for child...</p>
+                  </div>
+                ) : searchResults.length > 0 ? (
                   <div className="space-y-2">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Matching records</p>
                     <div className="grid gap-2">
@@ -559,6 +600,15 @@ export default function FacilityDashboardPage() {
                     <CalendarCheck className="h-4 w-4" /> Review appointment requests
                   </Link>
                 </Button>
+                {pendingSyncCount > 0 && (
+                  <Button asChild variant="secondary" className="gap-2">
+                    <Link href="/facility/offline-sync">
+                      <Syringe className="h-4 w-4" /> 
+                      Offline sync 
+                      <Badge variant="default" className="ml-auto">{pendingSyncCount}</Badge>
+                    </Link>
+                  </Button>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -675,6 +725,21 @@ export default function FacilityDashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Offline Sync Management Button */}
+        <div className="flex justify-center pb-4">
+          <Button asChild variant="outline" size="lg" className="gap-2">
+            <Link href="/facility/offline-sync">
+              <Syringe className="h-5 w-5" />
+              Manage Offline Vaccinations
+              {pendingSyncCount > 0 && (
+                <Badge variant="default" className="ml-2">
+                  {pendingSyncCount} pending
+                </Badge>
+              )}
+            </Link>
+          </Button>
+        </div>
       </main>
 
       {/* Guardian Contact Details Modal */}
@@ -802,6 +867,32 @@ export default function FacilityDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Error Modal - No Child Found */}
+      <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <div className="w-32 h-32">
+                <DotLottieReact
+                  src="/Sign for error _ Flat style.lottie"
+                  loop
+                  autoplay
+                />
+              </div>
+              <DialogTitle className="text-center text-xl">No Child Found</DialogTitle>
+            </div>
+          </DialogHeader>
+          <DialogDescription className="text-center text-base py-4">
+            No matching child found. Confirm spelling or scan the QR code on the health passbook.
+          </DialogDescription>
+          <div className="flex justify-center pt-2">
+            <Button onClick={() => setShowErrorModal(false)} className="w-full sm:w-auto px-8">
+              OK, Got it
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { AlertCircle, ArrowLeft, Baby, Calendar, FileImage, MapPin, Search, X } from "lucide-react"
+import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -68,6 +69,8 @@ export default function RegisterChildPage() {
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [registeredChildId, setRegisteredChildId] = useState<string | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem("authToken")
@@ -191,6 +194,13 @@ export default function RegisterChildPage() {
       const userId = localStorage.getItem("userId") || null
       const branchId = localStorage.getItem("branchId") || null
 
+      // Validate branchId exists (required for linking child to facility)
+      if (!branchId) {
+        setSystemMessage("❌ Session error: Facility information missing. Please log out and log in again.")
+        setIsSubmitting(false)
+        return
+      }
+
       // Upload profile image to Supabase Storage if provided
       let profilePhotoUrl: string | null = null
       if (formData.profileImageFile) {
@@ -279,22 +289,12 @@ export default function RegisterChildPage() {
         console.error("Error linking child to guardian:", linkError)
         // Child was created but linking failed - show partial success
         toast.warning(`Child ${cvccId} created but guardian link failed. Please update manually.`)
-      } else {
-        toast.success(`Child ${cvccId} registered successfully!`)
       }
 
-      setSystemMessage(
-        `Child registered successfully (${cvccId}). Record saved and linked to ${selectedMother.name}.`
-      )
-
-      // Reset form and redirect after short delay
-      setTimeout(() => {
-        setFormData(initialState)
-        setSelectedMother(null)
-        setSearchMother("")
-        setImagePreview(null)
-        router.push('/facility/dashboard')
-      }, 1500)
+      // Show success modal
+      setRegisteredChildId(cvccId)
+      setShowSuccessModal(true)
+      setIsSubmitting(false)
 
     } catch (error) {
       console.error("Child registration failed:", error)
@@ -648,6 +648,82 @@ export default function RegisterChildPage() {
           </Button>
         </div>
       </main>
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <Card className="mx-4 w-full max-w-md shadow-2xl">
+            <CardContent className="pt-6">
+              <div className="flex flex-col items-center text-center">
+                {/* Success Animation */}
+                <div className="mb-4 h-32 w-32">
+                  <DotLottieReact
+                    src="/Done.lottie"
+                    loop={false}
+                    autoplay
+                  />
+                </div>
+
+                {/* Success Message */}
+                <h2 className="mb-2 text-2xl font-bold text-green-600 dark:text-green-500">
+                  Registration Successful!
+                </h2>
+                
+                <p className="mb-4 text-lg font-medium">
+                  Child ID: <span className="font-mono text-primary">{registeredChildId}</span>
+                </p>
+
+                {/* Important Messages */}
+                <div className="mb-6 w-full space-y-3 rounded-lg bg-blue-50 p-4 text-left dark:bg-blue-950/30">
+                  <p className="flex items-start gap-2 text-sm">
+                    <span className="mt-0.5 text-blue-600 dark:text-blue-400">✓</span>
+                    <span>Child profile created and linked to guardian</span>
+                  </p>
+                  <p className="flex items-start gap-2 text-sm">
+                    <span className="mt-0.5 text-blue-600 dark:text-blue-400">✓</span>
+                    <span>QR code generated for quick patient lookup</span>
+                  </p>
+                  <p className="flex items-start gap-2 text-sm">
+                    <span className="mt-0.5 text-blue-600 dark:text-blue-400">✓</span>
+                    <span>Ready to record today&apos;s vaccination schedule</span>
+                  </p>
+                  <p className="flex items-start gap-2 text-sm font-medium text-orange-600 dark:text-orange-400">
+                    <span className="mt-0.5">⚠</span>
+                    <span>Remember to administer birth vaccines (BCG, OPV-0, HepB) if applicable</span>
+                  </p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex w-full gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setShowSuccessModal(false)
+                      setFormData(initialState)
+                      setSelectedMother(null)
+                      setSearchMother("")
+                      setImagePreview(null)
+                      setRegisteredChildId(null)
+                    }}
+                  >
+                    Register Another
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onClick={() => {
+                      setShowSuccessModal(false)
+                      router.push('/facility/dashboard')
+                    }}
+                  >
+                    Back to Dashboard
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

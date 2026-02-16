@@ -377,6 +377,20 @@ export class ParentService {
     // Get actual vaccination completion status (not from certificate table)
     const vaccinationStatus = await this.db.getVaccinationCompletionStatus(childId);
 
+    // Get child's registration facility name
+    const client = this.db.supabase;
+    const { data: childData } = await client
+      .from('children')
+      .select('primary_facility_id, branches!primary_facility_id(name)')
+      .eq('id', child.id)
+      .single();
+    
+    // Handle both object and array responses from Supabase
+    const branches: any = childData?.branches;
+    const facilityName = Array.isArray(branches) 
+      ? branches[0]?.name || 'Not issued yet'
+      : branches?.name || 'Not issued yet';
+
     if (!certificates || certificates.length === 0) {
       return [
         {
@@ -385,7 +399,7 @@ export class ParentService {
           childName: child.name,
           issuedDate: 'Not issued yet',
           issuedBy: 'Not issued yet',
-          issuedByFacility: 'Not issued yet',
+          issuedByFacility: facilityName,
           completionStatus: vaccinationStatus.isComplete
             ? CertificateCompletionStatus.COMPLETE
             : CertificateCompletionStatus.PARTIAL,

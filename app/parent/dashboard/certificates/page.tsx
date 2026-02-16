@@ -231,7 +231,7 @@ export default function CertificatesPage() {
                 </Alert>
               )}
 
-              <div className="flex flex-col gap-3 rounded-xl border border-dashed border-primary/30 bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 rounded-xl border border-dashed border-primary/30 bg-background/80 p-4">
                 <div className="flex items-center gap-3">
                   <div className="rounded-xl border border-border bg-white p-3 shadow-inner">
                     <QRCodeCanvas
@@ -243,14 +243,17 @@ export default function CertificatesPage() {
                       fgColor="#111318"
                     />
                   </div>
-                  <div className="text-sm text-muted-foreground">
+                  <div className="flex-1 text-sm text-muted-foreground">
                     <p className="font-semibold text-foreground">Scan-ready QR</p>
                     <p>Authorities can scan directly from your device.</p>
+                    <div className="mt-2">
+                      <Badge variant="secondary" className="gap-1 bg-primary/10 text-primary text-xs font-mono">
+                        <QrCode className="size-3 shrink-0" /> 
+                        {record.certificateId}
+                      </Badge>
+                    </div>
                   </div>
                 </div>
-                <Badge variant="secondary" className="w-fit gap-1 bg-primary/10 text-primary">
-                  <QrCode className="size-4" /> {record.certificateId}
-                </Badge>
               </div>
 
               <div className="flex flex-wrap gap-3">
