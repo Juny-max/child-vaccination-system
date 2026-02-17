@@ -92,14 +92,14 @@ type VaccinationCoordinate = {
   longitude: number
 }
 
-const readAllPendingVaccinations = (): PendingVaccination[] => {
-  if (typeof window === "undefined") {
-    return []
+const captureVaccinationCoordinate = async (): Promise<VaccinationCoordinate | null> => {
+  if (typeof window === "undefined" || !navigator.geolocation) {
+    return null
   }
 
-  const raw = window.localStorage.getItem(PENDING_VACCINATION_STORAGE_KEY)
-  if (!raw) {
-    re(position) => {
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
         resolve({
           latitude: Number(position.coords.latitude.toFixed(6)),
           longitude: Number(position.coords.longitude.toFixed(6)),
