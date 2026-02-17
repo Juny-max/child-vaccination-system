@@ -62,6 +62,9 @@ export async function login(credentials: LoginRequest): Promise<AuthResponse> {
   // Store non-sensitive user info for UI purposes only
   // JWT token is in HttpOnly cookie, not accessible to JavaScript
   if (typeof window !== 'undefined') {
+    if (response.accessToken) {
+      localStorage.setItem('accessToken', response.accessToken);
+    }
     localStorage.setItem('userRole', response.user.role);
     sessionStorage.setItem('userName', response.user.fullName);
     localStorage.removeItem('userName');
@@ -84,6 +87,9 @@ export async function register(data: RegisterRequest): Promise<AuthResponse> {
   // Store non-sensitive user info for UI purposes only
   // JWT token is in HttpOnly cookie, not accessible to JavaScript
   if (typeof window !== 'undefined') {
+    if (response.accessToken) {
+      localStorage.setItem('accessToken', response.accessToken);
+    }
     localStorage.setItem('userRole', response.user.role);
     sessionStorage.setItem('userName', response.user.fullName);
     localStorage.removeItem('userName');
@@ -115,8 +121,11 @@ export async function refreshToken(): Promise<{ accessToken?: string }> {
   const response = await apiRequest<{ accessToken?: string }>('/auth/refresh', {
     method: 'POST',
   });
-  
-  // No need to store token - it's in HttpOnly cookie
+
+  if (typeof window !== 'undefined' && response.accessToken) {
+    localStorage.setItem('accessToken', response.accessToken);
+  }
+
   return response;
 }
 

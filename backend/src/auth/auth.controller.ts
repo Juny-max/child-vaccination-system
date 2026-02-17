@@ -51,6 +51,7 @@ export class AuthController {
     
     // Return user data without exposing token
     return res.json({
+      accessToken: authResponse.accessToken,
       tokenType: authResponse.tokenType,
       expiresIn: authResponse.expiresIn,
       user: authResponse.user,
@@ -76,6 +77,7 @@ export class AuthController {
     
     // Return user data without exposing token
     return res.json({
+      accessToken: authResponse.accessToken,
       tokenType: authResponse.tokenType,
       expiresIn: authResponse.expiresIn,
       user: authResponse.user,

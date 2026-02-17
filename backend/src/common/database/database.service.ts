@@ -92,10 +92,6 @@ export class DatabaseService implements OnModuleInit {
           gender,
           birth_weight,
           birth_length,
-          head_circumference,
-          place_of_birth,
-          delivery_type,
-          birth_order,
           blood_type,
           profile_photo_url,
           allergies,
@@ -126,8 +122,6 @@ export class DatabaseService implements OnModuleInit {
         dose_number,
         administered_date,
         batch_number,
-        lot_number,
-        vaccination_site,
         status,
         notes,
         vaccine:vaccines (
@@ -322,7 +316,28 @@ export class DatabaseService implements OnModuleInit {
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      const message = error.message || '';
+      const isRecipientTypeMismatch =
+        message.toLowerCase().includes('recipient_type') ||
+        message.toLowerCase().includes('column') ||
+        message.toLowerCase().includes('schema cache');
+
+      if (isRecipientTypeMismatch) {
+        const { data: fallbackData, error: fallbackError } = await this._supabase
+          .from('notifications')
+          .select('*')
+          .eq('recipient_id', guardianId)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (fallbackError) throw new Error(fallbackError.message);
+        return fallbackData;
+      }
+
+      throw new Error(error.message);
+    }
+
     return data;
   }
 

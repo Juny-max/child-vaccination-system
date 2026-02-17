@@ -8,10 +8,18 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
  * Get authorization headers (cookies sent automatically)
  */
 export function getAuthHeaders(): HeadersInit {
+  let authorizationHeader: string | undefined;
+
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      authorizationHeader = `Bearer ${token}`;
+    }
+  }
+
   return {
     'Content-Type': 'application/json',
-    // JWT token is now sent automatically via HttpOnly cookies
-    // No need to manually set Authorization header
+    ...(authorizationHeader ? { Authorization: authorizationHeader } : {}),
   };
 }
 

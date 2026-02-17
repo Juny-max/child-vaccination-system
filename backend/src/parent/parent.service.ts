@@ -643,50 +643,75 @@ export class ParentService {
     const children = await this.getChildren(userId);
     const appointments = await this.getAppointments(userId);
     const missedVaccinations = await this.getMissedVaccinations(userId);
-    const notifications = await this.getNotifications(userId);
+
+    let notifications: NotificationDto[] = [];
+    try {
+      notifications = await this.getNotifications(userId);
+    } catch (error) {
+      console.error('Dashboard notifications query failed:', error);
+    }
 
     // Build child summaries with vaccination progress
     const childSummaries: ChildSummaryDto[] = await Promise.all(
       children.map(async (child) => {
-        const history = await this.db.getVaccinationHistory(child.id);
-        const upcoming = await this.db.getUpcomingVaccinations(
-          child.id,
-          child.dateOfBirth,
-        );
-        const certs = await this.db.getCertificates(child.id);
+        try {
+          const history = await this.db.getVaccinationHistory(child.id);
+          const upcoming = await this.db.getUpcomingVaccinations(
+            child.id,
+            child.dateOfBirth,
+          );
+          const certs = await this.db.getCertificates(child.id);
 
-        const completed = history?.length || 0;
-        const total = completed + (upcoming?.length || 0);
-        const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+          const completed = history?.length || 0;
+          const total = completed + (upcoming?.length || 0);
+          const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-        const nextVax = upcoming?.find((v: any) => !v.isOverdue);
-        const hasMissed = upcoming?.some((v: any) => v.isOverdue) || false;
-        const hasComplete = certs?.some(
-          (c: any) => c.completion_status === 'Complete',
-        ) || false;
+          const nextVax = upcoming?.find((v: any) => !v.isOverdue);
+          const hasMissed = upcoming?.some((v: any) => v.isOverdue) || false;
+          const hasComplete = certs?.some(
+            (c: any) => c.completion_status === 'Complete',
+          ) || false;
 
-        // Extract vaccine name from nested object
-        const nextVaxVaccine = nextVax?.vaccine as unknown as { id: string; code: string; name: string; description: string } | null;
+          // Extract vaccine name from nested object
+          const nextVaxVaccine = nextVax?.vaccine as unknown as { id: string; code: string; name: string; description: string } | null;
 
-        return {
-          id: child.id,
-          name: child.name,
-          age: child.age,
-          profilePhoto: child.profilePhoto,
-          vaccinationProgress: {
-            completed,
-            total,
-            percentage,
-          },
-          nextVaccination: nextVax
-            ? {
-                vaccine: nextVaxVaccine?.name || 'Unknown',
-                dueDate: nextVax.dueDate,
-              }
-            : null,
-          hasMissedVaccinations: hasMissed,
-          hasCompleteCertificate: hasComplete,
-        };
+          return {
+            id: child.id,
+            name: child.name,
+            age: child.age,
+            profilePhoto: child.profilePhoto,
+            vaccinationProgress: {
+              completed,
+              total,
+              percentage,
+            },
+            nextVaccination: nextVax
+              ? {
+                  vaccine: nextVaxVaccine?.name || 'Unknown',
+                  dueDate: nextVax.dueDate,
+                }
+              : null,
+            hasMissedVaccinations: hasMissed,
+            hasCompleteCertificate: hasComplete,
+          };
+        } catch (error) {
+          console.error(`Dashboard child summary query failed for child ${child.id}:`, error);
+
+          return {
+            id: child.id,
+            name: child.name,
+            age: child.age,
+            profilePhoto: child.profilePhoto,
+            vaccinationProgress: {
+              completed: 0,
+              total: 0,
+              percentage: 0,
+            },
+            nextVaccination: null,
+            hasMissedVaccinations: false,
+            hasCompleteCertificate: false,
+          };
+        }
       }),
     );
 
