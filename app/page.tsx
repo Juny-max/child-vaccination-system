@@ -5,9 +5,11 @@ import Image from "next/image"
 import Link from "next/link"
 import { useTheme } from "next-themes"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
+import { MorphNavbar } from "@/components/morph-navbar"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowRight, BellRing, Check, Menu, MoonStar, QrCode, ShieldCheck, Sun, Syringe, TrendingUp, X } from "lucide-react"
+import { ArrowRight, BellRing, Check, QrCode, ShieldCheck, Syringe, TrendingUp, X } from "lucide-react"
 
 const heroMedia = {
   light: "https://www.edc-ent.com/wp-content/uploads/2021/07/343434.jpg",
@@ -59,13 +61,18 @@ const platformPillars = [
   },
 ]
 
+const topNavItems = [
+  { label: "Insights", href: "#insights" },
+  { label: "Pillars", href: "#pillars" },
+  { label: "Contact", href: "#contact" },
+]
+
 const withAuthRedirect = (path: string) => `/auth/login?redirect=${encodeURIComponent(path)}`
 
 export default function Home() {
   const [mounted, setMounted] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
-  const { resolvedTheme, setTheme } = useTheme()
+  const { resolvedTheme } = useTheme()
 
   useEffect(() => {
     setMounted(true)
@@ -84,32 +91,24 @@ export default function Home() {
     return null
   }
 
-  const toggleTheme = () => {
-    setTheme(isDark ? "light" : "dark")
-  }
-
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <nav className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-backdrop-filter:bg-background/95">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+      <MorphNavbar
+        items={topNavItems}
+        brand={
           <div className="flex items-center gap-3">
-            <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-primary/30 bg-primary/5">
-              <Image src="/images/cvcc-logo.png" alt="Child Vaccination Command Center logo" fill sizes="48px" className="object-cover" />
+            <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-primary/30 bg-primary/5">
+              <Image src="/images/cvcc-logo.png" alt="Child Vaccination Command Center logo" fill sizes="40px" className="object-cover" />
             </div>
-            <div>
-              <p className="text-base font-semibold">Child Vaccination Command Center</p>
-            </div>
+            <p className="hidden text-sm font-semibold md:block md:text-base">Child Vaccination Command Center</p>
           </div>
-
-          {/* Desktop Navigation */}
-          <div className="hidden items-center gap-3 md:flex">
-            <button
-              onClick={toggleTheme}
-              className="flex items-center justify-center rounded-lg border border-border bg-transparent p-2 transition-colors hover:bg-muted"
-              aria-label="Toggle theme"
-            >
-              {isDark ? <Sun className="h-5 w-5" /> : <MoonStar className="h-5 w-5" />}
-            </button>
+        }
+        mobileMenuUtility={<ThemeToggle />}
+        cta={
+          <div className="flex items-center gap-2">
+            <div className="hidden md:inline-flex">
+              <ThemeToggle />
+            </div>
             <Link href="/auth/login">
               <Button className="gap-2">
                 Portal Login
@@ -117,40 +116,10 @@ export default function Home() {
               </Button>
             </Link>
           </div>
+        }
+      />
 
-          {/* Mobile Hamburger */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="flex items-center justify-center rounded-lg border border-border bg-transparent p-2 transition-colors hover:bg-muted md:hidden"
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-        </div>
-
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="border-t border-border bg-background/95 px-4 py-4 md:hidden">
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={toggleTheme}
-                className="flex w-full items-center justify-center rounded-lg border border-border bg-transparent p-2 transition-colors hover:bg-muted"
-                aria-label="Toggle theme"
-              >
-                {isDark ? <Sun className="h-5 w-5" /> : <MoonStar className="h-5 w-5" />}
-                <span className="ml-2">{isDark ? "Light Mode" : "Dark Mode"}</span>
-              </button>
-              <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}>
-                <Button className="w-full gap-2">
-                  Portal Login
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-            </div>
-          </div>
-        )}
-      </nav>
-
+      <div className="pt-20">
       <section className="relative overflow-hidden">
         <div className="absolute inset-0">
           <Image
@@ -335,7 +304,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-muted/20 py-20 sm:py-24">
+      <section id="pillars" className="bg-muted/20 py-20 sm:py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h2 className="text-3xl font-semibold text-foreground md:text-4xl">Pillars that support vaccination delivery</h2>
@@ -360,7 +329,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden py-20 sm:py-24">
+      <section id="contact" className="relative overflow-hidden py-20 sm:py-24">
         <div className="absolute inset-0 bg-linear-to-r from-primary/20 via-transparent to-primary/20" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_65%)] dark:bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.55),_transparent_65%)]" />
         <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
@@ -480,6 +449,7 @@ export default function Home() {
           </p>
         </div>
       </footer>
+      </div>
     </div>
   )
 }
