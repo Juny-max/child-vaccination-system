@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { Fredoka } from "next/font/google"
 import { useTheme } from "next-themes"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { MorphNavbar } from "@/components/morph-navbar"
@@ -61,6 +62,32 @@ const platformPillars = [
   },
 ]
 
+const childMomentsSlides = [
+  {
+    src: "/images/Image_fx (10).png",
+    alt: "Children building colorful blocks together",
+    caption: "Play, learn and grow with confidence.",
+    frameTone: "bg-emerald-100/60",
+  },
+  {
+    src: "/images/Image_fx (11).png",
+    alt: "Children smiling while playing with toy cars",
+    caption: "Protection keeps every little adventure moving.",
+    frameTone: "bg-amber-100/60",
+  },
+  {
+    src: "/images/Image_fx (9).png",
+    alt: "Two children sharing playtime in a colorful room",
+    caption: "Routine care helps brighter childhood moments.",
+    frameTone: "bg-lime-100/60",
+  },
+]
+
+const playfulHeadingFont = Fredoka({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+})
+
 const topNavItems = [
   { label: "Insights", href: "#insights" },
   { label: "Pillars", href: "#pillars" },
@@ -72,6 +99,7 @@ const withAuthRedirect = (path: string) => `/auth/login?redirect=${encodeURIComp
 export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [activeMoment, setActiveMoment] = useState(0)
   const { resolvedTheme } = useTheme()
 
   useEffect(() => {
@@ -85,7 +113,25 @@ export default function Home() {
     }
   }, [previewOpen])
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveMoment((current) => (current + 1) % childMomentsSlides.length)
+    }, 6800)
+
+    return () => clearInterval(interval)
+  }, [])
+
   const isDark = useMemo(() => resolvedTheme === "dark", [resolvedTheme])
+
+  const moveMoment = (direction: "prev" | "next") => {
+    setActiveMoment((current) => {
+      if (direction === "prev") {
+        return (current - 1 + childMomentsSlides.length) % childMomentsSlides.length
+      }
+
+      return (current + 1) % childMomentsSlides.length
+    })
+  }
 
   if (!mounted) {
     return null
@@ -219,7 +265,7 @@ export default function Home() {
             </span>
             <h2 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">A clear view of Ghana&apos;s vaccination network</h2>
             <p className="mt-4 text-lg text-foreground/80">
-              Transparent glass panels surface the essentials so health leaders can read readiness in one glance.
+              Live coverage trends, appointment load, and cold-chain status are visible in one place so health leaders can respond early and protect every district.
             </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
@@ -237,12 +283,112 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="relative overflow-hidden bg-gradient-to-b from-primary/10 via-background to-background py-20 sm:py-24">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -top-8 left-8 h-20 w-20 rounded-full border-2 border-dashed border-primary/35" />
+          <div className="absolute top-16 right-10 h-10 w-10 rounded-full bg-amber-100/70" />
+          <div className="absolute bottom-16 left-[10%] h-14 w-14 rounded-[1.2rem] border-2 border-primary/25 bg-lime-100/65 rotate-12" />
+          <svg viewBox="0 0 200 70" className="absolute bottom-6 right-[14%] h-10 w-40 text-primary/35">
+            <path d="M4 58C30 18 58 18 79 58C98 24 122 20 140 56C156 30 176 32 196 50" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <svg viewBox="0 0 100 100" className="absolute top-14 left-[36%] h-8 w-8 text-yellow-400/80">
+            <path d="M50 4L59 34L92 34L65 53L75 84L50 65L25 84L35 53L8 34L41 34Z" fill="currentColor" />
+          </svg>
+        </div>
+
+        <div className="relative mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:px-8">
+          <div className="rounded-[2.25rem] border border-primary/20 bg-background/80 p-8 shadow-xl backdrop-blur-xl sm:p-10">
+            <span className={`${playfulHeadingFont.className} inline-flex items-center rounded-full border border-primary/35 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-primary`}>
+              Childhood care
+            </span>
+            <h2 className={`${playfulHeadingFont.className} mt-6 text-balance text-3xl font-semibold leading-tight text-foreground sm:text-4xl`}>
+              Healthy childhoods start with the right protection.
+            </h2>
+            <p className="mt-4 text-base text-foreground/80 sm:text-lg">
+              Routine vaccination keeps children safer as they learn, play, and discover the world around them.
+            </p>
+            <p className="mt-4 max-w-xl text-sm leading-relaxed text-foreground/70 sm:text-base">
+              Every timely dose builds stronger immunity, helps families avoid preventable illness, and supports healthier communities where children can grow with confidence.
+            </p>
+            <div className="mt-8">
+              <Link href="/information">
+                <Button
+                  size="lg"
+                  className="rounded-full border border-primary/40 bg-primary/90 px-7 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary"
+                >
+                  Learn more
+                </Button>
+              </Link>
+            </div>
+          </div>
+
+          <div className="relative mx-auto w-full max-w-[430px] pb-4 pt-2 sm:pb-6 sm:pt-4 sm:max-w-[500px]">
+            <div className="relative h-[380px] sm:h-[450px]">
+              {[-1, 0, 1].map((offset) => {
+                const slideIndex = (activeMoment + offset + childMomentsSlides.length) % childMomentsSlides.length
+                const slide = childMomentsSlides[slideIndex]
+                const isFront = offset === 0
+
+                return (
+                  <article
+                    key={slide.src}
+                    className={`absolute transition-all duration-700 ease-in-out ${
+                      isFront
+                        ? "left-1/2 top-2 z-30 w-[76%] -translate-x-1/2 rotate-[-2deg] sm:top-1 sm:w-[74%]"
+                        : offset < 0
+                          ? "left-0 top-12 z-10 w-[60%] -translate-x-[22%] rotate-[-10deg] opacity-95 sm:w-[56%] sm:-translate-x-[28%]"
+                          : "right-0 top-12 z-10 w-[60%] translate-x-[22%] rotate-[10deg] opacity-95 sm:w-[56%] sm:translate-x-[28%]"
+                    }`}
+                  >
+                    <div className={`relative rounded-[2rem] border-2 border-dashed border-primary/40 p-3 shadow-[0_18px_38px_-20px_hsl(var(--foreground)/0.45)] ${slide.frameTone}`}>
+                      <div className="relative overflow-hidden rounded-[1.4rem] border border-primary/20 bg-background aspect-[4/5]">
+                        <Image
+                          src={slide.src}
+                          alt={slide.alt}
+                          fill
+                          sizes="(max-width: 768px) 70vw, 300px"
+                          className="object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent" />
+                        <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-white/35 bg-background/70 px-3 py-2 text-xs font-medium text-foreground/80 backdrop-blur-md">
+                          {slide.caption}
+                        </div>
+                      </div>
+
+                      <span className="pointer-events-none absolute -left-3 -top-3 h-7 w-7 rounded-full border-2 border-primary/35 bg-yellow-100/80" />
+                      <span className="pointer-events-none absolute -bottom-2 right-4 h-6 w-12 rounded-full border-2 border-primary/30 bg-background/80" />
+                      <svg viewBox="0 0 120 40" className="pointer-events-none absolute -bottom-3 left-4 h-6 w-24 text-primary/45">
+                        <path d="M4 26C18 6 30 7 40 24C50 8 62 7 72 23C84 9 94 12 112 22" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+
+            <div className="mt-6 flex items-center justify-center gap-4">
+              <button
+                type="button"
+                aria-label="Previous child photo"
+                onClick={() => moveMoment("prev")}
+                className="group inline-flex h-12 w-12 items-center justify-center rounded-full border border-primary/35 bg-background/90 text-primary shadow-md transition hover:-translate-y-0.5 hover:bg-primary/10"
+              >
+                <svg viewBox="0 0 28 28" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6L9 14L20 22" />
+                  <path d="M17 6C13 9 11 11 9 14C11 17 13 19 17 22" className="opacity-75" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-muted/30 py-20 sm:py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
               <div className="mb-12 text-center">
                 <h2 className="text-3xl font-semibold text-foreground md:text-4xl">Operational clarity across child vaccination</h2>
                 <p className="mt-3 text-lg text-foreground/80">
-                  Facility clinics, outreach missions and certificate teams share one calm canvas so planners keep every child on schedule.
+                  Facility sessions, outreach visits, and certificate workflows run in one shared system so teams can coordinate faster and keep every child on schedule.
                 </p>
           </div>
           <div className="grid gap-10 md:grid-cols-2">
