@@ -16,6 +16,7 @@ import {
   ClipboardList,
 } from "lucide-react"
 import * as chwStorage from "@/lib/chw-offline-storage"
+import { getChwDashboardSummary, type ChwVisit } from "@/lib/api/chw"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -27,39 +28,11 @@ type SyncState = "offline" | "syncing" | "synced"
 
 type VisitTask = {
   id: string
+  childId?: string
   childName: string
   vaccineDue: string
   householdLocation: string
   distanceKm: number
-}
-
-const mockVisitList: VisitTask[] = [
-  {
-    id: "VIS-1101",
-    childName: "Child Kwesi",
-    vaccineDue: "Penta 3",
-    householdLocation: "Kpalbusi Junction",
-    distanceKm: 1.2,
-  },
-  {
-    id: "VIS-1102",
-    childName: "Kojo Mensima",
-    vaccineDue: "Measles-Rubella 1",
-    householdLocation: "Tunsungu Market Street",
-    distanceKm: 2.4,
-  },
-  {
-    id: "VIS-1103",
-    childName: "Adjoa Ansah",
-    vaccineDue: "OPV Booster",
-    householdLocation: "Jakpa Riverside",
-    distanceKm: 3.1,
-  },
-]
-
-const mockPendingCounts = {
-  registrations: 5,
-  vaccinations: 7,
 }
 
 type VaccinationMapPoint = {
@@ -93,6 +66,32 @@ export default function ChwDashboardPage() {
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [vaccinationLogs, setVaccinationLogs] = useState<VaccinationMapPoint[]>([])
+  const [visitList, setVisitList] = useState<VisitTask[]>([])
+  const [pendingSyncTotal, setPendingSyncTotal] = useState(0)
+
+  const loadDashboardSummary = async () => {
+    try {
+      const summary = await getChwDashboardSummary()
+      const localPending = await chwStorage.getCHWPendingCount()
+      setVisitList(
+        summary.visits.map((entry: ChwVisit) => ({
+          id: entry.id,
+          childId: entry.childId,
+          childName: entry.childName,
+          vaccineDue: entry.vaccineDue,
+          householdLocation: entry.householdLocation,
+          distanceKm: entry.distanceKm,
+        })),
+      )
+      setPendingSyncTotal(summary.pendingQueueCount + localPending)
+      setLastSyncTime(new Date(summary.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
+      setSyncState("synced")
+    } catch (error) {
+      console.error("Failed to load CHW dashboard summary", error)
+      setSyncState("offline")
+      setSystemMessage("Using offline mode. Data refresh will continue automatically in background.")
+    }
+  }
 
   useEffect(() => {
     const legacyToken = localStorage.getItem("authToken")
@@ -109,7 +108,7 @@ export default function ChwDashboardPage() {
       return
     }
 
-  if (role !== "staff" || detail !== "chw") {
+    if (role !== "staff" || detail !== "chw") {
       if (detail === "facility-nurse") {
         router.push("/facility/dashboard")
         return
@@ -131,6 +130,7 @@ export default function ChwDashboardPage() {
     }
 
     setUserName(name || "Community Health Worker")
+    loadDashboardSummary()
   }, [router])
 
   useEffect(() => {
@@ -181,8 +181,6 @@ export default function ChwDashboardPage() {
     }
   }, [])
 
-  const pendingSyncTotal = useMemo(() => mockPendingCounts.registrations + mockPendingCounts.vaccinations, [])
-
   const syncIndicator = useMemo(() => {
     switch (syncState) {
       case "offline":
@@ -212,12 +210,10 @@ export default function ChwDashboardPage() {
   const triggerMockSync = () => {
     if (syncState === "syncing") return
     setSyncState("syncing")
-    setSystemMessage("Background sync queued. Keep the device awake until complete.")
-    window.setTimeout(() => {
-      setSyncState("synced")
-      setLastSyncTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
-      setSystemMessage("All outreach records uploaded to head office.")
-    }, 3200)
+    setSystemMessage("Refreshing from server...")
+    loadDashboardSummary().finally(() => {
+      setSystemMessage("Dashboard refreshed from backend.")
+    })
   }
 
   const handleLogout = () => {
@@ -298,14 +294,14 @@ export default function ChwDashboardPage() {
                 <CardDescription>Downloaded for offline rounds. Update status once visit is complete.</CardDescription>
               </div>
               <Badge variant="outline" className="text-xs">
-                {mockVisitList.length} household{mockVisitList.length === 1 ? "" : "s"}
+                {visitList.length} household{visitList.length === 1 ? "" : "s"}
               </Badge>
             </CardHeader>
             <CardContent className="space-y-3">
-              {mockVisitList.length === 0 ? (
+              {visitList.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No visits assigned. Sync with head office when online.</p>
               ) : (
-                mockVisitList.map((task) => (
+                visitList.map((task) => (
                   <div key={task.id} className="rounded-lg border border-border bg-background/80 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -314,6 +310,11 @@ export default function ChwDashboardPage() {
                         <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
                           <MapPin className="h-3 w-3" /> {task.householdLocation}
                         </p>
+                        {task.childId ? (
+                          <Link href={`/chw/child/${task.childId}`} className="text-xs text-primary hover:underline">
+                            Open child chart
+                          </Link>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Clock className="h-3 w-3" /> {task.distanceKm.toFixed(1)} km away

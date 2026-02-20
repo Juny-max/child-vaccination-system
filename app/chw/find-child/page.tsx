@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Camera, ChevronLeft, Phone, QrCode, Search } from "lucide-react"
+import { searchChwChildren, type ChwSearchResult } from "@/lib/api/chw"
+import { chwOfflineDb, upsertChildren } from "@/lib/chw-offline/db"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -22,33 +24,6 @@ type LocalChildRecord = {
   village: string
 }
 
-const localChildren: LocalChildRecord[] = [
-  {
-    id: "CHW-0001",
-    childName: "Kofi Mensah",
-    motherName: "Demo Mensah",
-    motherPhone: "+233 240 110 221",
-    nextVaccine: "Measles-Rubella 1",
-    village: "Nakwabi",
-  },
-  {
-    id: "CHW-0002",
-    childName: "Akosua Nyarko",
-    motherName: "Afia Nyarko",
-    motherPhone: "+233 242 118 755",
-    nextVaccine: "OPV Booster",
-    village: "Tuna Zongo",
-  },
-  {
-    id: "CHW-0003",
-    childName: "Yaw Larbi",
-    motherName: "Naana Larbi",
-    motherPhone: "+233 230 998 101",
-    nextVaccine: "Penta 3",
-    village: "Sawla Number 2",
-  },
-]
-
 type CameraState = "idle" | "starting" | "active" | "error"
 
 type SearchMode = "name" | "phone"
@@ -66,12 +41,16 @@ export default function ChwFindChildPage() {
   const streamRef = useRef<MediaStream | null>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
+    const legacyToken = localStorage.getItem("authToken")
+    const accessToken = localStorage.getItem("accessToken")
+    const userId = localStorage.getItem("userId")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
     const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
-    if (!token) {
+    const hasAuthState = Boolean(userId || accessToken || legacyToken)
+
+    if (!hasAuthState) {
       router.push("/auth/login")
       return
     }
@@ -104,31 +83,83 @@ export default function ChwFindChildPage() {
     }
   }, [])
 
-  const filteredChildren = useMemo(() => {
-    if (!query.trim()) return []
-    const normalized = query.trim().toLowerCase()
-    return localChildren.filter((child) => {
-      if (searchMode === "name") {
-        return child.childName.toLowerCase().includes(normalized)
-      }
-      return child.motherPhone.replace(/\s+/g, "").includes(normalized.replace(/\s+/g, ""))
-    })
-  }, [query, searchMode])
+  const filteredChildren = useMemo(() => results, [results])
 
-  const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
+  const mapSearchResult = (child: ChwSearchResult): LocalChildRecord => ({
+    id: child.id,
+    childName: child.childName,
+    motherName: child.motherName,
+    motherPhone: child.motherPhone,
+    nextVaccine: child.nextVaccine,
+    village: child.village,
+  })
+
+  const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!query.trim()) {
       setSystemMessage("Type a child name or mother phone to search.")
       setResults([])
       return
     }
-    const matches = filteredChildren
-    setResults(matches)
-    setSystemMessage(
-      matches.length > 0
-        ? `${matches.length} record${matches.length === 1 ? "" : "s"} found. Tap to open the offline chart.`
-        : "No local record found. Sync when online or register the child."
-    )
+
+    try {
+      if (navigator.onLine) {
+        const backendResults = await searchChwChildren(query)
+        setResults(backendResults.map(mapSearchResult))
+
+        await upsertChildren(
+          backendResults.map((item) => ({
+            id: item.id,
+            cvccId: item.childId,
+            fullName: item.childName,
+            dateOfBirth: item.dateOfBirth,
+            gender: (item.gender || "unknown") as "male" | "female" | "intersex" | "undisclosed" | "unknown",
+            guardianName: item.motherName,
+            guardianPhone: item.motherPhone,
+            updatedAt: new Date().toISOString(),
+          })),
+        )
+
+        setSystemMessage(
+          backendResults.length > 0
+            ? `${backendResults.length} record${backendResults.length === 1 ? "" : "s"} found.`
+            : "No match found in your assigned catchment.",
+        )
+        return
+      }
+
+      const normalized = query.trim().toLowerCase()
+      const local = await chwOfflineDb.children
+        .filter((child) => {
+          if (searchMode === "name") {
+            return child.fullName.toLowerCase().includes(normalized)
+          }
+          return (child.guardianPhone || "")
+            .replace(/\s+/g, "")
+            .includes(normalized.replace(/\s+/g, ""))
+        })
+        .toArray()
+
+      const matches = local.map((child) => ({
+        id: child.id,
+        childName: child.fullName,
+        motherName: child.guardianName || "Unknown",
+        motherPhone: child.guardianPhone || "N/A",
+        nextVaccine: "Review chart",
+        village: "Offline cache",
+      }))
+
+      setResults(matches)
+      setSystemMessage(
+        matches.length > 0
+          ? `${matches.length} offline record${matches.length === 1 ? "" : "s"} found.`
+          : "No offline record found.",
+      )
+    } catch (error) {
+      console.error("CHW search failed", error)
+      setSystemMessage("Search failed. Please try again.")
+      setResults([])
+    }
   }
 
   const startCamera = async () => {

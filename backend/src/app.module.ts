@@ -5,6 +5,7 @@ import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { ParentModule } from './parent/parent.module';
 import { FacilityModule } from './facility/facility.module';
+import { ChwModule } from './chw/chw.module';
 import { ChatbotController } from './common/chatbot.controller';
 import { ChatbotService } from './common/chatbot.service';
 import { SmsService } from './common/sms.service';
@@ -30,7 +31,7 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
     // Juny's Modules
     ParentModule,
     FacilityModule,
-    // ChwModule,           // TODO: Add later
+    ChwModule,
     // PhaModule,           // TODO: Add later
 
     // Julius's Modules (placeholders)

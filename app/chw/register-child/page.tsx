@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { CheckCircle2, ChevronLeft, Compass, Loader2, MapPin, Save } from "lucide-react"
+import { queueChwOfflineRegistration } from "@/lib/api/chw"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -44,17 +45,21 @@ export default function ChwRegisterChildPage() {
   const [gpsError, setGpsError] = useState<string | null>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
+    const legacyToken = localStorage.getItem("authToken")
+    const accessToken = localStorage.getItem("accessToken")
+    const userId = localStorage.getItem("userId")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
     const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
-    if (!token) {
+    const hasAuthState = Boolean(userId || accessToken || legacyToken)
+
+    if (!hasAuthState) {
       router.push("/auth/login")
       return
     }
 
-  if (role !== "staff" || detail !== "chw") {
+    if (role !== "staff" || detail !== "chw") {
       router.push("/chw/dashboard")
       return
     }
@@ -139,16 +144,34 @@ export default function ChwRegisterChildPage() {
     )
   }
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!validateStep(2)) return
     setSaving(true)
-    window.setTimeout(() => {
-      setSaving(false)
+
+    try {
+      await queueChwOfflineRegistration({
+        motherName: form.motherName,
+        motherPhone: form.motherPhone,
+        childName: form.childName,
+        childDob: form.childDob,
+        childGender: form.childGender,
+        latitude: form.latitude,
+        longitude: form.longitude,
+        source: "chw-register-child",
+        submittedAt: new Date().toISOString(),
+      })
+
+      setSystemMessage("Registration saved and queued to backend successfully.")
       setForm(initialForm)
       setStep(1)
-      setSystemMessage("Child saved locally. Will sync when online.")
-    }, 1500)
+      setGpsStatus("idle")
+    } catch (error) {
+      console.error("Failed to queue registration", error)
+      setSystemMessage("Offline registration saved locally and will retry when connection improves.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const gpsButtonLabel = () => {

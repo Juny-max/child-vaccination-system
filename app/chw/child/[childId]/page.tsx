@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import {
@@ -16,6 +16,8 @@ import {
   User,
 } from "lucide-react"
 import * as chwStorage from "@/lib/chw-offline-storage"
+import { getChwChildChart, type ChwChildChart } from "@/lib/api/chw"
+import { chwOfflineDb } from "@/lib/chw-offline/db"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -121,14 +123,31 @@ export default function ChwChildChartPage() {
   const [selectedVaccine, setSelectedVaccine] = useState<VaccineDose | null>(null)
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
+  const [remoteSnapshot, setRemoteSnapshot] = useState<ChildSnapshot | null>(null)
+  const [loadingChart, setLoadingChart] = useState(true)
+
+  const mapChart = (chart: ChwChildChart): ChildSnapshot => ({
+    id: chart.id,
+    name: chart.name,
+    age: chart.age,
+    motherName: chart.motherName,
+    motherPhone: chart.motherPhone,
+    village: chart.village,
+    outstandingVaccines: chart.outstandingVaccines,
+    history: chart.history,
+  })
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
+    const legacyToken = localStorage.getItem("authToken")
+    const accessToken = localStorage.getItem("accessToken")
+    const userId = localStorage.getItem("userId")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
     const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
-    if (!token) {
+    const hasAuthState = Boolean(userId || accessToken || legacyToken)
+
+    if (!hasAuthState) {
       router.push("/auth/login")
       return
     }
@@ -139,7 +158,38 @@ export default function ChwChildChartPage() {
     }
 
     setUserName(name || "Community Health Worker")
-  }, [router])
+
+    const loadChart = async () => {
+      setLoadingChart(true)
+      try {
+        if (navigator.onLine) {
+          const chart = await getChwChildChart(childId)
+          setRemoteSnapshot(mapChart(chart))
+          return
+        }
+
+        const localChild = await chwOfflineDb.children.get(childId)
+        if (localChild) {
+          setRemoteSnapshot({
+            id: localChild.id,
+            name: localChild.fullName,
+            age: "Offline",
+            motherName: localChild.guardianName || "Unknown",
+            motherPhone: localChild.guardianPhone || "N/A",
+            village: "Offline cache",
+            outstandingVaccines: [],
+            history: [],
+          })
+        }
+      } catch (error) {
+        console.error("Failed to load child chart", error)
+      } finally {
+        setLoadingChart(false)
+      }
+    }
+
+    loadChart()
+  }, [router, childId])
 
   useEffect(() => {
     if (!systemMessage) return
@@ -147,7 +197,7 @@ export default function ChwChildChartPage() {
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
 
-  const childSnapshot = useMemo(() => offlineChildren[childId], [childId])
+  const childSnapshot = remoteSnapshot || offlineChildren[childId]
 
   useEffect(() => {
     if (!childSnapshot) {
@@ -228,6 +278,17 @@ export default function ChwChildChartPage() {
   }
 
   if (!childSnapshot) {
+    if (loadingChart) {
+      return (
+        <div className="min-h-screen bg-muted/30">
+          <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col items-center justify-center gap-4 px-4 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Loading child chart...</p>
+          </main>
+        </div>
+      )
+    }
+
     return (
       <div className="min-h-screen bg-muted/30">
         <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col items-center justify-center gap-4 px-4 text-center">
@@ -283,7 +344,7 @@ export default function ChwChildChartPage() {
               <CardTitle className="flex items-center gap-2 text-lg">
                 <User className="h-5 w-5 text-primary" /> Child summary
               </CardTitle>
-              <CardDescription>Read-only snapshot pulled from the morning sync.</CardDescription>
+              <CardDescription>Read-only snapshot pulled from backend (or offline cache).</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p className="text-foreground text-base font-semibold">{childSnapshot.name}</p>
