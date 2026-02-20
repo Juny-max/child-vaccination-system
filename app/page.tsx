@@ -234,19 +234,19 @@ export default function Home() {
                   </div>
                   <div>
                     <p className="text-sm font-medium uppercase text-muted-foreground">Live session</p>
-                    <p className="text-lg font-semibold">Jakpa Branch • Under-five clinic</p>
+                    <p className="text-lg font-semibold">Care spotlight • Child wellness</p>
                   </div>
                 </div>
                 <div className="rounded-2xl border border-border/60 bg-background/70 p-4 text-sm shadow-sm">
-                  <p className="font-semibold text-primary">Next due vaccines</p>
+                  <p className="font-semibold text-primary">Why routine vaccines matter</p>
                   <div className="mt-2 grid grid-cols-2 gap-3 text-muted-foreground">
                     <div>
-                      <p className="text-xs uppercase">Esi Asante</p>
-                      <p className="text-sm font-medium text-foreground">MMR • 12 Feb 2025</p>
+                      <p className="text-xs uppercase">Stronger immunity</p>
+                      <p className="text-sm font-medium text-foreground">Build protection early</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase">Yaw Mensah</p>
-                      <p className="text-sm font-medium text-foreground">Polio (Dose 3) • 18 Feb 2025</p>
+                      <p className="text-xs uppercase">Healthier communities</p>
+                      <p className="text-sm font-medium text-foreground">Prevent disease spread</p>
                     </div>
                   </div>
                 </div>
