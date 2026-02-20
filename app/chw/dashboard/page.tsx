@@ -95,12 +95,16 @@ export default function ChwDashboardPage() {
   const [vaccinationLogs, setVaccinationLogs] = useState<VaccinationMapPoint[]>([])
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
+    const legacyToken = localStorage.getItem("authToken")
+    const accessToken = localStorage.getItem("accessToken")
+    const userId = localStorage.getItem("userId")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
     const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
-    if (!token) {
+    const hasAuthState = Boolean(userId || accessToken || legacyToken)
+
+    if (!hasAuthState) {
       router.push("/auth/login")
       return
     }
