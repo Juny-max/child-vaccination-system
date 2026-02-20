@@ -162,7 +162,7 @@ export default function CertificatesPage() {
             <CardTitle className="text-2xl">All child certificates</CardTitle>
             <CardDescription>Track completion status and download digital copies for every child on your account.</CardDescription>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center text-xs uppercase text-muted-foreground">
+          <div className="grid grid-cols-1 gap-2 text-center text-xs uppercase text-muted-foreground sm:grid-cols-3">
             <Stat label="Total" value={counts.total} />
             <Stat label="Completed" value={counts.complete} />
             <Stat label="Pending" value={counts.pending} />
@@ -179,7 +179,7 @@ export default function CertificatesPage() {
                   <CardTitle className="text-xl">{record.childName}</CardTitle>
                   <CardDescription>Child ID: {record.childId}</CardDescription>
                 </div>
-                <div className="flex flex-col items-end gap-1">
+                <div className="flex flex-col items-start gap-1 sm:items-end">
                   <Badge
                     variant={record.completionStatus === "Complete" ? "secondary" : "outline"}
                     className={record.completionStatus === "Complete" ? "bg-emerald-600 text-white" : "border-amber-400 text-amber-700"}
@@ -193,14 +193,14 @@ export default function CertificatesPage() {
                   )}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                <span>
+              <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3 sm:gap-4">
+                <span className="break-words">
                   <strong>Issued:</strong> {record.issuedDate}
                 </span>
-                <span>
+                <span className="break-words">
                   <strong>Facility:</strong> {record.issuedByFacility || record.issuedBy}
                 </span>
-                <span>
+                <span className="break-words">
                   <strong>Last verified:</strong> {record.lastVerified || "Not verified yet"}
                 </span>
               </div>
@@ -232,7 +232,7 @@ export default function CertificatesPage() {
               )}
 
               <div className="flex flex-col gap-3 rounded-xl border border-dashed border-primary/30 bg-background/80 p-4">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                   <div className="rounded-xl border border-border bg-white p-3 shadow-inner">
                     <QRCodeCanvas
                       value={record.qrPayload}
@@ -243,11 +243,11 @@ export default function CertificatesPage() {
                       fgColor="#111318"
                     />
                   </div>
-                  <div className="flex-1 text-sm text-muted-foreground">
+                  <div className="w-full flex-1 text-sm text-muted-foreground">
                     <p className="font-semibold text-foreground">Scan-ready QR</p>
                     <p>Authorities can scan directly from your device.</p>
                     <div className="mt-2">
-                      <Badge variant="secondary" className="gap-1 bg-primary/10 text-primary text-xs font-mono">
+                      <Badge variant="secondary" className="max-w-full gap-1 break-all bg-primary/10 text-xs font-mono text-primary">
                         <QrCode className="size-3 shrink-0" /> 
                         {record.certificateId}
                       </Badge>
@@ -256,10 +256,10 @@ export default function CertificatesPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Button
                   onClick={() => handleDownload(record)}
-                  className="gap-2"
+                  className="w-full gap-2 sm:w-auto"
                   disabled={record.completionStatus !== "Complete" || isGeneratingId === record.childId}
                 >
                   <FileDown className="size-4" />
@@ -269,7 +269,7 @@ export default function CertificatesPage() {
                     ? "Generating..."
                     : "Download PDF"}
                 </Button>
-                <Button asChild variant="outline" className="gap-2">
+                <Button asChild variant="outline" className="w-full gap-2 sm:w-auto">
                   <Link href="/parent/dashboard/vaccination-status">
                     View vaccination timeline
                     <Award className="size-4" />
