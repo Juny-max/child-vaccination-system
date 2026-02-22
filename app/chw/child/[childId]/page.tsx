@@ -16,10 +16,13 @@ import {
   User,
 } from "lucide-react"
 import * as chwStorage from "@/lib/chw-offline-storage"
-import { getChwChildChart, type ChwChildChart } from "@/lib/api/chw"
+import { getChwChildChartAll, type ChwChildChart } from "@/lib/api/chw"
 import { chwOfflineDb } from "@/lib/chw-offline/db"
+import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 
 import { ThemeToggle } from "@/components/theme-toggle"
+import { NetworkStatusIndicator } from "@/components/chw/network-status-indicator"
+import { TransferOutButton } from "@/components/chw/transfer-out-button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -53,9 +56,11 @@ type PendingVaccination = chwStorage.CHWVaccinationRecord
 const composePendingVaccinationKey = (entry: PendingVaccination) => 
   `${entry.childId}-${entry.vaccineId}-${entry.recordedDate}`
 
+// Event to notify dashboard map to refresh
+const VACCINATION_SAVED_EVENT = "chw-vaccination-saved"
+
 // No longer needed - using IndexedDB
 // const PENDING_VACCINATION_STORAGE_KEY = "chwPendingVaccinations"
-const VACCINATION_SAVED_EVENT = "chw-vaccination-saved"
 
 const offlineChildren: Record<string, ChildSnapshot> = {
   "CHW-0001": {
@@ -116,6 +121,7 @@ const captureVaccinationCoordinate = async (): Promise<VaccinationCoordinate | n
 export default function ChwChildChartPage() {
   const router = useRouter()
   const params = useParams<{ childId: string }>()
+  const { isOnline } = useNetworkStatus()
   const childId = params?.childId ?? "unknown"
   const [userName, setUserName] = useState("")
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
@@ -162,12 +168,18 @@ export default function ChwChildChartPage() {
     const loadChart = async () => {
       setLoadingChart(true)
       try {
-        if (navigator.onLine) {
-          const chart = await getChwChildChart(childId)
-          setRemoteSnapshot(mapChart(chart))
-          return
+        // Try backend only if we believe network is up
+        if (isOnline) {
+          try {
+            const chart = await getChwChildChartAll(childId)
+            setRemoteSnapshot(mapChart(chart))
+            return
+          } catch (apiError) {
+            console.warn("Backend chart fetch failed, falling back to offline cache", apiError)
+          }
         }
 
+        // OFFLINE FALLBACK: Load from IndexedDB
         const localChild = await chwOfflineDb.children.get(childId)
         if (localChild) {
           setRemoteSnapshot({
@@ -180,16 +192,19 @@ export default function ChwChildChartPage() {
             outstandingVaccines: [],
             history: [],
           })
+        } else {
+          setSystemMessage("Child not found in offline cache. Please try again when online.")
         }
       } catch (error) {
         console.error("Failed to load child chart", error)
+        setSystemMessage("Could not load child chart. Please try again.")
       } finally {
         setLoadingChart(false)
       }
     }
 
     loadChart()
-  }, [router, childId])
+  }, [router, childId, isOnline])
 
   useEffect(() => {
     if (!systemMessage) return
@@ -267,6 +282,9 @@ export default function ChwChildChartPage() {
       const stored = await chwStorage.getCHWVaccinationsByChild(childSnapshot.id)
       setPendingVaccinations(stored)
       
+      // Dispatch event to update dashboard map
+      window.dispatchEvent(new Event(VACCINATION_SAVED_EVENT))
+      
       setSystemMessage(`${selectedVaccine.name} saved securely. Will sync when online.`)
       closeAdministerModal()
     } catch (error) {
@@ -309,21 +327,22 @@ export default function ChwChildChartPage() {
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Button asChild variant="ghost" size="sm" className="gap-2">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+            <Button asChild variant="ghost" size="sm" className="shrink-0 gap-1.5 sm:gap-2">
               <Link href="/chw/find-child">
-                <ArrowLeft className="h-4 w-4" /> Offline search
+                <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Offline search</span><span className="sm:hidden">Back</span>
               </Link>
             </Button>
-            <div>
-              <p className="text-sm text-muted-foreground">Offline patient chart</p>
-              <p className="text-lg font-semibold text-foreground">{childSnapshot.name}</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs text-muted-foreground sm:text-sm">Offline patient chart</p>
+              <p className="truncate text-sm font-semibold text-foreground sm:text-lg">{childSnapshot.name}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <NetworkStatusIndicator />
             <ThemeToggle />
-            <div className="flex flex-col items-end">
+            <div className="hidden flex-col items-end sm:flex">
               <span className="text-sm text-muted-foreground">{userName}</span>
               <span className="text-xs text-muted-foreground/80">Community Health Worker</span>
             </div>
@@ -331,7 +350,7 @@ export default function ChwChildChartPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full max-w-5xl px-3 py-4 sm:px-6 sm:py-6">
         {systemMessage ? (
           <Alert className="mb-5">
             <AlertDescription>{systemMessage}</AlertDescription>
@@ -347,15 +366,28 @@ export default function ChwChildChartPage() {
               <CardDescription>Read-only snapshot pulled from backend (or offline cache).</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p className="text-foreground text-base font-semibold">{childSnapshot.name}</p>
-              <p>Age: {childSnapshot.age}</p>
-              <p>Mother: {childSnapshot.motherName}</p>
-              <p>
-                Phone: <span className="font-mono">{childSnapshot.motherPhone}</span>
-              </p>
-              <p className="inline-flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-primary" /> {childSnapshot.village}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 space-y-3">
+                  <p className="text-foreground text-base font-semibold">{childSnapshot.name}</p>
+                  <p>Age: {childSnapshot.age}</p>
+                  <p>Mother: {childSnapshot.motherName}</p>
+                  <p>
+                    Phone: <span className="font-mono">{childSnapshot.motherPhone}</span>
+                  </p>
+                  <p className="inline-flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary" /> {childSnapshot.village}
+                  </p>
+                </div>
+                <TransferOutButton 
+                  childId={childSnapshot.id}
+                  childName={childSnapshot.name}
+                  variant="outline"
+                  onSuccess={() => {
+                    setSystemMessage("Child transferred out. Returning to search...")
+                    setTimeout(() => router.push("/chw/find-child"), 2000)
+                  }}
+                />
+              </div>
             </CardContent>
           </Card>
 
@@ -484,7 +516,7 @@ export default function ChwChildChartPage() {
                 </Button>
                 <Button type="submit" className="gap-2" disabled={saving}>
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Save locally
+                  {isOnline ? "Save" : "Save locally"}
                 </Button>
               </div>
             </form>

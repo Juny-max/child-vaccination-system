@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -16,9 +16,17 @@ import {
   ClipboardList,
 } from "lucide-react"
 import * as chwStorage from "@/lib/chw-offline-storage"
+import { chwBackgroundSync } from "@/lib/chw-offline/background-sync"
 import { getChwDashboardSummary, type ChwVisit } from "@/lib/api/chw"
+import { isBackendAvailable } from "@/lib/network/connectivity"
+import { useNetworkStatus } from "@/lib/hooks/use-network-status"
+import { autoLogoutTimer } from "@/lib/chw-offline/auto-logout"
+import { checkAndClearStaleData, updateLastAccess } from "@/lib/chw-offline/auto-clear"
+import { clearEncryptionKey } from "@/lib/chw-offline/encryption"
 
 import { ThemeToggle } from "@/components/theme-toggle"
+import { NetworkStatusIndicator } from "@/components/chw/network-status-indicator"
+import { SecurityStatusBanner } from "@/components/chw/security-banner"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -61,7 +69,8 @@ const OutreachMap = dynamic(
 
 export default function ChwDashboardPage() {
   const router = useRouter()
-  const [userName, setUserName] = useState("")
+  const visitListSectionRef = useRef<HTMLElement | null>(null)
+  const { isOnline } = useNetworkStatus()
   const [syncState, setSyncState] = useState<SyncState>("offline")
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
@@ -71,6 +80,12 @@ export default function ChwDashboardPage() {
 
   const loadDashboardSummary = async () => {
     try {
+      if (!isOnline) {
+        setSyncState("offline")
+        setSystemMessage("Offline mode active. Data will sync automatically when connection is restored.")
+        return
+      }
+
       const summary = await getChwDashboardSummary()
       const localPending = await chwStorage.getCHWPendingCount()
       setVisitList(
@@ -99,7 +114,6 @@ export default function ChwDashboardPage() {
     const userId = localStorage.getItem("userId")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
-    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
     const hasAuthState = Boolean(userId || accessToken || legacyToken)
 
@@ -129,8 +143,52 @@ export default function ChwDashboardPage() {
       return
     }
 
-    setUserName(name || "Community Health Worker")
+    // Security: Check and clear stale data (7+ days old)
+    checkAndClearStaleData().then((wasCleared) => {
+      if (wasCleared) {
+        setSystemMessage("Offline data was cleared due to 7 days of inactivity (security policy)")
+      }
+    })
+
+    // Security: Update last access timestamp
+    updateLastAccess()
+
+    // Security: Start auto-logout timer (15 minutes idle)
+    autoLogoutTimer.start(
+      () => {
+        // Logout handler
+        console.log("[Security] Auto-logout triggered")
+        clearEncryptionKey()
+        localStorage.clear()
+        sessionStorage.clear()
+        router.push("/auth/login?timeout=1")
+      },
+      (secondsRemaining) => {
+        // Warning handler
+        if (secondsRemaining === 120) {
+          setSystemMessage("⚠️ You will be logged out in 2 minutes due to inactivity")
+        }
+      },
+    )
+
     loadDashboardSummary()
+    chwBackgroundSync.start()
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/chw-service-worker.js")
+        .then((registration) => {
+          console.log("[CHW Dashboard] Service Worker registered:", registration.scope)
+        })
+        .catch((error) => {
+          console.error("[CHW Dashboard] Service Worker registration failed:", error)
+        })
+    }
+
+    return () => {
+      chwBackgroundSync.stop()
+      autoLogoutTimer.stop()
+    }
   }, [router])
 
   useEffect(() => {
@@ -139,6 +197,19 @@ export default function ChwDashboardPage() {
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
 
+  // Reactively update sync state when network status changes
+  useEffect(() => {
+    if (!isOnline && syncState !== "syncing") {
+      setSyncState("offline")
+      setSystemMessage("Connection lost. Operating in offline mode.")
+    } else if (isOnline && syncState === "offline") {
+      // When coming back online, refresh the dashboard
+      setSystemMessage("Connection restored. Refreshing data...")
+      loadDashboardSummary()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline])
+
   useEffect(() => {
     const loadFromIndexedDB = async () => {
       if (typeof window === "undefined") {
@@ -146,12 +217,9 @@ export default function ChwDashboardPage() {
       }
 
       try {
-        // Migrate legacy localStorage data to IndexedDB on first load
         await chwStorage.migrateFromLocalStorage()
-        
-        // Load all vaccinations with GPS coordinates
         const records = await chwStorage.getCHWVaccinationsWithGPS()
-        
+
         const mapPoints: VaccinationMapPoint[] = records.map((record) => ({
           childId: record.childId,
           childName: record.childName,
@@ -225,29 +293,31 @@ export default function ChwDashboardPage() {
     router.push("/")
   }
 
+  const scrollToVisitList = () => {
+    visitListSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">My Outreach · Offline Home</p>
-            <p className="text-lg font-semibold text-foreground">Jakpa CHPS Zone</p>
-            <p className="text-xs text-muted-foreground">Savannah Region · Assigned households cached for offline work</p>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-4">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground sm:text-lg">CHW Dashboard</p>
+            <p className="truncate text-xs text-muted-foreground sm:text-sm">Outreach overview</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <NetworkStatusIndicator />
             <ThemeToggle />
-            <div className="flex flex-col items-end">
-              <span className="text-sm text-muted-foreground">{userName}</span>
-              <span className="text-xs text-muted-foreground/80">Community Health Worker</span>
-            </div>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleLogout}>
+            <Button variant="outline" size="sm" className="h-8 px-3 text-xs sm:h-9 sm:text-sm" onClick={handleLogout}>
               Logout
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full max-w-6xl px-3 py-4 sm:px-6 sm:py-6">
+        <SecurityStatusBanner />
+
         <div className={`mb-6 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium ${syncIndicator.classes}`}>
           {syncIndicator.icon}
           <span>{syncIndicator.label}</span>
@@ -264,34 +334,37 @@ export default function ChwDashboardPage() {
         ) : null}
 
         <section className="grid gap-4 sm:grid-cols-3">
-          <Button asChild className="h-28 flex-col gap-3 text-base">
+          <Button asChild className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base">
             <Link href="/chw/find-child">
               <Search className="h-6 w-6" />
               Find child
             </Link>
           </Button>
-          <Button asChild variant="secondary" className="h-28 flex-col gap-3 text-base">
+          <Button asChild variant="secondary" className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base">
             <Link href="/chw/register-child">
               <UserPlus className="h-6 w-6" />
               Register new child
             </Link>
           </Button>
-          <Button asChild variant="outline" className="h-28 flex-col gap-3 text-base">
-            <Link href="#visit-list">
-              <ClipboardList className="h-6 w-6" />
-              My visit list
-            </Link>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base"
+            onClick={scrollToVisitList}
+          >
+            <ClipboardList className="h-6 w-6" />
+            My visit list
           </Button>
         </section>
 
-        <section id="visit-list" className="mt-8">
+        <section id="visit-list" ref={visitListSectionRef} className="mt-8">
           <Card className="border-primary/40">
             <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <CircleDot className="h-5 w-5 text-primary" /> Assigned visits
                 </CardTitle>
-                <CardDescription>Downloaded for offline rounds. Update status once visit is complete.</CardDescription>
+                <CardDescription>Visits available for your rounds.</CardDescription>
               </div>
               <Badge variant="outline" className="text-xs">
                 {visitList.length} household{visitList.length === 1 ? "" : "s"}
@@ -307,7 +380,7 @@ export default function ChwDashboardPage() {
                       <div>
                         <p className="text-sm font-semibold text-foreground">{task.childName}</p>
                         <p className="text-xs text-muted-foreground">Vaccine due: {task.vaccineDue}</p>
-                        <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                        <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                           <MapPin className="h-3 w-3" /> {task.householdLocation}
                         </p>
                         {task.childId ? (
@@ -334,7 +407,7 @@ export default function ChwDashboardPage() {
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <MapPin className="h-5 w-5 text-primary" /> Outreach vaccination map
                 </CardTitle>
-                <CardDescription>Automatically plots households where offline doses were captured today.</CardDescription>
+                <CardDescription>Locations captured from recorded vaccinations.</CardDescription>
               </div>
               <Badge variant="outline" className="text-xs">
                 {mapPoints.length} site{mapPoints.length === 1 ? "" : "s"}

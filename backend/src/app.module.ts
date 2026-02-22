@@ -8,6 +8,7 @@ import { FacilityModule } from './facility/facility.module';
 import { ChwModule } from './chw/chw.module';
 import { ChatbotController } from './common/chatbot.controller';
 import { ChatbotService } from './common/chatbot.service';
+import { HealthController } from './common/health.controller';
 import { SmsService } from './common/sms.service';
 import { VaccinationSchedulerService } from './common/vaccination-scheduler.service';
 
@@ -39,7 +40,7 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
     // BranchManagerModule, // Julius will implement
     // DataOfficerModule,   // Julius will implement
   ],
-  controllers: [ChatbotController],
+  controllers: [ChatbotController, HealthController],
   providers: [ChatbotService, SmsService, VaccinationSchedulerService],
 })
 export class AppModule {}

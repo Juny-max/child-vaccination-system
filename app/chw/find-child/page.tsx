@@ -3,17 +3,23 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Camera, ChevronLeft, Phone, QrCode, Search } from "lucide-react"
-import { searchChwChildren, type ChwSearchResult } from "@/lib/api/chw"
+import { Camera, ChevronLeft, Loader2, Phone, QrCode, Search, UserPlus } from "lucide-react"
+import { Html5Qrcode } from "html5-qrcode"
+import { searchChwChildren, searchAllChwChildren, type ChwSearchResult } from "@/lib/api/chw"
 import { chwOfflineDb, upsertChildren } from "@/lib/chw-offline/db"
+import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 
 import { ThemeToggle } from "@/components/theme-toggle"
+import { NetworkStatusIndicator } from "@/components/chw/network-status-indicator"
+import { TransferInModal } from "@/components/chw/transfer-in-modal"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 
 type LocalChildRecord = {
   id: string
@@ -30,15 +36,22 @@ type SearchMode = "name" | "phone"
 
 export default function ChwFindChildPage() {
   const router = useRouter()
-  const [userName, setUserName] = useState("")
+  const { isOnline } = useNetworkStatus()
   const [searchMode, setSearchMode] = useState<SearchMode>("name")
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<LocalChildRecord[]>([])
+  const [isSearching, setIsSearching] = useState(false)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [cameraState, setCameraState] = useState<CameraState>("idle")
   const [cameraError, setCameraError] = useState<string | null>(null)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const [availableCameras, setAvailableCameras] = useState<{ id: string; label: string }[]>([])
+  const [currentCameraId, setCurrentCameraId] = useState<string | null>(null)
+  const [showErrorDialog, setShowErrorDialog] = useState(false)
+  const [errorDialogMessage, setErrorDialogMessage] = useState("")
+  const [showTransferInModal, setShowTransferInModal] = useState(false)
+  const scannerRef = useRef<Html5Qrcode | null>(null)
+  const isProcessingScan = useRef(false)
+  const scannerId = "qr-scanner-chw"
 
   useEffect(() => {
     const legacyToken = localStorage.getItem("authToken")
@@ -46,8 +59,6 @@ export default function ChwFindChildPage() {
     const userId = localStorage.getItem("userId")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
-    const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
-
     const hasAuthState = Boolean(userId || accessToken || legacyToken)
 
     if (!hasAuthState) {
@@ -60,25 +71,13 @@ export default function ChwFindChildPage() {
       return
     }
 
-    setUserName(name || "Community Health Worker")
   }, [router])
 
-  useEffect(() => {
-    if (cameraState !== "active") return
-    const videoElement = videoRef.current
-    if (!videoElement) return
-    videoElement.srcObject = streamRef.current
-    return () => {
-      if (videoElement) {
-        videoElement.srcObject = null
-      }
-    }
-  }, [cameraState])
-
+  // Cleanup QR scanner on unmount
   useEffect(() => {
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop())
+      if (scannerRef.current?.isScanning) {
+        scannerRef.current.stop().catch(console.error)
       }
     }
   }, [])
@@ -102,11 +101,17 @@ export default function ChwFindChildPage() {
       return
     }
 
+    setIsSearching(true)
+
     try {
-      if (navigator.onLine) {
-        const backendResults = await searchChwChildren(query)
+      // DUAL SEARCH STRATEGY
+      if (isOnline) {
+        // ONLINE MODE: Search all children without catchment restriction
+        // CHW can help children from any area when online
+        const backendResults = await searchAllChwChildren(query)
         setResults(backendResults.map(mapSearchResult))
 
+        // Background sync: Update IndexedDB with search results
         await upsertChildren(
           backendResults.map((item) => ({
             id: item.id,
@@ -122,12 +127,19 @@ export default function ChwFindChildPage() {
 
         setSystemMessage(
           backendResults.length > 0
-            ? `${backendResults.length} record${backendResults.length === 1 ? "" : "s"} found.`
-            : "No match found in your assigned catchment.",
+            ? `✅ Online: ${backendResults.length} child${backendResults.length === 1 ? "" : "ren"} found (from all areas).`
+            : null,
         )
+
+        if (backendResults.length === 0) {
+          setErrorDialogMessage("No child found in the database. Try a different search term.")
+          setShowErrorDialog(true)
+        }
         return
       }
 
+      // OFFLINE MODE: Search only catchment-filtered IndexedDB
+      // Shows only children synced for this CHW's area
       const normalized = query.trim().toLowerCase()
       const local = await chwOfflineDb.children
         .filter((child) => {
@@ -152,13 +164,15 @@ export default function ChwFindChildPage() {
       setResults(matches)
       setSystemMessage(
         matches.length > 0
-          ? `${matches.length} offline record${matches.length === 1 ? "" : "s"} found.`
-          : "No offline record found.",
+          ? `📱 Offline: ${matches.length} child${matches.length === 1 ? "" : "ren"} found in your catchment area.`
+          : "No offline record found. Connect to internet for wider search.",
       )
     } catch (error) {
       console.error("CHW search failed", error)
       setSystemMessage("Search failed. Please try again.")
       setResults([])
+    } finally {
+      setIsSearching(false)
     }
   }
 
@@ -166,48 +180,221 @@ export default function ChwFindChildPage() {
     if (cameraState === "active" || cameraState === "starting") return
     setCameraError(null)
     setCameraState("starting")
+
+    // Wait for DOM to update with the scanner div
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      streamRef.current = stream
+      // Request camera permission first
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        })
+        // Stop the test stream immediately
+        stream.getTracks().forEach((track) => track.stop())
+      } catch (permError: any) {
+        if (permError.name === "NotAllowedError") {
+          throw new Error("Camera permission denied. Please allow camera access in your browser settings.")
+        } else if (permError.name === "NotFoundError") {
+          throw new Error("No camera found on this device.")
+        } else if (permError.name === "NotReadableError") {
+          throw new Error("Camera is already in use. Please close other apps using the camera.")
+        } else {
+          throw new Error(`Camera error: ${permError.message || "Unable to access camera"}`)
+        }
+      }
+
+      // Verify the element exists
+      const element = document.getElementById(scannerId)
+      if (!element) {
+        throw new Error("Scanner container not found. Please try again.")
+      }
+
+      // Initialize scanner
+      if (!scannerRef.current) {
+        scannerRef.current = new Html5Qrcode(scannerId)
+      }
+
+      // Get available cameras
+      const cameras = await Html5Qrcode.getCameras()
+      if (!cameras || cameras.length === 0) {
+        throw new Error("No cameras detected. Please ensure your camera is connected.")
+      }
+
+      // Store available cameras for switching
+      setAvailableCameras(cameras)
+
+      // Use current camera or prefer back camera for mobile devices
+      const cameraId =
+        currentCameraId ||
+        cameras.find(
+          (cam) =>
+            cam.label.toLowerCase().includes("back") ||
+            cam.label.toLowerCase().includes("rear") ||
+            cam.label.toLowerCase().includes("environment"),
+        )?.id ||
+        cameras[0].id
+
+      setCurrentCameraId(cameraId)
+
+      // Start scanning
+      await scannerRef.current.start(
+        cameraId,
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+        },
+        async (decodedText) => {
+          // Prevent duplicate scans
+          if (isProcessingScan.current) return
+          isProcessingScan.current = true
+
+          // QR code scanned successfully
+          await handleQRCodeScan(decodedText)
+          await stopCamera()
+
+          // Reset after a delay
+          setTimeout(() => {
+            isProcessingScan.current = false
+          }, 2000)
+        },
+        (errorMessage) => {
+          // Scanning error (happens frequently, not critical)
+          if (!errorMessage.includes("NotFoundException")) {
+            console.log("Scan error:", errorMessage)
+          }
+        },
+      )
+
       setCameraState("active")
-      setSystemMessage("Camera ready. Align the CVCC QR to retrieve the child offline.")
+      setSystemMessage("Camera ready. Align the QR code within the frame to identify the child.")
     } catch (error) {
-      console.error("QR camera failed", error)
-      setCameraError("Unable to access camera. Check permissions or switch device.")
+      console.error("Camera initialization failed:", error)
+      const errorMsg = error instanceof Error ? error.message : "Unable to access camera"
+      setCameraError(errorMsg)
       setCameraState("error")
     }
   }
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
+  const stopCamera = async () => {
+    if (scannerRef.current?.isScanning) {
+      try {
+        await scannerRef.current.stop()
+        setCameraState("idle")
+      } catch (error) {
+        console.error("Failed to stop camera", error)
+      }
     }
-    setCameraState("idle")
+  }
+
+  const switchCamera = async () => {
+    if (!availableCameras || availableCameras.length < 2) return
+
+    // Stop current scanner
+    await stopCamera()
+
+    // Find next camera
+    const currentIndex = availableCameras.findIndex((cam) => cam.id === currentCameraId)
+    const nextIndex = (currentIndex + 1) % availableCameras.length
+    setCurrentCameraId(availableCameras[nextIndex].id)
+
+    // Restart with new camera
+    await startCamera()
+  }
+
+  const handleQRCodeScan = async (decodedText: string) => {
+    try {
+      // The QR code should contain the child's ID or CVCC ID
+      // Try to parse it as JSON first, otherwise use as direct ID
+      let childId = decodedText
+
+      try {
+        const parsed = JSON.parse(decodedText)
+        childId = parsed.childId || parsed.id || parsed.cvccId || decodedText
+      } catch {
+        // Not JSON, use as is
+      }
+
+      // Security: Validate the childId format
+      // Must be alphanumeric, hyphens, underscores only (UUID or CVCC format)
+      // Max length 100 chars to prevent abuse
+      if (!childId || typeof childId !== "string") {
+        setSystemMessage("Invalid QR code format. Please scan a valid weighing card QR code.")
+        return
+      }
+
+      const sanitizedId = childId.trim().slice(0, 100)
+      if (!/^[a-zA-Z0-9-_]+$/.test(sanitizedId)) {
+        setSystemMessage("Invalid QR code. This QR code does not contain a valid child ID.")
+        return
+      }
+
+      setSystemMessage("Looking up child record from QR code...")
+
+      // DUAL SEARCH STRATEGY (same as manual search)
+      if (isOnline) {
+        // ONLINE MODE: Search all children without catchment restriction
+        const backendResults = await searchAllChwChildren(sanitizedId)
+        if (backendResults.length > 0) {
+          // Found online, navigate to chart
+          router.push(`/chw/child/${backendResults[0].id}`)
+          return
+        }
+      } else {
+        // OFFLINE MODE: Search only catchment-filtered IndexedDB
+        const localChild = await chwOfflineDb.children.where("cvccId").equals(sanitizedId).first()
+
+        if (localChild) {
+          router.push(`/chw/child/${localChild.id}`)
+          return
+        }
+      }
+
+      // Not found in any mode
+      setErrorDialogMessage(
+        isOnline
+          ? "No child found with this QR code in the database. The QR code may be invalid."
+          : "No child found with this QR code in your offline cache. Connect to internet for wider search."
+      )
+      setShowErrorDialog(true)
+    } catch (error) {
+      console.error("QR scan failed", error)
+      setErrorDialogMessage("QR lookup failed. Please try manual search instead.")
+      setShowErrorDialog(true)
+    }
   }
 
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <ButtonReturn />
-            <div>
-              <p className="text-sm text-muted-foreground">Find child · Offline search</p>
-              <p className="text-lg font-semibold text-foreground">My catchment records</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-foreground sm:text-lg">Find child</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <ThemeToggle />
-            <div className="flex flex-col items-end">
-              <span className="text-sm text-muted-foreground">{userName}</span>
-              <span className="text-xs text-muted-foreground/80">Community Health Worker</span>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowTransferInModal(true)}
+              disabled={!isOnline}
+              className="hidden sm:flex"
+            >
+              <UserPlus className="mr-2 h-4 w-4" />
+              Transfer In
+            </Button>
+            <NetworkStatusIndicator />
+            <div className="hidden sm:block">
+              <ThemeToggle />
             </div>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full max-w-5xl px-3 py-4 sm:px-6 sm:py-6">
         {systemMessage ? (
           <Alert className="mb-4">
             <AlertDescription>{systemMessage}</AlertDescription>
@@ -222,9 +409,13 @@ export default function ChwFindChildPage() {
         <Card className="border-primary/40">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Search className="h-5 w-5 text-primary" /> Search locally cached child
+              <Search className="h-5 w-5 text-primary" /> {isOnline ? "Search all children" : "Search cached children"}
             </CardTitle>
-            <CardDescription>Type the child name or mother phone exactly as recorded during outreach.</CardDescription>
+            <CardDescription>
+              {isOnline
+                ? "Search any child in the database. Results are saved for offline access."
+                : "Search children previously synced to your device. Works without internet."}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <form className="space-y-4" onSubmit={handleSearch}>
@@ -263,10 +454,29 @@ export default function ChwFindChildPage() {
                   className="h-14 rounded-lg border-primary/30 pl-11 text-base"
                 />
               </div>
-              <Button type="submit" className="h-14 w-full sm:w-auto sm:px-8">
-                Search
+              <Button
+                type="submit"
+                disabled={isSearching}
+                className={`h-14 w-full sm:w-auto sm:px-8 transition-all duration-200 ${isSearching ? "scale-[0.98] animate-pulse" : ""}`}
+              >
+                {isSearching ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Searching...
+                  </>
+                ) : (
+                  "Search"
+                )}
               </Button>
             </form>
+
+            {isSearching ? (
+              <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-4">
+                <div className="mx-auto h-24 w-24">
+                  <DotLottieReact src="/Free%20Searching%20Animation.lottie" autoplay loop className="h-full w-full" />
+                </div>
+                <p className="mt-2 text-center text-sm text-muted-foreground">Searching child records...</p>
+              </div>
+            ) : null}
 
             <div className="rounded-lg border border-dashed border-primary/50 bg-primary/5 p-4">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Tip from the field</p>
@@ -318,6 +528,24 @@ export default function ChwFindChildPage() {
           </CardContent>
         </Card>
 
+        {/* Transfer In Button - Mobile Only */}
+        <Card className="mt-6 border-primary/40 sm:hidden">
+          <CardContent className="pt-6">
+            <Button
+              variant="default"
+              className="w-full gap-2"
+              onClick={() => setShowTransferInModal(true)}
+              disabled={!isOnline}
+            >
+              <UserPlus className="h-4 w-4" />
+              Transfer In Child from Another Area
+            </Button>
+            <p className="mt-2 text-xs text-center text-muted-foreground">
+              {isOnline ? "Search across all catchments and add child to your register" : "Internet required for transfer"}
+            </p>
+          </CardContent>
+        </Card>
+
         <Card className="mt-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -329,15 +557,20 @@ export default function ChwFindChildPage() {
             <Button variant="default" className="gap-2" onClick={startCamera} disabled={cameraState === "starting"}>
               <Camera className="h-4 w-4" /> {cameraState === "starting" ? "Opening camera" : "Start scanning"}
             </Button>
-            {cameraState === "active" ? (
+            {cameraState === "active" || cameraState === "starting" ? (
               <div className="space-y-2">
-                <div className="relative overflow-hidden rounded-lg border border-border">
-                  <video ref={videoRef} autoPlay playsInline className="h-56 w-full bg-black/80 object-cover" />
-                  <div className="pointer-events-none absolute inset-0 border-4 border-dashed border-primary/80" />
+                <div id={scannerId} className="overflow-hidden rounded-lg border border-border" />
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={stopCamera} disabled={cameraState === "starting"}>
+                    Stop camera
+                  </Button>
+                  {availableCameras.length > 1 && (
+                    <Button size="sm" variant="secondary" onClick={switchCamera} disabled={cameraState === "starting"}>
+                      <Camera className="h-3 w-3 mr-1" />
+                      Switch camera
+                    </Button>
+                  )}
                 </div>
-                <Button size="sm" variant="outline" onClick={stopCamera}>
-                  Stop camera
-                </Button>
               </div>
             ) : null}
             {cameraState === "error" ? (
@@ -352,6 +585,33 @@ export default function ChwFindChildPage() {
           </CardContent>
         </Card>
       </main>
+
+      <Dialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto mb-2 h-28 w-28">
+              <DotLottieReact src="/Sign%20for%20error%20_%20Flat%20style.lottie" autoplay loop className="h-full w-full" />
+            </div>
+            <DialogTitle className="text-center text-xl">Child Not Found</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-muted-foreground">{errorDialogMessage}</p>
+            <Button className="w-full" onClick={() => setShowErrorDialog(false)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer In Modal */}
+      <TransferInModal
+        open={showTransferInModal}
+        onClose={() => setShowTransferInModal(false)}
+        onSuccess={(childId) => {
+          setSystemMessage(`Child transferred in successfully! Refreshing search...`)
+          // Optionally refresh search results
+        }}
+      />
     </div>
   )
 }

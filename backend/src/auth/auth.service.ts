@@ -313,30 +313,49 @@ export class AuthService {
 
   /**
    * Validate JWT token payload
+   * Gracefully handles Supabase connectivity issues
    */
   async validateUser(payload: TokenPayload): Promise<UserProfileDto | null> {
-    const user = await this.databaseService.getUserById(payload.sub);
+    try {
+      const user = await this.databaseService.getUserById(payload.sub);
 
-    if (!user) {
-      return null;
+      if (!user) {
+        return null;
+      }
+
+      // Legacy seed data uses `status`, newer records also have `is_active`
+      const statusFlag = typeof user.status === 'string' ? user.status === 'active' : true;
+      const booleanFlag = typeof user.is_active === 'boolean' ? user.is_active : true;
+
+      if (!statusFlag || !booleanFlag) {
+        return null;
+      }
+
+      return {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name,
+        role: user.role,
+        phoneNumber: user.phone_number,
+        lastLogin: user.last_login,
+      };
+    } catch (error: any) {
+      // For network/Supabase errors, return null to trigger 401
+      // The frontend will then know auth failed and can handle offline mode
+      if (error.message?.includes('fetch failed') || 
+          error.code === 'ECONNREFUSED' || 
+          error.code === 'ETIMEDOUT') {
+        // Downgraded to debug level - these are handled gracefully
+        // Uncomment to see these warnings: console.warn('[Auth] Temporary database unreachable during JWT validation');
+        return null;
+      }
+      
+      // Only log real errors (not network hiccups)
+      console.error(`[Auth] Failed to validate user ${payload.sub}:`, error.message);
+      
+      // Re-throw other errors
+      throw error;
     }
-
-    // Legacy seed data uses `status`, newer records also have `is_active`
-    const statusFlag = typeof user.status === 'string' ? user.status === 'active' : true;
-    const booleanFlag = typeof user.is_active === 'boolean' ? user.is_active : true;
-
-    if (!statusFlag || !booleanFlag) {
-      return null;
-    }
-
-    return {
-      id: user.id,
-      email: user.email,
-      fullName: user.full_name,
-      role: user.role,
-      phoneNumber: user.phone_number,
-      lastLogin: user.last_login,
-    };
   }
 
   /**

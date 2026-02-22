@@ -4,9 +4,15 @@
  * Replaces localStorage storage for sensitive health data with GPS coordinates
  */
 
+import { encryptObject, decryptObject } from './chw-offline/encryption';
+import { logDataAccess } from './chw-offline/audit-log';
+
 const DB_NAME = 'cvcc_chw_offline';
 const DB_VERSION = 1;
 const STORE_NAME = 'chw_vaccinations';
+
+// Sensitive fields that should be encrypted
+const VACCINATION_SENSITIVE_FIELDS = ['childName', 'vaccineName', 'notes'] as const;
 
 export type CHWVaccinationRecord = {
   childId: string;
@@ -59,12 +65,18 @@ export async function saveCHWVaccination(record: Omit<CHWVaccinationRecord, 'tim
     timestamp: Date.now(),
   };
 
+  // Encrypt sensitive fields
+  const encryptedRecord = await encryptObject(fullRecord, VACCINATION_SENSITIVE_FIELDS);
+
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
-    const request = store.put(fullRecord);
+    const request = store.put(encryptedRecord);
 
     request.onsuccess = () => {
+      // Log the write operation
+      logDataAccess('write', 'chw_vaccination', 1);
+
       // Dispatch event for dashboard to refresh
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('chw-vaccination-saved', { detail: fullRecord }));
@@ -87,7 +99,21 @@ export async function getCHWVaccinationsByChild(childId: string): Promise<CHWVac
     const index = store.index('childId');
     const request = index.getAll(childId);
 
-    request.onsuccess = () => resolve(request.result || []);
+    request.onsuccess = async () => {
+      const encryptedRecords = request.result || [];
+      
+      // Decrypt all records
+      const decryptedRecords = await Promise.all(
+        encryptedRecords.map(record => 
+          decryptObject(record, VACCINATION_SENSITIVE_FIELDS)
+        )
+      );
+
+      // Log the read operation
+      logDataAccess('read', 'chw_vaccination', decryptedRecords.length, { childId });
+
+      resolve(decryptedRecords);
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -103,11 +129,23 @@ export async function getAllCHWVaccinations(): Promise<CHWVaccinationRecord[]> {
     const store = transaction.objectStore(STORE_NAME);
     const request = store.getAll();
 
-    request.onsuccess = () => {
-      const records = request.result || [];
+    request.onsuccess = async () => {
+      const encryptedRecords = request.result || [];
+      
+      // Decrypt all records
+      const decryptedRecords = await Promise.all(
+        encryptedRecords.map(record => 
+          decryptObject(record, VACCINATION_SENSITIVE_FIELDS)
+        )
+      );
+
       // Sort by timestamp descending (most recent first)
-      records.sort((a, b) => b.timestamp - a.timestamp);
-      resolve(records);
+      decryptedRecords.sort((a, b) => b.timestamp - a.timestamp);
+
+      // Log the read operation
+      logDataAccess('read', 'chw_vaccination', decryptedRecords.length);
+
+      resolve(decryptedRecords);
     };
     request.onerror = () => reject(request.error);
   });
@@ -139,7 +177,11 @@ export async function deleteCHWVaccination(
     const store = transaction.objectStore(STORE_NAME);
     const request = store.delete([childId, vaccineId, recordedDate]);
 
-    request.onsuccess = () => resolve();
+    request.onsuccess = () => {
+      // Log the delete operation
+      logDataAccess('delete', 'chw_vaccination', 1, { childId, vaccineId, recordedDate });
+      resolve();
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -166,12 +208,19 @@ export async function getCHWPendingCount(): Promise<number> {
 export async function clearAllCHWVaccinations(): Promise<void> {
   const db = await openDB();
 
+  // Get count before clearing for audit log
+  const count = await getCHWPendingCount();
+
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
     const request = store.clear();
 
-    request.onsuccess = () => resolve();
+    request.onsuccess = () => {
+      // Log the clear operation
+      logDataAccess('delete', 'chw_vaccination', count, { operation: 'clear_all' });
+      resolve();
+    };
     request.onerror = () => reject(request.error);
   });
 }

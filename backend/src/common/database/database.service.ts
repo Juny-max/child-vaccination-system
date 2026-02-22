@@ -26,9 +26,18 @@ export class DatabaseService implements OnModuleInit {
         autoRefreshToken: true,
         persistSession: false,
       },
+      global: {
+        headers: {
+          'x-application-name': 'cvcc-backend',
+          'Connection': 'keep-alive', // Reuse connections
+        },
+      },
+      db: {
+        schema: 'public',
+      },
     });
 
-    console.log('✅ Supabase client initialized');
+    console.log('✅ Supabase client initialized with connection pooling');
   }
 
   /**
@@ -403,17 +412,40 @@ export class DatabaseService implements OnModuleInit {
   }
 
   /**
-   * Get user by ID
+   * Get user by ID with retry logic for transient network failures
    */
   async getUserById(userId: string) {
-    const { data, error } = await this._supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
+    const maxRetries = 2;
+    let lastError: any;
 
-    if (error) throw new Error(error.message);
-    return data;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const { data, error } = await this._supabase
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (error) throw new Error(error.message);
+        return data;
+      } catch (error: any) {
+        lastError = error;
+        
+        // Only retry on network errors, not on data errors
+        const isNetworkError = error.message?.includes('fetch failed') || 
+                              error.code === 'ECONNREFUSED' ||
+                              error.code === 'ETIMEDOUT';
+        
+        if (!isNetworkError || attempt === maxRetries) {
+          break;
+        }
+        
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 100));
+      }
+    }
+
+    throw lastError;
   }
 
   /**

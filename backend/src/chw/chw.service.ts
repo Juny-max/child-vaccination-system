@@ -5,6 +5,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
+import {
+  SyncCHWVaccinationsDto,
+  SyncResultDto,
+  CHWVaccinationDto,
+} from './dto';
 
 type ChwOfflineChild = {
   id: string;
@@ -84,6 +89,8 @@ export class ChwService {
   }
 
   private async getAssignedChildren(chwUserId: string): Promise<AssignedChild[]> {
+    console.log(`[CHW getAssignedChildren] Looking for catchments assigned to CHW: ${chwUserId}`);
+    
     const { data: catchments, error: catchmentError } = await this.db.supabase
       .from('catchment_areas')
       .select('id, community')
@@ -93,12 +100,15 @@ export class ChwService {
       throw new BadRequestException(catchmentError.message);
     }
 
+    console.log(`[CHW getAssignedChildren] Found ${(catchments || []).length} catchment areas:`, catchments);
+
     const catchmentIds = (catchments || []).map((item: any) => item.id);
     const catchmentMap = new Map<string, string | undefined>(
       (catchments || []).map((item: any) => [item.id, item.community]),
     );
 
     if (catchmentIds.length === 0) {
+      console.log(`[CHW getAssignedChildren] No catchments found for CHW ${chwUserId}`);
       return [];
     }
 
@@ -128,6 +138,8 @@ export class ChwService {
     if (guardiansError) {
       throw new BadRequestException(guardiansError.message);
     }
+
+    console.log(`[CHW getAssignedChildren] Found ${(guardians || []).length} guardians in catchments`);
 
     const deduped = new Map<string, AssignedChild>();
 
@@ -162,6 +174,8 @@ export class ChwService {
         });
       });
     });
+
+    console.log(`[CHW getAssignedChildren] Total unique children found: ${deduped.size}`);
 
     return Array.from(deduped.values());
   }
@@ -212,6 +226,17 @@ export class ChwService {
 
     const assignedChildren = await this.getAssignedChildren(chwUserId);
 
+    console.log(`[CHW Search] User ID: ${chwUserId}`);
+    console.log(`[CHW Search] Query: "${query}"`);
+    console.log(`[CHW Search] Total assigned children: ${assignedChildren.length}`);
+    console.log(`[CHW Search] Assigned children:`, assignedChildren.map(c => ({
+      name: c.fullName,
+      cvccId: c.cvccId,
+      guardianName: c.guardianName,
+      guardianPhone: c.guardianPhone,
+      catchmentAreaId: c.catchmentAreaId
+    })));
+
     const matches = assignedChildren.filter((child) => {
       return (
         child.fullName.toLowerCase().includes(normalized) ||
@@ -245,6 +270,191 @@ export class ChwService {
     );
   }
 
+  /**
+   * Search all children without catchment restriction
+   * Used when CHW is online and can help children from any area
+   */
+  async searchAllChildren(query: string, chwUserId: string) {
+    const normalized = (query || '').trim().toLowerCase();
+    if (!normalized) {
+      return [];
+    }
+
+    console.log(`[CHW Search All] User ID: ${chwUserId}`);
+    console.log(`[CHW Search All] Query: "${query}"`);
+
+    // Strategy 1: Search children by name or CVCC ID
+    const { data: childrenByName, error: nameError } = await this.db.supabase
+      .from('children')
+      .select(`
+        id,
+        cvcc_id,
+        full_name,
+        date_of_birth,
+        gender,
+        primary_facility_id,
+        child_guardian!inner (
+          is_primary,
+          guardians (
+            id,
+            full_name,
+            phone_primary,
+            community,
+            city,
+            catchment_area_id
+          )
+        )
+      `)
+      .or(`full_name.ilike.%${normalized}%,cvcc_id.ilike.%${normalized}%`)
+      .limit(20);
+
+    if (nameError) {
+      throw new BadRequestException(nameError.message);
+    }
+
+    // Strategy 2: Search guardians by phone, then get their children
+    const phoneNormalized = normalized.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+    console.log(`[CHW Search All] Phone normalized: "${phoneNormalized}"`);
+    
+    const { data: guardiansByPhone, error: phoneError } = await this.db.supabase
+      .from('guardians')
+      .select(`
+        id,
+        full_name,
+        phone_primary,
+        community,
+        city,
+        catchment_area_id,
+        child_guardian!inner (
+          is_primary,
+          children (
+            id,
+            cvcc_id,
+            full_name,
+            date_of_birth,
+            gender,
+            primary_facility_id
+          )
+        )
+      `)
+      .ilike('phone_primary', `%${phoneNormalized}%`)
+      .limit(20);
+
+    if (phoneError) {
+      console.error('[CHW Search All] Phone search error:', phoneError);
+    } else {
+      console.log(`[CHW Search All] Guardians found by phone: ${(guardiansByPhone || []).length}`);
+      if ((guardiansByPhone || []).length > 0) {
+        console.log('[CHW Search All] Sample guardian phone:', (guardiansByPhone || [])[0]?.phone_primary);
+      }
+    }
+
+    // Combine results and deduplicate by child ID
+    const childrenMap = new Map();
+
+    // Add children from name search
+    (childrenByName || []).forEach((child: any) => {
+      if (!childrenMap.has(child.id)) {
+        childrenMap.set(child.id, child);
+      }
+    });
+
+    // Add children from phone search
+    (guardiansByPhone || []).forEach((guardian: any) => {
+      const guardianLinks = Array.isArray(guardian.child_guardian)
+        ? guardian.child_guardian
+        : [];
+      guardianLinks.forEach((link: any) => {
+        const child = Array.isArray(link.children) ? link.children[0] : link.children;
+        if (child && !childrenMap.has(child.id)) {
+          // Reconstruct child object with guardian data
+          childrenMap.set(child.id, {
+            ...child,
+            child_guardian: [{
+              is_primary: link.is_primary,
+              guardians: {
+                id: guardian.id,
+                full_name: guardian.full_name,
+                phone_primary: guardian.phone_primary,
+                community: guardian.community,
+                city: guardian.city,
+                catchment_area_id: guardian.catchment_area_id,
+              }
+            }]
+          });
+        }
+      });
+    });
+
+    const childrenWithGuardians = Array.from(childrenMap.values()).slice(0, 20);
+
+    console.log(`[CHW Search All] Found ${childrenWithGuardians.length} children (${(childrenByName || []).length} by name, ${(guardiansByPhone || []).flatMap((g: any) => g.child_guardian || []).length} by phone)`);
+
+    const results = await Promise.all(
+      (childrenWithGuardians || []).map(async (child: any) => {
+        // Find primary guardian
+        const guardianLinks = Array.isArray(child.child_guardian)
+          ? child.child_guardian
+          : [];
+        const primaryLink = guardianLinks.find((link: any) => link.is_primary);
+        const guardianData = Array.isArray(primaryLink?.guardians)
+          ? primaryLink.guardians[0]
+          : primaryLink?.guardians;
+
+        const upcoming = await this.db.getUpcomingVaccinations(
+          child.id,
+          child.date_of_birth,
+        );
+        const next: any = (upcoming || [])[0];
+        const nextVaccineName = this.readVaccineName(next?.vaccine);
+
+        return {
+          id: child.id,
+          childId: child.cvcc_id,
+          childName: child.full_name,
+          motherName: guardianData?.full_name || 'Unknown',
+          motherPhone: guardianData?.phone_primary || 'N/A',
+          nextVaccine: nextVaccineName || 'Review chart',
+          village: guardianData?.community || guardianData?.city || 'Unknown',
+          dateOfBirth: child.date_of_birth,
+          gender: child.gender,
+          catchmentAreaId: guardianData?.catchment_area_id,
+        };
+      }),
+    );
+
+    return results;
+  }
+
+  /**
+   * Search mothers/guardians directly by name or phone
+   * Used by CHW minimal registration autocomplete
+   */
+  async searchMothers(query: string) {
+    const normalized = (query || '').trim().toLowerCase();
+    if (!normalized) {
+      return [];
+    }
+
+    const compact = normalized.replace(/\s+/g, '');
+
+    const { data, error } = await this.db.supabase
+      .from('guardians')
+      .select('id, full_name, phone_primary')
+      .or(`full_name.ilike.%${normalized}%,phone_primary.ilike.%${compact}%`)
+      .limit(10);
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    return (data || []).map((guardian: any) => ({
+      id: guardian.id,
+      name: guardian.full_name,
+      phone: guardian.phone_primary || '',
+    }));
+  }
+
   async getChildChart(childId: string, chwUserId: string) {
     const assignedChildren = await this.getAssignedChildren(chwUserId);
     const child = assignedChildren.find((entry) => entry.id === childId);
@@ -266,6 +476,82 @@ export class ChwService {
       motherName: child.guardianName || 'Unknown',
       motherPhone: child.guardianPhone || 'N/A',
       village: child.village || 'Assigned catchment',
+      outstandingVaccines: (upcoming || []).map((item: any) => ({
+        id: `${this.readVaccineId(item.vaccine) || item.dose_number}-${item.dose_number}`,
+        name: this.readVaccineName(item.vaccine) || 'Scheduled vaccine',
+        status: item.isOverdue ? 'overdue' : 'due',
+        scheduledDate: this.toReadableDate(item.dueDate),
+      })),
+      history: (history || []).map((event: any) => ({
+        id: event.id,
+        name: this.readVaccineName(event.vaccine) || 'Vaccine',
+        status: 'completed',
+        scheduledDate: this.toReadableDate(event.administered_date),
+        administeredDate: this.toReadableDate(event.administered_date),
+      })),
+    };
+  }
+
+  /**
+   * Get child chart without catchment restriction
+   * Used when CHW is online and can help children from any area
+   */
+  async getChildChartAll(childId: string, chwUserId: string) {
+    console.log(`[CHW Chart All] User ID: ${chwUserId}, Child ID: ${childId}`);
+
+    // Get child data without catchment filter
+    const { data: child, error: childError } = await this.db.supabase
+      .from('children')
+      .select(`
+        id,
+        cvcc_id,
+        full_name,
+        date_of_birth,
+        gender,
+        primary_facility_id,
+        child_guardian!inner (
+          is_primary,
+          guardians (
+            id,
+            full_name,
+            phone_primary,
+            community,
+            city,
+            catchment_area_id
+          )
+        )
+      `)
+      .eq('id', childId)
+      .single();
+
+    if (childError || !child) {
+      throw new NotFoundException('Child not found');
+    }
+
+    // Find primary guardian
+    const guardianLinks = Array.isArray(child.child_guardian)
+      ? child.child_guardian
+      : [];
+    const primaryLink = guardianLinks.find((link: any) => link.is_primary);
+    const guardianData = Array.isArray(primaryLink?.guardians)
+      ? primaryLink.guardians[0]
+      : primaryLink?.guardians;
+
+    const history = await this.db.getVaccinationHistory(child.id);
+    const upcoming = await this.db.getUpcomingVaccinations(
+      child.id,
+      child.date_of_birth,
+    );
+
+    console.log(`[CHW Chart All] Found child: ${child.full_name}`);
+
+    return {
+      id: child.id,
+      name: child.full_name,
+      age: this.toAgeLabel(child.date_of_birth),
+      motherName: guardianData?.full_name || 'Unknown',
+      motherPhone: guardianData?.phone_primary || 'N/A',
+      village: guardianData?.community || guardianData?.city || 'Unknown area',
       outstandingVaccines: (upcoming || []).map((item: any) => ({
         id: `${this.readVaccineId(item.vaccine) || item.dose_number}-${item.dose_number}`,
         name: this.readVaccineName(item.vaccine) || 'Scheduled vaccine',
@@ -401,4 +687,334 @@ export class ChwService {
       fetchedAt: new Date().toISOString(),
     };
   }
+
+  /**
+   * Sync offline CHW vaccinations to the database
+   * Accepts batch vaccinations with GPS coordinates
+   */
+  async syncOfflineVaccinations(
+    dto: SyncCHWVaccinationsDto,
+    chwUserId: string,
+  ): Promise<SyncResultDto> {
+    const result: SyncResultDto = {
+      synced: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    // Process each vaccination
+    for (const vaccination of dto.vaccinations) {
+      try {
+        // Lookup vaccine by name to get vaccine_id
+        const { data: vaccine, error: vaccineError } = await this.db.supabase
+          .from('vaccines')
+          .select('id, name')
+          .eq('name', vaccination.vaccineName)
+          .single();
+
+        if (vaccineError || !vaccine) {
+          result.failed++;
+          result.errors.push({
+            vaccination,
+            reason: `Vaccine not found: ${vaccination.vaccineName}`,
+          });
+          continue;
+        }
+
+        // Build notes with GPS coordinates if available
+        let notes = vaccination.notes || '';
+        if (
+          typeof vaccination.latitude === 'number' &&
+          typeof vaccination.longitude === 'number'
+        ) {
+          const gpsData = JSON.stringify({
+            latitude: vaccination.latitude,
+            longitude: vaccination.longitude,
+            recordedAt: vaccination.recordedDate,
+          });
+          notes = notes ? `${notes}\n\nGPS: ${gpsData}` : `GPS: ${gpsData}`;
+        }
+
+        // Insert vaccination event
+        const { error: insertError } = await this.db.supabase
+          .from('vaccination_events')
+          .insert({
+            child_id: vaccination.childId,
+            vaccine_id: vaccine.id,
+            dose_number: 1, // Default to dose 1 for CHW field visits
+            administered_date: vaccination.recordedDate,
+            administered_by_user_id: chwUserId,
+            batch_number: null, // CHW field visits don't have batch numbers
+            lot_number: null,
+            expiry_date: null,
+            vaccination_site: null, // Could be inferred from GPS but keeping simple
+            status: 'completed',
+            notes: notes || null,
+          });
+
+        if (insertError) {
+          result.failed++;
+          result.errors.push({
+            vaccination,
+            reason: `Database error: ${insertError.message}`,
+          });
+          continue;
+        }
+
+        result.synced++;
+      } catch (error) {
+        result.failed++;
+        result.errors.push({
+          vaccination,
+          reason: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Transfer Out: Remove child from CHW's catchment area
+   * Sets child's catchment_area_id to NULL (soft disconnect)
+   * Used when a mother/child leaves the area
+   */
+  async transferOut(childId: string, chwUserId: string, reason?: string) {
+    console.log(`[CHW TransferOut] CHW ${chwUserId} transferring out child ${childId}`);
+
+    // Get CHW's catchment area(s)
+    const { data: chwCatchments } = await this.db.supabase
+      .from('catchment_areas')
+      .select('id, name')
+      .eq('assigned_chw_id', chwUserId);
+
+    if (!chwCatchments || chwCatchments.length === 0) {
+      throw new ForbiddenException('CHW has no assigned catchment areas');
+    }
+
+    const chwCatchmentIds = chwCatchments.map(c => c.id);
+
+    // Get child's current info
+    const { data: child, error: childError } = await this.db.supabase
+      .from('children')
+      .select('id, full_name, catchment_area_id')
+      .eq('id', childId)
+      .single();
+
+    if (childError || !child) {
+      throw new NotFoundException(`Child with ID ${childId} not found`);
+    }
+
+    // Verify child is in CHW's catchment
+    if (!child.catchment_area_id || !chwCatchmentIds.includes(child.catchment_area_id)) {
+      throw new ForbiddenException(
+        'Cannot transfer out: This child is not in your assigned catchment area'
+      );
+    }
+
+    // Get catchment name for audit log
+    const previousCatchment = chwCatchments.find(c => c.id === child.catchment_area_id);
+
+    // Set catchment_area_id to NULL
+    const { error: updateError } = await this.db.supabase
+      .from('children')
+      .update({ catchment_area_id: null })
+      .eq('id', childId);
+
+    if (updateError) {
+      throw new BadRequestException(`Transfer out failed: ${updateError.message}`);
+    }
+
+    // Log the transfer in audit_logs
+    await this.db.supabase.from('audit_logs').insert({
+      user_id: chwUserId,
+      action: 'transfer_out',
+      resource_type: 'child',
+      resource_id: childId,
+      details: {
+        childName: child.full_name,
+        previousCatchment: previousCatchment?.name || 'Unknown',
+        reason: reason || 'Family relocated',
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    return {
+      success: true,
+      message: `${child.full_name} transferred out successfully`,
+      childId: child.id,
+      childName: child.full_name,
+      previousCatchment: previousCatchment?.name,
+      newCatchment: null,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Transfer In: Add child to CHW's catchment area
+   * Updates child's catchment_area_id to CHW's assigned catchment
+   * Used when a new mother arrives in the area (found via global search)
+   */
+  async transferIn(childId: string, chwUserId: string, notes?: string) {
+    console.log(`[CHW TransferIn] CHW ${chwUserId} transferring in child ${childId}`);
+
+    // Get CHW's primary catchment area
+    const { data: chwCatchments } = await this.db.supabase
+      .from('catchment_areas')
+      .select('id, name, community')
+      .eq('assigned_chw_id', chwUserId)
+      .limit(1);
+
+    if (!chwCatchments || chwCatchments.length === 0) {
+      throw new ForbiddenException('CHW has no assigned catchment areas');
+    }
+
+    const chwCatchment = chwCatchments[0];
+
+    // Get child's current info
+    const { data: child, error: childError } = await this.db.supabase
+      .from('children')
+      .select('id, full_name, catchment_area_id')
+      .eq('id', childId)
+      .single();
+
+    if (childError || !child) {
+      throw new NotFoundException(`Child with ID ${childId} not found`);
+    }
+
+    // Check if child is already in this CHW's catchment
+    if (child.catchment_area_id === chwCatchment.id) {
+      return {
+        success: true,
+        message: `${child.full_name} is already in your catchment area`,
+        childId: child.id,
+        childName: child.full_name,
+        previousCatchment: chwCatchment.name,
+        newCatchment: chwCatchment.name,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    // Store previous catchment for audit
+    let previousCatchmentName = 'None (was transferred out)';
+    if (child.catchment_area_id) {
+      const { data: prevCatchment } = await this.db.supabase
+        .from('catchment_areas')
+        .select('name')
+        .eq('id', child.catchment_area_id)
+        .single();
+      if (prevCatchment) {
+        previousCatchmentName = prevCatchment.name;
+      }
+    }
+
+    // Update child's catchment_area_id to CHW's catchment
+    const { error: updateError } = await this.db.supabase
+      .from('children')
+      .update({ catchment_area_id: chwCatchment.id })
+      .eq('id', childId);
+
+    if (updateError) {
+      throw new BadRequestException(`Transfer in failed: ${updateError.message}`);
+    }
+
+    // Log the transfer in audit_logs
+    await this.db.supabase.from('audit_logs').insert({
+      user_id: chwUserId,
+      action: 'transfer_in',
+      resource_type: 'child',
+      resource_id: childId,
+      details: {
+        childName: child.full_name,
+        previousCatchment: previousCatchmentName,
+        newCatchment: chwCatchment.name,
+        catchmentCommunity: chwCatchment.community,
+        notes: notes || 'Family relocated to this area',
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    return {
+      success: true,
+      message: `${child.full_name} transferred in successfully. Now in your local register.`,
+      childId: child.id,
+      childName: child.full_name,
+      previousCatchment: previousCatchmentName,
+      newCatchment: chwCatchment.name,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Get CHW's local register (children in their catchment)
+   * Uses child's direct catchment_area_id instead of guardian's
+   */
+  async getLocalRegister(chwUserId: string) {
+    console.log(`[CHW getLocalRegister] Fetching for CHW ${chwUserId}`);
+
+    // Get CHW's catchment areas
+    const { data: catchments } = await this.db.supabase
+      .from('catchment_areas')
+      .select('id, name, community')
+      .eq('assigned_chw_id', chwUserId);
+
+    if (!catchments || catchments.length === 0) {
+      console.log(`[CHW getLocalRegister] No catchments found for CHW ${chwUserId}`);
+      return [];
+    }
+
+    const catchmentIds = catchments.map(c => c.id);
+
+    // Query children directly by catchment_area_id
+    const { data: children, error } = await this.db.supabase
+      .from('children')
+      .select(`
+        id,
+        cvcc_id,
+        full_name,
+        date_of_birth,
+        gender,
+        primary_facility_id,
+        catchment_area_id,
+        child_guardian!inner (
+          is_primary,
+          guardians (
+            id,
+            full_name,
+            phone_primary
+          )
+        )
+      `)
+      .in('catchment_area_id', catchmentIds)
+      .eq('is_active', true)
+      .order('full_name');
+
+    if (error) {
+      throw new BadRequestException(`Failed to fetch local register: ${error.message}`);
+    }
+
+    // Transform to frontend format
+    const register = (children || []).map((child: any) => {
+      const primaryGuardian = (child.child_guardian || [])
+        .find((cg: any) => cg.is_primary && cg.guardians)
+        ?.guardians;
+
+      return {
+        id: child.id,
+        cvccId: child.cvcc_id,
+        fullName: child.full_name,
+        dateOfBirth: child.date_of_birth,
+        gender: child.gender,
+        primaryFacilityId: child.primary_facility_id,
+        catchmentAreaId: child.catchment_area_id,
+        guardianName: primaryGuardian?.full_name || 'Unknown',
+        guardianPhone: primaryGuardian?.phone_primary || 'N/A',
+      };
+    });
+
+    console.log(`[CHW getLocalRegister] Found ${register.length} children in catchments`);
+
+    return register;
+  }
 }
+

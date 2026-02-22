@@ -4,9 +4,11 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { CheckCircle2, ChevronLeft, Compass, Loader2, MapPin, Save } from "lucide-react"
-import { queueChwOfflineRegistration } from "@/lib/api/chw"
+import { queueChwOfflineRegistration, searchChwMothers, type ChwMotherSearchResult } from "@/lib/api/chw"
+import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 
 import { ThemeToggle } from "@/components/theme-toggle"
+import { NetworkStatusIndicator } from "@/components/chw/network-status-indicator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -25,6 +27,11 @@ type RegistrationForm = {
   longitude?: number
 }
 
+type MotherSuggestion = {
+  name: string
+  phone: string
+}
+
 const initialForm: RegistrationForm = {
   motherName: "",
   motherPhone: "",
@@ -35,12 +42,16 @@ const initialForm: RegistrationForm = {
 
 export default function ChwRegisterChildPage() {
   const router = useRouter()
+  const { isOnline } = useNetworkStatus()
   const [userName, setUserName] = useState("")
   const [step, setStep] = useState<RegistrationStep>(1)
   const [form, setForm] = useState<RegistrationForm>(initialForm)
   const [errors, setErrors] = useState<Partial<Record<keyof RegistrationForm, string>>>({})
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [motherSuggestions, setMotherSuggestions] = useState<MotherSuggestion[]>([])
+  const [showMotherSuggestions, setShowMotherSuggestions] = useState(false)
+  const [loadingMotherSuggestions, setLoadingMotherSuggestions] = useState(false)
   const [gpsStatus, setGpsStatus] = useState<"idle" | "locating" | "captured" | "error">("idle")
   const [gpsError, setGpsError] = useState<string | null>(null)
 
@@ -72,6 +83,43 @@ export default function ChwRegisterChildPage() {
     const timeout = window.setTimeout(() => setSystemMessage(null), 5000)
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
+
+  useEffect(() => {
+    const query = form.motherName.trim()
+
+    if (!isOnline || step !== 1 || query.length < 2) {
+      setMotherSuggestions([])
+      setShowMotherSuggestions(false)
+      setLoadingMotherSuggestions(false)
+      return
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setLoadingMotherSuggestions(true)
+        const results = await searchChwMothers(query)
+
+        setMotherSuggestions(
+          results
+            .filter((entry: ChwMotherSearchResult) => !!entry.name && !!entry.phone)
+            .map((entry: ChwMotherSearchResult) => ({
+              name: entry.name,
+              phone: entry.phone,
+            }))
+            .slice(0, 6),
+        )
+        setShowMotherSuggestions(true)
+      } catch (error) {
+        console.error("Failed to load mother suggestions", error)
+        setMotherSuggestions([])
+        setShowMotherSuggestions(false)
+      } finally {
+        setLoadingMotherSuggestions(false)
+      }
+    }, 350)
+
+    return () => window.clearTimeout(timeout)
+  }, [form.motherName, isOnline, step])
 
   const updateForm = <Field extends keyof RegistrationForm>(field: Field, value: RegistrationForm[Field]) => {
     setForm((previous) => ({ ...previous, [field]: value }))
@@ -174,6 +222,13 @@ export default function ChwRegisterChildPage() {
     }
   }
 
+  const selectMotherSuggestion = (suggestion: MotherSuggestion) => {
+    updateForm("motherName", suggestion.name)
+    updateForm("motherPhone", suggestion.phone)
+    setMotherSuggestions([])
+    setShowMotherSuggestions(false)
+  }
+
   const gpsButtonLabel = () => {
     switch (gpsStatus) {
       case "locating":
@@ -188,17 +243,18 @@ export default function ChwRegisterChildPage() {
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <ButtonBack />
-            <div>
-              <p className="text-sm text-muted-foreground">Register child · Offline form</p>
-              <p className="text-lg font-semibold text-foreground">Door-to-door capture</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs text-muted-foreground sm:text-sm">Register child · Offline form</p>
+              <p className="truncate text-sm font-semibold text-foreground sm:text-lg">Door-to-door capture</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <NetworkStatusIndicator />
             <ThemeToggle />
-            <div className="flex flex-col items-end">
+            <div className="hidden flex-col items-end sm:flex">
               <span className="text-sm text-muted-foreground">{userName}</span>
               <span className="text-xs text-muted-foreground/80">Community Health Worker</span>
             </div>
@@ -206,7 +262,7 @@ export default function ChwRegisterChildPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full max-w-4xl px-3 py-4 sm:px-6 sm:py-6">
         {systemMessage ? (
           <Alert className="mb-4">
             <AlertDescription>{systemMessage}</AlertDescription>
@@ -232,10 +288,39 @@ export default function ChwRegisterChildPage() {
                     <Input
                       id="mother-name"
                       value={form.motherName}
-                      onChange={(event) => updateForm("motherName", event.target.value)}
+                      onChange={(event) => {
+                        updateForm("motherName", event.target.value)
+                        setShowMotherSuggestions(true)
+                      }}
                       placeholder="e.g. Child Nyarko"
+                      autoComplete="off"
                       aria-invalid={errors.motherName ? "true" : undefined}
                     />
+                    {isOnline && showMotherSuggestions ? (
+                      <div className="mt-2 rounded-md border border-border bg-background">
+                        {loadingMotherSuggestions ? (
+                          <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Checking existing mothers...
+                          </div>
+                        ) : motherSuggestions.length > 0 ? (
+                          <div className="py-1">
+                            {motherSuggestions.map((suggestion) => (
+                              <button
+                                key={`${suggestion.name}-${suggestion.phone}`}
+                                type="button"
+                                onClick={() => selectMotherSuggestion(suggestion)}
+                                className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-muted"
+                              >
+                                <span className="text-sm text-foreground">{suggestion.name}</span>
+                                <span className="text-xs text-muted-foreground">{suggestion.phone}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : form.motherName.trim().length >= 2 ? (
+                          <p className="px-3 py-2 text-xs text-muted-foreground">No existing mother found.</p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {errors.motherName ? (
                       <p className="text-xs text-destructive">{errors.motherName}</p>
                     ) : (
