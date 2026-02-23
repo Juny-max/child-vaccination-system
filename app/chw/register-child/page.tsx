@@ -12,6 +12,7 @@ import { NetworkStatusIndicator } from "@/components/chw/network-status-indicato
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
@@ -370,12 +371,20 @@ export default function ChwRegisterChildPage() {
                   </div>
                   <div>
                     <Label htmlFor="child-dob">Date of birth</Label>
-                    <Input
-                      id="child-dob"
-                      type="date"
-                      value={form.childDob}
-                      onChange={(event) => updateForm("childDob", event.target.value)}
-                      aria-invalid={errors.childDob ? "true" : undefined}
+                    <DatePicker
+                      date={form.childDob ? new Date(`${form.childDob}T00:00:00`) : undefined}
+                      onDateChange={(selectedDate) => {
+                        if (!selectedDate) {
+                          updateForm("childDob", "")
+                          return
+                        }
+                        const year = selectedDate.getFullYear()
+                        const month = String(selectedDate.getMonth() + 1).padStart(2, "0")
+                        const day = String(selectedDate.getDate()).padStart(2, "0")
+                        updateForm("childDob", `${year}-${month}-${day}`)
+                      }}
+                      placeholder="Select date of birth"
+                      toYear={new Date().getFullYear()}
                     />
                     {errors.childDob ? (
                       <p className="text-xs text-destructive">{errors.childDob}</p>

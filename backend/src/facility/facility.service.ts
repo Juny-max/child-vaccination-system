@@ -1360,9 +1360,9 @@ export class FacilityService {
         childName = (apt.children as any)?.full_name || 'your child';
 
         // Priority 1: Use the contact phone from booking form (stored as [CONTACT_PHONE:xxx] in notes)
-        const contactMatch = ((apt.notes as string) || '').match(/\[CONTACT_PHONE:(\+?\d+)\]/);
+        const contactMatch = ((apt.notes as string) || '').match(/\[CONTACT_PHONE:([^\]]+)\]/i);
         if (contactMatch) {
-          guardianPhone = contactMatch[1];
+          guardianPhone = contactMatch[1].trim();
           console.log(`[Appointment SMS] Using booking contact phone: ${guardianPhone}`);
         }
 

@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
@@ -420,12 +421,20 @@ export default function RegisterChildPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="dateOfBirth">Date of birth</Label>
-                  <Input
-                    id="dateOfBirth"
-                    type="date"
-                    required
-                    value={formData.dateOfBirth}
-                    onChange={(event) => handleChange("dateOfBirth", event.target.value)}
+                  <DatePicker
+                    date={formData.dateOfBirth ? new Date(`${formData.dateOfBirth}T00:00:00`) : undefined}
+                    onDateChange={(selectedDate) => {
+                      if (!selectedDate) {
+                        handleChange("dateOfBirth", "")
+                        return
+                      }
+                      const year = selectedDate.getFullYear()
+                      const month = String(selectedDate.getMonth() + 1).padStart(2, "0")
+                      const day = String(selectedDate.getDate()).padStart(2, "0")
+                      handleChange("dateOfBirth", `${year}-${month}-${day}`)
+                    }}
+                    placeholder="Select date of birth"
+                    toYear={new Date().getFullYear()}
                   />
                 </div>
                 <div className="space-y-2">

@@ -1,11 +1,14 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
+import { TimePicker } from "@/components/ui/time-picker"
 import { useParentDashboard } from "../dashboard-context"
+import { toast } from "sonner"
 import {
   Baby,
   CalendarDays,
@@ -19,6 +22,7 @@ import {
   Syringe,
   XCircle,
   AlertCircle,
+  Ban,
 } from "lucide-react"
 
 // Status configuration for visual display
@@ -85,12 +89,25 @@ function formatTime(timeStr: string): string {
 }
 
 export default function AppointmentsPage() {
-  const { appointments, isLoading } = useParentDashboard()
+  const { appointments, children, isLoading, cancelAppointment, createAppointment } = useParentDashboard()
   const [isBookingOpen, setIsBookingOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [expandedAppointmentId, setExpandedAppointmentId] = useState<string | null>(null)
   const [filter, setFilter] = useState<string>("all")
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null)
+  const [selectedChildId, setSelectedChildId] = useState<string>("")
+  
+  // Form state for custom date/time pickers
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
+  const [selectedTime, setSelectedTime] = useState<string>("")
+
+  useEffect(() => {
+    if (!selectedChildId && children.length > 0) {
+      setSelectedChildId(children[0].id)
+    }
+  }, [children, selectedChildId])
 
   const facilityOptions = useMemo(() => {
     const unique = new Set<string>()
@@ -139,31 +156,107 @@ export default function AppointmentsPage() {
 
   const handleOpenBooking = () => {
     setConfirmation(null)
+    if (!selectedChildId && children.length > 0) {
+      setSelectedChildId(children[0].id)
+    }
+    setSelectedDate(undefined)
+    setSelectedTime("")
     setIsBookingOpen(true)
   }
 
   const handleCancelBooking = () => {
     setIsBookingOpen(false)
+    setSelectedDate(undefined)
+    setSelectedTime("")
   }
 
-  const handleBookingSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleBookingSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    
+    if (!selectedDate || !selectedTime || !selectedChildId) {
+      toast.error("Please select both date and time")
+      return
+    }
+    
     const formElement = event.currentTarget
     const formData = new FormData(formElement)
-    const preferredDate = formData.get("preferredDate")?.toString() ?? ""
-    const preferredTime = formData.get("preferredTime")?.toString() ?? ""
     const selectedFacility = formData.get("facility")?.toString() ?? "the selected facility"
+    const contactNumber = formData.get("contactNumber")?.toString() ?? ""
+    const notes = formData.get("notes")?.toString() ?? ""
+    const selectedChild = children.find((child) => child.id === selectedChildId)
+
+    if (!selectedChild?.facilityId) {
+      toast.error("Unable to determine your child\'s assigned facility. Please try again.")
+      return
+    }
+    
+    const year = selectedDate.getFullYear()
+    const month = String(selectedDate.getMonth() + 1).padStart(2, "0")
+    const day = String(selectedDate.getDate()).padStart(2, "0")
+    const scheduledDate = `${year}-${month}-${day}`
+
+    // Format date for display
+    const preferredDate = selectedDate.toLocaleDateString("en-GB", {
+      weekday: "short",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })
+    
+    // Format time for display
+    const [h, m] = selectedTime.split(":")
+    const hour24 = parseInt(h)
+    const hour12 = hour24 % 12 || 12
+    const period = hour24 >= 12 ? "PM" : "AM"
+    const preferredTime = `${hour12}:${m} ${period}`
 
     setIsSubmitting(true)
+    try {
+      const combinedNotes = [
+        `Preferred facility: ${selectedFacility}`,
+        notes ? `Parent notes: ${notes}` : "",
+      ]
+        .filter(Boolean)
+        .join(". ")
 
-    window.setTimeout(() => {
+      await createAppointment({
+        childId: selectedChildId,
+        facilityId: selectedChild.facilityId,
+        scheduledDate,
+        scheduledTime: selectedTime,
+        purpose: "Vaccination appointment request",
+        contactPhone: contactNumber || undefined,
+        notes: combinedNotes || undefined,
+      })
+
       setIsSubmitting(false)
       setIsBookingOpen(false)
       setConfirmation(
-        `Appointment request sent for ${preferredDate || "your chosen date"} at ${preferredTime || "your chosen time"}. ${selectedFacility} will confirm via SMS shortly.`,
+        `Appointment request sent for ${preferredDate} at ${preferredTime}. ${selectedFacility} will confirm via SMS shortly.`,
       )
       formElement.reset()
-    }, 700)
+      setSelectedDate(undefined)
+      setSelectedTime("")
+      toast.success("Appointment request submitted")
+    } catch (error) {
+      setIsSubmitting(false)
+      toast.error("Failed to submit appointment request. Please try again.")
+      console.error("Appointment request error:", error)
+    }
+  }
+
+  const handleCancelAppointment = async (appointmentId: string) => {
+    setCancellingId(appointmentId)
+    try {
+      await cancelAppointment(appointmentId, "Cancelled by parent")
+      toast.success("Appointment cancelled successfully")
+      setShowCancelConfirm(null)
+    } catch (error) {
+      toast.error("Failed to cancel appointment. Please try again.")
+      console.error("Cancel error:", error)
+    } finally {
+      setCancellingId(null)
+    }
   }
 
   return (
@@ -226,24 +319,53 @@ export default function AppointmentsPage() {
           </CardHeader>
           <CardContent>
             <form className="space-y-5" onSubmit={handleBookingSubmit}>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground" htmlFor="childId">
+                  Child
+                </label>
+                <select
+                  id="childId"
+                  name="childId"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  value={selectedChildId}
+                  onChange={(event) => setSelectedChildId(event.target.value)}
+                  required
+                >
+                  {children.map((child) => (
+                    <option key={child.id} value={child.id}>
+                      {child.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground" htmlFor="preferredDate">
+                  <label className="text-sm font-semibold text-foreground">
                     Preferred date
                   </label>
-                  <Input id="preferredDate" name="preferredDate" type="date" required />
+                  <DatePicker
+                    date={selectedDate}
+                    onDateChange={setSelectedDate}
+                    placeholder="Pick a date"
+                    minDate={new Date()}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground" htmlFor="preferredTime">
+                  <label className="text-sm font-semibold text-foreground">
                     Preferred time
                   </label>
-                  <Input id="preferredTime" name="preferredTime" type="time" required />
+                  <TimePicker
+                    time={selectedTime}
+                    onTimeChange={setSelectedTime}
+                    placeholder="Select time"
+                  />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-foreground" htmlFor="facility">
-                  Facility
+                  Preferred facility (optional)
                 </label>
                 <select
                   id="facility"
@@ -257,6 +379,9 @@ export default function AppointmentsPage() {
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-muted-foreground">
+                  This helps the nurse with planning. Your request is still routed to your child&apos;s assigned facility.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -413,6 +538,51 @@ export default function AppointmentsPage() {
                           <PhoneCall className="size-3.5" /> Call facility
                         </a>
                       </Button>
+                    )}
+                    {/* Cancel button for scheduled or confirmed appointments */}
+                    {(appointment.status === "scheduled" || appointment.status === "confirmed") && (
+                      <>
+                        {showCancelConfirm === appointmentId ? (
+                          <div className="flex w-full items-center gap-2 rounded-md border border-destructive bg-destructive/10 p-2">
+                            <p className="flex-1 text-xs text-foreground">Cancel this appointment?</p>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="gap-1 text-xs"
+                              onClick={() => handleCancelAppointment(appointmentId)}
+                              disabled={cancellingId === appointmentId}
+                            >
+                              {cancellingId === appointmentId ? (
+                                <>
+                                  <Loader2 className="size-3 animate-spin" />
+                                  Cancelling...
+                                </>
+                              ) : (
+                                "Yes, cancel"
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              onClick={() => setShowCancelConfirm(null)}
+                              disabled={cancellingId === appointmentId}
+                            >
+                              No
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setShowCancelConfirm(appointmentId)}
+                          >
+                            <Ban className="size-3.5" />
+                            Cancel appointment
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
                 </CardContent>

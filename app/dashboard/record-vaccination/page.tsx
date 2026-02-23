@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -145,7 +146,20 @@ export default function RecordVaccination() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="date">Date Given</Label>
-                  <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+                  <DatePicker
+                    date={date ? new Date(`${date}T00:00:00`) : undefined}
+                    onDateChange={(selectedDate) => {
+                      if (!selectedDate) {
+                        setDate("")
+                        return
+                      }
+                      const year = selectedDate.getFullYear()
+                      const month = String(selectedDate.getMonth() + 1).padStart(2, "0")
+                      const day = String(selectedDate.getDate()).padStart(2, "0")
+                      setDate(`${year}-${month}-${day}`)
+                    }}
+                    placeholder="Select date given"
+                  />
                 </div>
 
                 <div className="space-y-2">

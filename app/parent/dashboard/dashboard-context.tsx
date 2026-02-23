@@ -123,7 +123,6 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     setUserName(data.guardian.name.split(' ')[0])
     setMissedVaccinations(data.missedVaccinations)
     setNotifications(data.recentNotifications)
-    setAppointments(data.upcomingAppointments)
   }, [])
 
   // Fetch children
@@ -197,6 +196,7 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
       // Fetch additional data in parallel
       const results = await Promise.allSettled([
         refreshChildren(),
+        refreshAppointments(),
         refreshCertificates(),
         parentApi.getProfile().then(setMotherDetails),
       ])
@@ -204,7 +204,7 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
       // Check for partial failures and log them (non-critical)
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
-          const endpoints = ['children', 'certificates', 'profile']
+          const endpoints = ['children', 'appointments', 'certificates', 'profile']
           console.warn(`Failed to fetch ${endpoints[index]}:`, result.reason)
         }
       })
@@ -224,7 +224,7 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [refreshDashboard, refreshChildren, refreshCertificates, router])
+  }, [refreshDashboard, refreshChildren, refreshAppointments, refreshCertificates, router])
 
   // Retry fetch
   const retryFetch = useCallback(async () => {

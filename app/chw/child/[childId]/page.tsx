@@ -497,7 +497,11 @@ export default function ChwChildChartPage() {
               </div>
               <div className="space-y-1">
                 <Label htmlFor="vaccine-date">Date</Label>
-                <Input id="vaccine-date" type="date" value={new Date().toISOString().split("T")[0]} readOnly />
+                <Input
+                  id="vaccine-date"
+                  value={new Date().toLocaleDateString("en-CA")}
+                  readOnly
+                />
                 <p className="text-xs text-muted-foreground">Uses today&apos;s date. Adjust later at the clinic if needed.</p>
               </div>
               <div className="space-y-1">

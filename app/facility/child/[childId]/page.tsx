@@ -30,6 +30,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
@@ -209,8 +210,15 @@ const sampleMeasurements: Record<string, AnthropometricMeasurement[]> = {
   ],
 }
 
+const formatDateForInput = (dateValue: Date) => {
+  const year = dateValue.getFullYear()
+  const month = String(dateValue.getMonth() + 1).padStart(2, "0")
+  const day = String(dateValue.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
 const createEmptyMeasurementForm = (recordedBy = ""): MeasurementFormState => ({
-  date: new Date().toISOString().split("T")[0],
+  date: formatDateForInput(new Date()),
   recordedBy,
   weightKg: "",
   lengthCm: "",
@@ -232,7 +240,7 @@ type AdministerFormState = {
 
 const initialAdministerState: AdministerFormState = {
   batchNumber: "",
-  dateAdministered: new Date().toISOString().split("T")[0],
+  dateAdministered: formatDateForInput(new Date()),
   expiryDate: "",
   site: "",
   administeredBy: "",
@@ -1256,12 +1264,12 @@ export default function ChildPatientChartPage() {
               <form className="grid gap-4 md:grid-cols-3" onSubmit={handleMeasurementSubmit}>
                 <div className="space-y-2">
                   <Label htmlFor="measurement-date">Measurement date</Label>
-                  <Input
-                    id="measurement-date"
-                    type="date"
-                    value={measurementForm.date}
-                    onChange={(event) => handleMeasurementChange("date", event.target.value)}
-                    aria-invalid={measurementErrors.date ? "true" : undefined}
+                  <DatePicker
+                    date={measurementForm.date ? new Date(`${measurementForm.date}T00:00:00`) : undefined}
+                    onDateChange={(selectedDate) =>
+                      handleMeasurementChange("date", selectedDate ? formatDateForInput(selectedDate) : "")
+                    }
+                    toYear={new Date().getFullYear() + 5}
                   />
                   {measurementErrors.date ? (
                     <p className="text-xs text-destructive">{measurementErrors.date}</p>
@@ -1538,12 +1546,11 @@ export default function ChildPatientChartPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="dateAdministered">Date administered</Label>
-                  <Input
-                    id="dateAdministered"
-                    type="date"
-                    required
-                    value={administerForm.dateAdministered}
-                    onChange={(event) => handleAdministerChange("dateAdministered", event.target.value)}
+                  <DatePicker
+                    date={administerForm.dateAdministered ? new Date(`${administerForm.dateAdministered}T00:00:00`) : undefined}
+                    onDateChange={(selectedDate) =>
+                      handleAdministerChange("dateAdministered", selectedDate ? formatDateForInput(selectedDate) : "")
+                    }
                   />
                 </div>
                 <div className="space-y-2">
@@ -1558,12 +1565,11 @@ export default function ChildPatientChartPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="expiryDate">Expiry date</Label>
-                  <Input
-                    id="expiryDate"
-                    type="date"
-                    required
-                    value={administerForm.expiryDate}
-                    onChange={(event) => handleAdministerChange("expiryDate", event.target.value)}
+                  <DatePicker
+                    date={administerForm.expiryDate ? new Date(`${administerForm.expiryDate}T00:00:00`) : undefined}
+                    onDateChange={(selectedDate) =>
+                      handleAdministerChange("expiryDate", selectedDate ? formatDateForInput(selectedDate) : "")
+                    }
                   />
                 </div>
                 <div className="space-y-2">

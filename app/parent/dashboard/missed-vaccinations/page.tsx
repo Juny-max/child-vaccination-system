@@ -6,8 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
+import { TimePicker } from "@/components/ui/time-picker"
 import { useParentDashboard } from "../dashboard-context"
 import * as parentApi from "@/lib/api/parent"
+import { toast } from "sonner"
 
 type VisitPreference = "facility" | "chw"
 type MissedVaccination = parentApi.MissedVaccination
@@ -23,8 +26,8 @@ export default function MissedVaccinationsPage() {
   const [selectedVaccine, setSelectedVaccine] = useState<MissedVaccination | null>(null)
   const [visitPreference, setVisitPreference] = useState<VisitPreference>(isCHWRecommended ? "chw" : "facility")
   const [preferredFacility, setPreferredFacility] = useState(primaryChild?.facilityName ?? "Nearest district clinic")
-  const [preferredDate, setPreferredDate] = useState("")
-  const [preferredTime, setPreferredTime] = useState("")
+  const [preferredDate, setPreferredDate] = useState<Date | undefined>(undefined)
+  const [preferredTime, setPreferredTime] = useState<string>("")
   const [contactNumber, setContactNumber] = useState("")
   const [reason, setReason] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -39,7 +42,7 @@ export default function MissedVaccinationsPage() {
     const recommended = isCHWRecommended && selectedVaccine.daysOverdue >= 10 ? "chw" : "facility"
     setVisitPreference(recommended)
     setPreferredFacility(primaryChild?.facilityName ?? "Nearest district clinic")
-    setPreferredDate("")
+    setPreferredDate(undefined)
     setPreferredTime("")
     setContactNumber("")
     setReason("")
@@ -52,11 +55,14 @@ export default function MissedVaccinationsPage() {
     }, 100)
   }, [selectedVaccine, isCHWRecommended, primaryChild?.facilityName])
 
-  const minDate = useMemo(() => new Date().toISOString().split("T")[0], [])
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedVaccine || !primaryChild) return
+
+    if (!preferredDate || !preferredTime) {
+      toast.error("Please select both date and time")
+      return
+    }
 
     setIsSubmitting(true)
     setError(null)
@@ -67,12 +73,18 @@ export default function MissedVaccinationsPage() {
         throw new Error('Child ID is missing from selected vaccine')
       }
 
+      // Format date to YYYY-MM-DD (local date, timezone-safe)
+      const year = preferredDate.getFullYear()
+      const month = String(preferredDate.getMonth() + 1).padStart(2, '0')
+      const day = String(preferredDate.getDate()).padStart(2, '0')
+      const formattedDate = `${year}-${month}-${day}`
+
       // Create appointment via API
       // Store contact phone separately so the system can send SMS to this number
       await parentApi.createAppointment({
         childId: selectedVaccine.childId,
         facilityId: primaryChild.facilityId,
-        scheduledDate: preferredDate,
+        scheduledDate: formattedDate,
         scheduledTime: preferredTime,
         purpose: `Make-up dose: ${selectedVaccine.vaccine}`,
         contactPhone: contactNumber || undefined,
@@ -240,28 +252,23 @@ export default function MissedVaccinationsPage() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground" htmlFor="preferredDate">
+                  <label className="text-sm font-semibold text-foreground">
                     Preferred date
                   </label>
-                  <Input
-                    id="preferredDate"
-                    type="date"
-                    min={minDate}
-                    required
-                    value={preferredDate}
-                    onChange={(event) => setPreferredDate(event.target.value)}
+                  <DatePicker
+                    date={preferredDate}
+                    onDateChange={setPreferredDate}
+                    placeholder="Pick a date"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground" htmlFor="preferredTime">
+                  <label className="text-sm font-semibold text-foreground">
                     Preferred time
                   </label>
-                  <Input
-                    id="preferredTime"
-                    type="time"
-                    required
-                    value={preferredTime}
-                    onChange={(event) => setPreferredTime(event.target.value)}
+                  <TimePicker
+                    time={preferredTime}
+                    onTimeChange={setPreferredTime}
+                    placeholder="Select time"
                   />
                 </div>
               </div>

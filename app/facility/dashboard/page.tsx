@@ -72,6 +72,7 @@ export default function FacilityDashboardPage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [contactDetail, setContactDetail] = useState<facilityApi.UrgentFollowUp | null>(null)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
+  const [pendingAppointmentRequestsCount, setPendingAppointmentRequestsCount] = useState(0)
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -112,12 +113,14 @@ export default function FacilityDashboardPage() {
     // Fetch today's appointments and urgent follow-ups (filtered by facility)
     const fetchDashboardData = async () => {
       try {
-        const [appointmentsData, followUpsData] = await Promise.all([
+        const [appointmentsData, followUpsData, pendingRequests] = await Promise.all([
           facilityApi.getTodaysAppointments(branchId || undefined),
-          facilityApi.getUrgentFollowUps(branchId || undefined)
+          facilityApi.getUrgentFollowUps(branchId || undefined),
+          facilityApi.getAppointmentRequests(branchId || undefined, "scheduled"),
         ])
         setAppointments(appointmentsData)
         setFollowUps(followUpsData)
+        setPendingAppointmentRequestsCount(pendingRequests.length)
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error)
       } finally {
@@ -591,7 +594,13 @@ export default function FacilityDashboardPage() {
                 </Button>
                 <Button asChild variant="outline" className="gap-2">
                   <Link href="/facility/dashboard/appointments">
-                    <CalendarCheck className="h-4 w-4" /> Review appointment requests
+                    <CalendarCheck className="h-4 w-4" />
+                    Review appointment requests
+                    {pendingAppointmentRequestsCount > 0 ? (
+                      <Badge variant="default" className="ml-auto">
+                        {pendingAppointmentRequestsCount}
+                      </Badge>
+                    ) : null}
                   </Link>
                 </Button>
                 {pendingSyncCount > 0 && (

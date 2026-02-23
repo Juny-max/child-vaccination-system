@@ -21,11 +21,53 @@ import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { TimePicker } from "@/components/ui/time-picker"
 import * as facilityApi from "@/lib/api/facility"
 
 type TabFilter = "scheduled" | "confirmed" | "cancelled" | "completed"
+
+type ParsedAppointmentNotes = {
+  contactPhone?: string
+  preferredFacility?: string
+  parentNotes?: string
+  plainNotes?: string
+}
+
+function parseAppointmentNotes(notes?: string | null): ParsedAppointmentNotes {
+  if (!notes) return {}
+
+  let working = notes
+
+  const contactMatch = working.match(/\[CONTACT_PHONE:([^\]]+)\]/i)
+  const contactPhone = contactMatch?.[1]?.trim()
+  if (contactMatch) {
+    working = working.replace(contactMatch[0], "").trim()
+  }
+
+  const preferredFacilityMatch = working.match(/Preferred facility:\s*([^\.]+)(?:\.|$)/i)
+  const preferredFacility = preferredFacilityMatch?.[1]?.trim()
+  if (preferredFacilityMatch) {
+    working = working.replace(preferredFacilityMatch[0], "").trim()
+  }
+
+  const parentNotesMatch = working.match(/Parent notes:\s*(.+)$/i)
+  const parentNotes = parentNotesMatch?.[1]?.trim()
+  if (parentNotesMatch) {
+    working = working.replace(parentNotesMatch[0], "").trim()
+  }
+
+  const plainNotes = working.replace(/^\.+|\.+$/g, "").trim()
+
+  return {
+    contactPhone,
+    preferredFacility,
+    parentNotes,
+    plainNotes: plainNotes || undefined,
+  }
+}
 
 export default function AppointmentRequestsPage() {
   const router = useRouter()
@@ -182,7 +224,21 @@ export default function AppointmentRequestsPage() {
     { key: "cancelled", label: "Rejected", color: "text-red-600" },
   ]
 
-  const minDate = new Date().toISOString().split("T")[0]
+  const minDate = new Date()
+
+  const toDateObject = (dateValue: string): Date | undefined => {
+    if (!dateValue) return undefined
+    const parsed = new Date(`${dateValue}T00:00:00`)
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed
+  }
+
+  const toDateString = (dateValue?: Date): string => {
+    if (!dateValue) return ""
+    const year = dateValue.getFullYear()
+    const month = String(dateValue.getMonth() + 1).padStart(2, "0")
+    const day = String(dateValue.getDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
@@ -247,6 +303,9 @@ export default function AppointmentRequestsPage() {
             {requests.map((req) => (
               <Card key={req.id} className="overflow-hidden">
                 <CardContent className="p-0">
+                  {(() => {
+                    const parsedNotes = parseAppointmentNotes(req.notes)
+                    return (
                   <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between">
                     {/* Left: Child & Guardian info */}
                     <div className="flex-1 space-y-3">
@@ -303,10 +362,42 @@ export default function AppointmentRequestsPage() {
                         </span>
                       </div>
 
-                      {req.notes && (
-                        <p className="rounded-md bg-muted/50 p-2.5 text-xs text-muted-foreground">
-                          {req.notes}
-                        </p>
+                      {(parsedNotes.contactPhone || parsedNotes.preferredFacility || parsedNotes.parentNotes || parsedNotes.plainNotes) && (
+                        <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3 text-xs">
+                          <p className="font-semibold text-foreground">Parent request details</p>
+
+                          {parsedNotes.contactPhone ? (
+                            <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+                              <span className="font-medium text-foreground">Contact phone:</span>
+                              <Link
+                                href={`tel:${parsedNotes.contactPhone.replace(/\s+/g, "")}`}
+                                className="text-primary hover:underline"
+                              >
+                                {parsedNotes.contactPhone}
+                              </Link>
+                            </div>
+                          ) : null}
+
+                          {parsedNotes.preferredFacility ? (
+                            <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+                              <span className="font-medium text-foreground">Preferred facility:</span>
+                              <Badge variant="outline" className="text-[10px]">
+                                {parsedNotes.preferredFacility}
+                              </Badge>
+                            </div>
+                          ) : null}
+
+                          {parsedNotes.parentNotes ? (
+                            <div className="text-muted-foreground">
+                              <span className="font-medium text-foreground">Parent notes:</span>{" "}
+                              {parsedNotes.parentNotes}
+                            </div>
+                          ) : null}
+
+                          {parsedNotes.plainNotes ? (
+                            <div className="text-muted-foreground">{parsedNotes.plainNotes}</div>
+                          ) : null}
+                        </div>
                       )}
                     </div>
 
@@ -362,6 +453,8 @@ export default function AppointmentRequestsPage() {
                       </div>
                     )}
                   </div>
+                    )
+                  })()}
 
                   {/* Confirm form (inline) */}
                   {confirmingId === req.id && (
@@ -372,20 +465,15 @@ export default function AppointmentRequestsPage() {
                       <div className="grid gap-3 sm:grid-cols-3">
                         <div>
                           <Label className="text-xs">Confirmed date</Label>
-                          <Input
-                            type="date"
-                            value={confirmDate}
-                            min={minDate}
-                            onChange={(e) => setConfirmDate(e.target.value)}
+                          <DatePicker
+                            date={toDateObject(confirmDate)}
+                            onDateChange={(selectedDate) => setConfirmDate(toDateString(selectedDate))}
+                            minDate={minDate}
                           />
                         </div>
                         <div>
                           <Label className="text-xs">Confirmed time</Label>
-                          <Input
-                            type="time"
-                            value={confirmTime}
-                            onChange={(e) => setConfirmTime(e.target.value)}
-                          />
+                          <TimePicker time={confirmTime} onTimeChange={setConfirmTime} />
                         </div>
                         <div>
                           <Label className="text-xs">Notes (optional)</Label>

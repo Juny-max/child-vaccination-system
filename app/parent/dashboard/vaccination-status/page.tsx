@@ -5,9 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
+import { TimePicker } from "@/components/ui/time-picker"
 import { useParentDashboard } from "../dashboard-context"
 import * as parentApi from "@/lib/api/parent"
 import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, Loader2, Syringe, User } from "lucide-react"
+import { toast } from "sonner"
 
 export default function VaccinationStatusPage() {
   const { children, getChildVaccinations, getChildUpcomingVaccinations, isLoading: isLoadingContext } = useParentDashboard()
@@ -18,6 +21,8 @@ export default function VaccinationStatusPage() {
   const [isBookingOpen, setIsBookingOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
+  const [selectedTime, setSelectedTime] = useState<string>("")
 
   // Set initial selected child
   useEffect(() => {
@@ -58,22 +63,44 @@ export default function VaccinationStatusPage() {
   const handleLaunchBooking = () => {
     setIsBookingOpen(true)
     setConfirmation(null)
+    setSelectedDate(undefined)
+    setSelectedTime("")
   }
 
   const handleBookingSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    
+    if (!selectedDate || !selectedTime) {
+      toast.error("Please select both date and time")
+      return
+    }
+    
     const formElement = event.currentTarget
-    const formData = new FormData(formElement)
-    const preferredDate = formData.get("preferredDate")?.toString() ?? ""
-    const preferredTime = formData.get("preferredTime")?.toString() ?? ""
+    
+    // Format date for display
+    const preferredDate = selectedDate.toLocaleDateString("en-GB", {
+      weekday: "short",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })
+    
+    // Format time for display
+    const [h, m] = selectedTime.split(":")
+    const hour24 = parseInt(h)
+    const hour12 = hour24 % 12 || 12
+    const period = hour24 >= 12 ? "PM" : "AM"
+    const preferredTime = `${hour12}:${m} ${period}`
 
     setIsSubmitting(true)
 
     window.setTimeout(() => {
       setIsSubmitting(false)
       setIsBookingOpen(false)
-      setConfirmation(`Request sent for ${preferredDate || "your chosen date"} at ${preferredTime || "your chosen time"}. The clinic will confirm soon.`)
+      setConfirmation(`Request sent for ${preferredDate} at ${preferredTime}. The clinic will confirm soon.`)
       formElement.reset()
+      setSelectedDate(undefined)
+      setSelectedTime("")
     }, 700)
   }
 
@@ -207,16 +234,24 @@ export default function VaccinationStatusPage() {
               <form className="space-y-4" onSubmit={handleBookingSubmit}>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <label className="text-sm font-medium text-foreground" htmlFor="preferredDate">
+                    <label className="text-sm font-medium text-foreground">
                       Preferred date
                     </label>
-                    <Input id="preferredDate" name="preferredDate" type="date" required />
+                    <DatePicker
+                      date={selectedDate}
+                      onDateChange={setSelectedDate}
+                      placeholder="Pick a date"
+                    />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-sm font-medium text-foreground" htmlFor="preferredTime">
+                    <label className="text-sm font-medium text-foreground">
                       Preferred time
                     </label>
-                    <Input id="preferredTime" name="preferredTime" type="time" required />
+                    <TimePicker
+                      time={selectedTime}
+                      onTimeChange={setSelectedTime}
+                      placeholder="Select time"
+                    />
                   </div>
                 </div>
                 <div className="space-y-1">

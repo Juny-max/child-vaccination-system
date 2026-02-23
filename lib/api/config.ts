@@ -43,7 +43,22 @@ export async function handleResponse<T>(response: Response, skipAuthRedirect = f
     throw new Error(error.message || `HTTP error! status: ${response.status}`);
   }
   
-  return response.json();
+  // Check if response has content before trying to parse JSON
+  const contentType = response.headers.get('content-type');
+  const contentLength = response.headers.get('content-length');
+  
+  // If no content or empty response (common for DELETE operations)
+  if (response.status === 204 || contentLength === '0' || !contentType?.includes('application/json')) {
+    return undefined as T;
+  }
+  
+  // Check if response body is empty
+  const text = await response.text();
+  if (!text || text.trim() === '') {
+    return undefined as T;
+  }
+  
+  return JSON.parse(text);
 }
 
 /**
