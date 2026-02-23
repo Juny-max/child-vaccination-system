@@ -470,6 +470,7 @@ export interface AppointmentRequest {
   status: string;
   notes: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 /**

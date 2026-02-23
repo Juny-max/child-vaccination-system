@@ -1234,6 +1234,7 @@ export class FacilityService {
         status,
         notes,
         created_at,
+        updated_at,
         vaccine_id,
         children (
           id,
@@ -1287,6 +1288,7 @@ export class FacilityService {
         status: apt.status,
         notes: apt.notes || '',
         createdAt: apt.created_at,
+        updatedAt: apt.updated_at,
       };
     });
   }

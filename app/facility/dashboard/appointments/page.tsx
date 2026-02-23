@@ -217,6 +217,11 @@ export default function AppointmentRequestsPage() {
     }
   }
 
+  const getStatusTime = (req: facilityApi.AppointmentRequest) => {
+    if (req.status === "scheduled") return req.createdAt
+    return req.updatedAt || req.createdAt
+  }
+
   const tabs: { key: TabFilter; label: string; color: string }[] = [
     { key: "scheduled", label: "Pending", color: "text-amber-600" },
     { key: "confirmed", label: "Confirmed", color: "text-green-600" },
@@ -325,7 +330,7 @@ export default function AppointmentRequestsPage() {
                           {req.status === "scheduled" ? "Pending" : req.status}
                         </Badge>
                         <span className="text-xs text-muted-foreground">
-                          {formatCreatedAt(req.createdAt)}
+                          {formatCreatedAt(getStatusTime(req))}
                         </span>
                       </div>
 
