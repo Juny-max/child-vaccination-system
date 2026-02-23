@@ -52,6 +52,7 @@ export interface AppointmentContext {
   time: string
   facility: string
   purpose: string
+  status?: string
 }
 
 // System prompt for the AI
@@ -103,9 +104,10 @@ export function formatContext(context: ChatContext): string {
   }
   
   if (context.upcomingAppointments.length > 0) {
-    contextStr += `### Upcoming Appointments:\n`;
+    contextStr += `### Appointments (${context.upcomingAppointments.length}):\n`;
     context.upcomingAppointments.forEach((appt) => {
-      contextStr += `- ${appt.childName}: ${appt.purpose} at ${appt.facility} on ${appt.date} at ${appt.time}\n`;
+      const status = appt.status ? ` [${appt.status}]` : ''
+      contextStr += `- ${appt.childName}: ${appt.purpose} at ${appt.facility} on ${appt.date} at ${appt.time}${status}\n`;
     });
     contextStr += '\n';
   }
@@ -214,11 +216,23 @@ function generateFallbackResponse(userMessage: string, context: ChatContext): st
   
   // Appointments
   if (msg.includes('appointment') || msg.includes('next visit') || msg.includes('when')) {
-    if (context.upcomingAppointments.length > 0) {
-      const appt = context.upcomingAppointments[0]
-      return `Your next appointment is for ${appt.childName} on ${appt.date} at ${appt.time} at ${appt.facility} for ${appt.purpose}.`
+    const activeAppointments = context.upcomingAppointments.filter(
+      (appt) => !appt.status || appt.status === 'scheduled' || appt.status === 'confirmed'
+    )
+
+    if (activeAppointments.length > 0) {
+      const appt = activeAppointments[0]
+      const readableStatus = appt.status === 'scheduled' ? 'pending review' : appt.status || 'scheduled'
+      return `Your next active appointment is for ${appt.childName} on ${appt.date} at ${appt.time} at ${appt.facility} for ${appt.purpose}. Status: ${readableStatus}.`
     }
-    return "You don't have any upcoming appointments scheduled. Check your dashboard for vaccination schedules."
+
+    if (context.upcomingAppointments.length > 0) {
+      const rejectedCount = context.upcomingAppointments.filter((a) => a.status === 'cancelled').length
+      const completedCount = context.upcomingAppointments.filter((a) => a.status === 'completed').length
+      return `You currently have no pending or confirmed appointments. Recent updates: ${rejectedCount} rejected/cancelled and ${completedCount} completed appointments.`
+    }
+
+    return "You don't have any appointments scheduled yet. You can book one from the Appointments page."
   }
   
   // Default fallback
@@ -304,6 +318,8 @@ export function getQuickReplies(context: ChatContext): string[] {
   if (context.upcomingAppointments.length > 0) {
     replies.push("When is my next appointment?");
   }
+
+  replies.push("Help me book an appointment");
   
   // General health questions
   replies.push("What should I do if my child has a fever after vaccination?");
