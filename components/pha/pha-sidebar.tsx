@@ -4,7 +4,7 @@ import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
-import { LayoutDashboard, FileText, ShieldCheck, LogOut, Menu, X } from "lucide-react"
+import { LayoutDashboard, FileText, ShieldCheck, LogOut, Menu, X, UserCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -14,6 +14,7 @@ const navItems = [
   { href: "/pha/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/pha/reports", label: "Reports", icon: FileText },
   { href: "/pha/verify-certificate", label: "Verify Certificate", icon: ShieldCheck },
+  { href: "/pha/profile", label: "My Profile", icon: UserCircle },
 ]
 
 export function PHASidebar() {

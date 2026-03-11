@@ -11,6 +11,7 @@ import {
   TrendingDown,
   UserX,
   RefreshCw,
+  Printer,
 } from "lucide-react"
 
 import { PHASidebar } from "@/components/pha/pha-sidebar"
@@ -107,6 +108,21 @@ export default function PHADashboard() {
 
       <div className="flex-1 overflow-y-auto bg-muted/20">
       <main className="space-y-6 px-4 py-5 sm:px-6 sm:py-8">
+        {/* Page header */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-foreground sm:text-2xl">National Dashboard</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">Public Health Authority · Ghana</p>
+          </div>
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted print:hidden"
+          >
+            <Printer className="h-4 w-4" />
+            <span className="hidden sm:inline">Print Dashboard</span>
+          </button>
+        </div>
+
         {/* Error banner */}
         {apiError && (
           <div className="flex items-center gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/20 dark:text-red-400">

@@ -125,3 +125,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+@media print {
+  /* Hide the sidebar, mobile header, and interactive controls */
+  aside, header, .print\:hidden { display: none !important; }
+  /* Make the content fill the full page width */
+  .flex-1 { width: 100% !important; overflow: visible !important; }
+  div[class*="h-screen"] { height: auto !important; overflow: visible !important; }
+  /* Force white background for all cards */
+  * { background-color: white !important; color: black !important; box-shadow: none !important; }
+}

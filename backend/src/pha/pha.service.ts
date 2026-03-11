@@ -122,17 +122,22 @@ export class PhaService {
         ).length,
       };
 
-      // ── Step 5: Coverage trend (monthly) ──────────────────────────────────
+      // ── Step 5: Penta3 coverage trend (monthly) ───────────────────────────
       const sinceDate = new Date();
       sinceDate.setMonth(sinceDate.getMonth() - timeRangeMonths);
 
-      const { data: trendRows } = await db
+      // Filter strictly by Penta3 vaccine so the trend matches the KPI card
+      const trendQuery = db
         .from('vaccination_events')
         .select('administered_date, child_id')
         .gte('administered_date', sinceDate.toISOString().slice(0, 10))
         .eq('status', 'completed')
         .order('administered_date', { ascending: true })
         .limit(50000);
+
+      if (penta3Id) trendQuery.eq('vaccine_id', penta3Id);
+
+      const { data: trendRows } = await trendQuery;
 
       const monthMap = new Map<string, Set<string>>();
       (trendRows ?? []).forEach((e: any) => {
