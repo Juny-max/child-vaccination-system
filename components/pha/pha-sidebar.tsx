@@ -20,17 +20,22 @@ export function PHASidebar() {
   const router = useRouter()
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   const handleLogout = () => {
-    localStorage.removeItem("authToken")
-    localStorage.removeItem("accessToken")
-    localStorage.removeItem("userRole")
-    localStorage.removeItem("userRoleDetail")
-    localStorage.removeItem("userId")
-    localStorage.removeItem("userProfile")
-    localStorage.removeItem("phaSession")
-    sessionStorage.removeItem("userName")
-    router.replace("/auth/login")
+    if (isLoggingOut) return
+    setIsLoggingOut(true)
+    setTimeout(() => {
+      localStorage.removeItem("authToken")
+      localStorage.removeItem("accessToken")
+      localStorage.removeItem("userRole")
+      localStorage.removeItem("userRoleDetail")
+      localStorage.removeItem("userId")
+      localStorage.removeItem("userProfile")
+      localStorage.removeItem("phaSession")
+      sessionStorage.removeItem("userName")
+      router.replace("/auth/login")
+    }, 700)
   }
 
   const navLinks = navItems.map(({ href, label, icon: Icon }) => (
@@ -76,11 +81,17 @@ export function PHASidebar() {
           <Button
             variant="ghost"
             size="sm"
-            className="gap-2 text-muted-foreground hover:text-destructive"
+            className={cn(
+              "gap-2 transition-all duration-200 active:scale-90",
+              isLoggingOut
+                ? "text-destructive"
+                : "text-muted-foreground hover:text-destructive"
+            )}
             onClick={handleLogout}
+            disabled={isLoggingOut}
           >
-            <LogOut className="h-4 w-4" />
-            Logout
+            <LogOut className={cn("h-4 w-4 transition-transform duration-300", isLoggingOut && "animate-spin")} />
+            {isLoggingOut ? "Logging out…" : "Logout"}
           </Button>
         </div>
       </aside>
@@ -108,11 +119,15 @@ export function PHASidebar() {
           <Button
             variant="ghost"
             size="icon"
-            className="text-muted-foreground hover:text-destructive"
+            className={cn(
+              "transition-all duration-200 active:scale-90",
+              isLoggingOut ? "text-destructive" : "text-muted-foreground hover:text-destructive"
+            )}
             onClick={handleLogout}
+            disabled={isLoggingOut}
             aria-label="Logout"
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className={cn("h-4 w-4 transition-transform duration-300", isLoggingOut && "animate-spin")} />
           </Button>
         </div>
       </header>
