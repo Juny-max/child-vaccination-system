@@ -89,7 +89,23 @@ export default function PHADashboard() {
   // The array is chronological so we take from the end.
   const trendMonthCount =
     selectedTimeRange === "3months" ? 3 : selectedTimeRange === "6months" ? 6 : 12
-  const visibleTrend = (dashData?.coverageTrend ?? []).slice(-trendMonthCount)
+
+  // Build a full month-by-month grid for the selected window so the X-axis
+  // always spans the correct period. Months with no Penta3 data show as 0%.
+  const visibleTrend = (() => {
+    const dataMap = new Map(
+      (dashData?.coverageTrend ?? []).map((p) => [p.month, p.coverage])
+    )
+    const grid: { month: string; coverage: number }[] = []
+    for (let i = trendMonthCount - 1; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(1)
+      d.setMonth(d.getMonth() - i)
+      const label = d.toLocaleDateString("en-GH", { month: "short", year: "numeric" })
+      grid.push({ month: label, coverage: dataMap.get(label) ?? 0 })
+    }
+    return grid
+  })()
 
   const coverageBarColor = (c: number) =>
     c >= 90 ? "bg-green-500" : c >= 80 ? "bg-amber-400" : "bg-red-500"
