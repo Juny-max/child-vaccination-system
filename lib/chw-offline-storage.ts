@@ -24,6 +24,7 @@ export type CHWVaccinationRecord = {
   longitude?: number;
   notes?: string;
   timestamp: number;
+  synced?: boolean;
 };
 
 /**
@@ -163,6 +164,35 @@ export async function getCHWVaccinationsWithGPS(): Promise<CHWVaccinationRecord[
 }
 
 /**
+ * Mark a vaccination as synced to the backend (instead of deleting, so activity logs remain visible).
+ */
+export async function markCHWVaccinationSynced(
+  childId: string,
+  vaccineId: string,
+  recordedDate: string,
+): Promise<void> {
+  const db = await openDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    // First read the record, then update with synced = true
+    const getReq = store.get([childId, vaccineId, recordedDate]);
+    getReq.onsuccess = () => {
+      const record = getReq.result;
+      if (!record) { resolve(); return; }
+      const putReq = store.put({ ...record, synced: true });
+      putReq.onsuccess = () => {
+        logDataAccess('write', 'chw_vaccination', 1, { childId, vaccineId, recordedDate, synced: true });
+        resolve();
+      };
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+/**
  * Delete a specific CHW vaccination record
  */
 export async function deleteCHWVaccination(
@@ -178,7 +208,6 @@ export async function deleteCHWVaccination(
     const request = store.delete([childId, vaccineId, recordedDate]);
 
     request.onsuccess = () => {
-      // Log the delete operation
       logDataAccess('delete', 'chw_vaccination', 1, { childId, vaccineId, recordedDate });
       resolve();
     };
@@ -187,19 +216,19 @@ export async function deleteCHWVaccination(
 }
 
 /**
- * Get count of pending CHW vaccinations
+ * Get only unsynced CHW vaccinations (for background sync upload).
+ */
+export async function getPendingCHWVaccinations(): Promise<CHWVaccinationRecord[]> {
+  const all = await getAllCHWVaccinations();
+  return all.filter((v) => !v.synced);
+}
+
+/**
+ * Get count of unsynced (pending) CHW vaccinations.
  */
 export async function getCHWPendingCount(): Promise<number> {
-  const db = await openDB();
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_NAME], 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.count();
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+  const pending = await getPendingCHWVaccinations();
+  return pending.length;
 }
 
 /**

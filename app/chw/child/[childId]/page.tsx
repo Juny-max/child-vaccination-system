@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
+import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import {
   AlertCircle,
   ArrowLeft,
@@ -16,7 +17,7 @@ import {
   User,
 } from "lucide-react"
 import * as chwStorage from "@/lib/chw-offline-storage"
-import { getChwChildChartAll, type ChwChildChart } from "@/lib/api/chw"
+import { getChwChildChart, syncChwVaccinations, type ChwChildChart } from "@/lib/api/chw"
 import { chwOfflineDb } from "@/lib/chw-offline/db"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 
@@ -129,6 +130,7 @@ export default function ChwChildChartPage() {
   const [selectedVaccine, setSelectedVaccine] = useState<VaccineDose | null>(null)
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
+  const [successVaccine, setSuccessVaccine] = useState<string | null>(null)
   const [remoteSnapshot, setRemoteSnapshot] = useState<ChildSnapshot | null>(null)
   const [loadingChart, setLoadingChart] = useState(true)
 
@@ -171,7 +173,7 @@ export default function ChwChildChartPage() {
         // Try backend only if we believe network is up
         if (isOnline) {
           try {
-            const chart = await getChwChildChartAll(childId)
+            const chart = await getChwChildChart(childId)
             setRemoteSnapshot(mapChart(chart))
             return
           } catch (apiError) {
@@ -275,8 +277,26 @@ export default function ChwChildChartPage() {
         notes: notes.trim() ? notes.trim() : undefined,
       }
 
-      // Save to IndexedDB (more secure than localStorage)
+      // Save to IndexedDB first (works offline)
       await chwStorage.saveCHWVaccination(newEntry)
+
+      // If online, immediately sync this single vaccination to the backend
+      if (isOnline) {
+        try {
+          await syncChwVaccinations([{
+            childId: newEntry.childId,
+            vaccineId: newEntry.vaccineId,
+            vaccineName: newEntry.vaccineName,
+            recordedDate,
+            latitude: newEntry.latitude,
+            longitude: newEntry.longitude,
+            notes: newEntry.notes,
+          }])
+          await chwStorage.markCHWVaccinationSynced(newEntry.childId, newEntry.vaccineId, recordedDate)
+        } catch {
+          // Silent — background sync will pick it up later
+        }
+      }
       
       // Update UI immediately
       const stored = await chwStorage.getCHWVaccinationsByChild(childSnapshot.id)
@@ -284,9 +304,10 @@ export default function ChwChildChartPage() {
       
       // Dispatch event to update dashboard map
       window.dispatchEvent(new Event(VACCINATION_SAVED_EVENT))
-      
-      setSystemMessage(`${selectedVaccine.name} saved securely. Will sync when online.`)
+
+      const savedName = selectedVaccine.name
       closeAdministerModal()
+      setSuccessVaccine(savedName)
     } catch (error) {
       console.error('Failed to save vaccination:', error)
       setSystemMessage('Failed to save vaccination. Please try again.')
@@ -524,6 +545,46 @@ export default function ChwChildChartPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {successVaccine ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-background shadow-xl">
+            <div className="flex flex-col items-center gap-2 px-6 pb-6 pt-5 text-center">
+              <DotLottieReact
+                src="/Done.lottie"
+                autoplay
+                loop={false}
+                style={{ width: 120, height: 120 }}
+              />
+              <p className="text-lg font-semibold text-foreground">Vaccination recorded!</p>
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{successVaccine}</span> has been saved
+                {isOnline ? " and will sync to the server shortly." : " locally. It will sync when you are back online."}
+              </p>
+              <p className="text-xs text-muted-foreground">Child: {childSnapshot.name}</p>
+              <div className="mt-4 flex w-full flex-col gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setSuccessVaccine(null)}
+                >
+                  Back to chart
+                </Button>
+                <Button
+                  className="flex-1 gap-2"
+                  onClick={() => {
+                    setSuccessVaccine(null)
+                    // Scroll to outstanding vaccines section
+                    document.querySelector("[data-outstanding]")?.scrollIntoView({ behavior: "smooth" })
+                  }}
+                >
+                  <Syringe className="h-4 w-4" /> Record another
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       ) : null}

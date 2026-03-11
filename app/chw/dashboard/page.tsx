@@ -6,6 +6,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   AlertCircle,
+  BookOpen,
   CheckCircle2,
   Clock,
   CircleDot,
@@ -14,9 +15,12 @@ import {
   Search,
   UserPlus,
   ClipboardList,
+  Activity,
 } from "lucide-react"
 import * as chwStorage from "@/lib/chw-offline-storage"
+import { getAllCHWVaccinations } from "@/lib/chw-offline-storage"
 import { chwBackgroundSync } from "@/lib/chw-offline/background-sync"
+import { chwOfflineDb } from "@/lib/chw-offline/db"
 import { getChwDashboardSummary, type ChwVisit } from "@/lib/api/chw"
 import { isBackendAvailable } from "@/lib/network/connectivity"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
@@ -28,6 +32,16 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { NetworkStatusIndicator } from "@/components/chw/network-status-indicator"
 import { SecurityStatusBanner } from "@/components/chw/security-banner"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -77,6 +91,8 @@ export default function ChwDashboardPage() {
   const [vaccinationLogs, setVaccinationLogs] = useState<VaccinationMapPoint[]>([])
   const [visitList, setVisitList] = useState<VisitTask[]>([])
   const [pendingSyncTotal, setPendingSyncTotal] = useState(0)
+  const [todayActivityCount, setTodayActivityCount] = useState(0)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
   const loadDashboardSummary = async () => {
     try {
@@ -173,6 +189,7 @@ export default function ChwDashboardPage() {
 
     loadDashboardSummary()
     chwBackgroundSync.start()
+    loadTodayActivityCount()
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker
@@ -190,6 +207,27 @@ export default function ChwDashboardPage() {
       autoLogoutTimer.stop()
     }
   }, [router])
+
+  const loadTodayActivityCount = async () => {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const [vaccinations, queue] = await Promise.all([
+        getAllCHWVaccinations(),
+        chwOfflineDb.vaccinationQueue.toArray(),
+      ])
+      const todayVaccinations = vaccinations.filter((v) => v.recordedDate === today).length
+      const todayQueue = queue.filter(
+        (item) =>
+          item.createdAt.slice(0, 10) === today &&
+          (item.actionType === "register_child" ||
+            item.actionType === "transfer_in" ||
+            item.actionType === "transfer_out"),
+      ).length
+      setTodayActivityCount(todayVaccinations + todayQueue)
+    } catch {
+      // non-critical
+    }
+  }
 
   useEffect(() => {
     if (!systemMessage) return
@@ -239,6 +277,7 @@ export default function ChwDashboardPage() {
 
     const handleUpdate = () => {
       loadFromIndexedDB()
+      loadTodayActivityCount()
     }
 
     loadFromIndexedDB()
@@ -284,7 +323,7 @@ export default function ChwDashboardPage() {
     })
   }
 
-  const handleLogout = () => {
+  const confirmLogout = () => {
     localStorage.removeItem("authToken")
     localStorage.removeItem("userRole")
     localStorage.removeItem("userRoleDetail")
@@ -298,6 +337,7 @@ export default function ChwDashboardPage() {
   }
 
   return (
+    <>
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-4">
@@ -308,7 +348,7 @@ export default function ChwDashboardPage() {
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <NetworkStatusIndicator />
             <ThemeToggle />
-            <Button variant="outline" size="sm" className="h-8 px-3 text-xs sm:h-9 sm:text-sm" onClick={handleLogout}>
+            <Button variant="outline" size="sm" className="h-8 px-3 text-xs sm:h-9 sm:text-sm" onClick={() => setShowLogoutConfirm(true)}>
               Logout
             </Button>
           </div>
@@ -333,7 +373,7 @@ export default function ChwDashboardPage() {
           </Alert>
         ) : null}
 
-        <section className="grid gap-4 sm:grid-cols-3">
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
           <Button asChild className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base">
             <Link href="/chw/find-child">
               <Search className="h-6 w-6" />
@@ -343,7 +383,13 @@ export default function ChwDashboardPage() {
           <Button asChild variant="secondary" className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base">
             <Link href="/chw/register-child">
               <UserPlus className="h-6 w-6" />
-              Register new child
+              Register child
+            </Link>
+          </Button>
+          <Button asChild variant="outline" className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base">
+            <Link href="/chw/register">
+              <BookOpen className="h-6 w-6" />
+              My register
             </Link>
           </Button>
           <Button
@@ -353,9 +399,23 @@ export default function ChwDashboardPage() {
             onClick={scrollToVisitList}
           >
             <ClipboardList className="h-6 w-6" />
-            My visit list
+            Visit list
           </Button>
         </section>
+
+        {/* Today's activity link */}
+        <Link
+          href="/chw/activity"
+          className="mt-3 flex items-center justify-between rounded-lg border border-border bg-background/80 px-4 py-2.5 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
+        >
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Activity className="h-4 w-4 text-primary" />
+            <span>Today&apos;s activity</span>
+          </div>
+          <Badge variant="outline" className="text-xs">
+            {todayActivityCount} action{todayActivityCount === 1 ? "" : "s"}
+          </Badge>
+        </Link>
 
         <section id="visit-list" ref={visitListSectionRef} className="mt-8">
           <Card className="border-primary/40">
@@ -451,5 +511,23 @@ export default function ChwDashboardPage() {
         </section>
       </main>
     </div>
+
+    <AlertDialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Log out?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {pendingSyncTotal > 0
+              ? `You have ${pendingSyncTotal} record${pendingSyncTotal === 1 ? "" : "s"} waiting to sync. They will upload automatically next time you log in with internet access.`
+              : "Any pending offline records will sync automatically next time you log in with internet access."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Stay logged in</AlertDialogCancel>
+          <AlertDialogAction onClick={confirmLogout}>Log out</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

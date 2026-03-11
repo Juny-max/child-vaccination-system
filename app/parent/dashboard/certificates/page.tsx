@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useParentDashboard } from "../dashboard-context"
 import { generateCertificatePdf } from "@/lib/certificate-pdf"
-import { Award, FileDown, Lock, QrCode, Sparkles, Loader2 } from "lucide-react"
+import { Award, FileDown, Lock, QrCode, Sparkles, Loader2, ZoomIn } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { Certificate as ApiCertificate } from "@/lib/api/parent"
 
 // Extended type for internal use
@@ -33,6 +34,7 @@ type CertificateDisplay = {
 export default function CertificatesPage() {
   const { certificates: apiCertificates, isLoading } = useParentDashboard()
   const [isGeneratingId, setIsGeneratingId] = useState<string | null>(null)
+  const [qrModal, setQrModal] = useState<CertificateDisplay | null>(null)
   const qrRefs = useRef<Record<string, HTMLCanvasElement | null>>({})
   const logoDataUrlRef = useRef<string | null>(null)
 
@@ -233,16 +235,24 @@ export default function CertificatesPage() {
 
               <div className="flex flex-col gap-3 rounded-xl border border-dashed border-primary/30 bg-background/80 p-4">
                 <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-                  <div className="rounded-xl border border-border bg-white p-3 shadow-inner">
-                    <QRCodeCanvas
-                      value={record.qrPayload}
-                      size={120}
-                      includeMargin
-                      ref={(node) => assignQrRef(record.childId, node)}
-                      bgColor="#ffffff"
-                      fgColor="#111318"
-                    />
-                  </div>
+                    <button
+                      type="button"
+                      onClick={() => setQrModal(record)}
+                      className="group relative rounded-xl border border-border bg-white p-3 shadow-inner transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      title="Tap to enlarge QR code"
+                    >
+                      <QRCodeCanvas
+                        value={record.qrPayload}
+                        size={120}
+                        includeMargin
+                        ref={(node) => assignQrRef(record.childId, node)}
+                        bgColor="#ffffff"
+                        fgColor="#111318"
+                      />
+                      <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 transition-colors group-hover:bg-black/10">
+                        <ZoomIn className="size-6 text-white opacity-0 drop-shadow transition-opacity group-hover:opacity-100" />
+                      </span>
+                    </button>
                   <div className="w-full flex-1 text-sm text-muted-foreground">
                     <p className="font-semibold text-foreground">Scan-ready QR</p>
                     <p>Authorities can scan directly from your device.</p>
@@ -280,6 +290,31 @@ export default function CertificatesPage() {
           </Card>
         ))}
       </div>
+
+      {/* QR Code enlarge modal */}
+      <Dialog open={!!qrModal} onOpenChange={(open) => { if (!open) setQrModal(null) }}>
+        <DialogContent className="flex max-w-xs flex-col items-center gap-6 p-8 sm:max-w-sm">
+          <DialogHeader className="w-full text-center">
+            <DialogTitle className="text-lg font-bold">{qrModal?.childName}</DialogTitle>
+            <p className="mt-1 text-xs text-muted-foreground">Show this QR code to the health authority to verify</p>
+          </DialogHeader>
+          {qrModal && (
+            <div className="rounded-2xl border border-border bg-white p-6 shadow-lg">
+              <QRCodeCanvas
+                value={qrModal.qrPayload}
+                size={220}
+                includeMargin
+                bgColor="#ffffff"
+                fgColor="#111318"
+              />
+            </div>
+          )}
+          <Badge variant="secondary" className="max-w-full gap-1 break-all bg-primary/10 text-xs font-mono text-primary">
+            <QrCode className="size-3 shrink-0" />
+            {qrModal?.certificateId}
+          </Badge>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

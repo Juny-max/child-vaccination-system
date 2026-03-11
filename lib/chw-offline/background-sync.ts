@@ -4,8 +4,8 @@ import { chwOfflineDb, upsertChildren } from "@/lib/chw-offline/db"
 import { searchAllChwChildren, syncChwVaccinations } from "@/lib/api/chw"
 import { isBackendAvailable } from "@/lib/network/connectivity"
 import {
-  getAllCHWVaccinations,
-  deleteCHWVaccination,
+  getPendingCHWVaccinations,
+  markCHWVaccinationSynced,
   type CHWVaccinationRecord,
 } from "@/lib/chw-offline-storage"
 
@@ -126,8 +126,8 @@ export class ChwBackgroundSyncService {
    */
   private async syncPendingVaccinations() {
     try {
-      // Get all pending vaccinations from IndexedDB
-      const pendingVaccinations = await getAllCHWVaccinations()
+      // Get only unsynced vaccinations from IndexedDB
+      const pendingVaccinations = await getPendingCHWVaccinations()
 
       if (pendingVaccinations.length === 0) {
         console.log("[CHW Background Sync] No pending vaccinations to sync")
@@ -154,8 +154,7 @@ export class ChwBackgroundSyncService {
         `[CHW Background Sync] Vaccination sync complete - synced: ${result.synced}, failed: ${result.failed}`,
       )
 
-      // Delete successfully synced vaccinations from IndexedDB
-      // Only delete the ones that succeeded, keep failed ones for retry
+      // Mark synced vaccinations (keep records for activity log, just flag as synced)
       for (const vaccination of pendingVaccinations) {
         const wasFailed = result.errors.some(
           (err) =>
@@ -165,7 +164,7 @@ export class ChwBackgroundSyncService {
         )
 
         if (!wasFailed) {
-          await deleteCHWVaccination(vaccination.childId, vaccination.vaccineId, vaccination.recordedDate)
+          await markCHWVaccinationSynced(vaccination.childId, vaccination.vaccineId, vaccination.recordedDate)
         }
       }
 

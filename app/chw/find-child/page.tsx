@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Camera, ChevronLeft, Loader2, Phone, QrCode, Search, UserPlus } from "lucide-react"
 import { Html5Qrcode } from "html5-qrcode"
-import { searchChwChildren, searchAllChwChildren, type ChwSearchResult } from "@/lib/api/chw"
+import { searchChwChildren, type ChwSearchResult } from "@/lib/api/chw"
 import { chwOfflineDb, upsertChildren } from "@/lib/chw-offline/db"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 
@@ -49,6 +49,7 @@ export default function ChwFindChildPage() {
   const [showErrorDialog, setShowErrorDialog] = useState(false)
   const [errorDialogMessage, setErrorDialogMessage] = useState("")
   const [showTransferInModal, setShowTransferInModal] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const isProcessingScan = useRef(false)
   const scannerId = "qr-scanner-chw"
@@ -101,14 +102,14 @@ export default function ChwFindChildPage() {
       return
     }
 
+    setHasSearched(true)
     setIsSearching(true)
 
     try {
       // DUAL SEARCH STRATEGY
       if (isOnline) {
-        // ONLINE MODE: Search all children without catchment restriction
-        // CHW can help children from any area when online
-        const backendResults = await searchAllChwChildren(query)
+        // ONLINE MODE: Search only within the CHW's assigned catchment area
+        const backendResults = await searchChwChildren(query)
         setResults(backendResults.map(mapSearchResult))
 
         // Background sync: Update IndexedDB with search results
@@ -127,12 +128,12 @@ export default function ChwFindChildPage() {
 
         setSystemMessage(
           backendResults.length > 0
-            ? `✅ Online: ${backendResults.length} child${backendResults.length === 1 ? "" : "ren"} found (from all areas).`
+            ? `✅ ${backendResults.length} child${backendResults.length === 1 ? "" : "ren"} found in your catchment area.`
             : null,
         )
 
         if (backendResults.length === 0) {
-          setErrorDialogMessage("No child found in the database. Try a different search term.")
+          setErrorDialogMessage("No child found in your catchment area. Use Transfer In if this child belongs to another area.")
           setShowErrorDialog(true)
         }
         return
@@ -334,8 +335,8 @@ export default function ChwFindChildPage() {
 
       // DUAL SEARCH STRATEGY (same as manual search)
       if (isOnline) {
-        // ONLINE MODE: Search all children without catchment restriction
-        const backendResults = await searchAllChwChildren(sanitizedId)
+        // ONLINE MODE: Search only within the CHW's assigned catchment area
+        const backendResults = await searchChwChildren(sanitizedId)
         if (backendResults.length > 0) {
           // Found online, navigate to chart
           router.push(`/chw/child/${backendResults[0].id}`)
@@ -354,8 +355,8 @@ export default function ChwFindChildPage() {
       // Not found in any mode
       setErrorDialogMessage(
         isOnline
-          ? "No child found with this QR code in the database. The QR code may be invalid."
-          : "No child found with this QR code in your offline cache. Connect to internet for wider search."
+          ? "No child found with this QR code in your catchment area. If this child has moved in, use Transfer In."
+          : "No child found with this QR code in your offline cache. Connect to internet to search your catchment."
       )
       setShowErrorDialog(true)
     } catch (error) {
@@ -409,12 +410,12 @@ export default function ChwFindChildPage() {
         <Card className="border-primary/40">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Search className="h-5 w-5 text-primary" /> {isOnline ? "Search all children" : "Search cached children"}
+              <Search className="h-5 w-5 text-primary" /> {isOnline ? "Search my catchment" : "Search cached children"}
             </CardTitle>
             <CardDescription>
               {isOnline
-                ? "Search any child in the database. Results are saved for offline access."
-                : "Search children previously synced to your device. Works without internet."}
+                ? "Search children in your assigned catchment area only. Results are saved for offline access."
+                : "Search children previously synced to your device from your catchment area. Works without internet."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -478,13 +479,46 @@ export default function ChwFindChildPage() {
               </div>
             ) : null}
 
-            <div className="rounded-lg border border-dashed border-primary/50 bg-primary/5 p-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Tip from the field</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Work offline all day. As long as you synced at the clinic this morning, every child in your catchment is already
-                saved locally and searchable.
-              </p>
-            </div>
+            {!hasSearched && !isSearching ? (
+              <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-5 text-center">
+                <div className="mx-auto h-28 w-28">
+                  <DotLottieReact src="/Free%20Searching%20Animation.lottie" autoplay loop className="h-full w-full" />
+                </div>
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  Search by child name, CVCC ID, or mother&apos;s phone
+                </p>
+                <div className="mt-3 space-y-1.5 text-left">
+                  <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <span className="mt-0.5 text-primary">•</span>
+                    <span>
+                      <strong>Online:</strong> searches only children in your assigned catchment area.
+                    </span>
+                  </p>
+                  <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <span className="mt-0.5 text-primary">•</span>
+                    <span>
+                      <strong>Offline:</strong> searches children already synced to your device from your catchment area.
+                    </span>
+                  </p>
+                  <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <span className="mt-0.5 text-primary">•</span>
+                    <span>
+                      <strong>Tip:</strong> scan the QR code on the weighing card below for instant lookup — no typing needed.
+                    </span>
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {hasSearched && !isSearching ? (
+              <div className="rounded-lg border border-dashed border-primary/50 bg-primary/5 p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Tip from the field</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Work offline all day. As long as you synced at the clinic this morning, every child in your catchment is already
+                  saved locally and searchable.
+                </p>
+              </div>
+            ) : null}
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">

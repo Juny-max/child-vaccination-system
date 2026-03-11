@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { ParentModule } from './parent/parent.module';
 import { FacilityModule } from './facility/facility.module';
 import { ChwModule } from './chw/chw.module';
+import { PhaModule } from './pha/pha.module';
 import { ChatbotController } from './common/chatbot.controller';
 import { ChatbotService } from './common/chatbot.service';
 import { HealthController } from './common/health.controller';
@@ -33,7 +34,7 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
     ParentModule,
     FacilityModule,
     ChwModule,
-    // PhaModule,           // TODO: Add later
+    PhaModule,
 
     // Julius's Modules (placeholders)
     // HqAdminModule,       // Julius will implement

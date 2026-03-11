@@ -133,3 +133,26 @@ export async function syncChwVaccinations(
     body: JSON.stringify({ vaccinations }),
   })
 }
+
+// ============================================================================
+// CATCHMENT REGISTER
+// ============================================================================
+
+export type ChwRegisterChild = {
+  id: string
+  cvccId: string
+  fullName: string
+  dateOfBirth: string
+  gender: string
+  primaryFacilityId?: string
+  catchmentAreaId: string
+  guardianName: string
+  guardianPhone: string
+}
+
+/**
+ * Fetch all children in the CHW's assigned catchment area (the community register)
+ */
+export async function getChwLocalRegister(): Promise<ChwRegisterChild[]> {
+  return apiRequest<ChwRegisterChild[]>("/chw/register")
+}

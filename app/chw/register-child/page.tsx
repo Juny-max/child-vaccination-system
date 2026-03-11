@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CheckCircle2, ChevronLeft, Compass, Loader2, MapPin, Save } from "lucide-react"
+import { CheckCircle2, ChevronLeft, Compass, Loader2, MapPin, Save, UserPlus } from "lucide-react"
 import { queueChwOfflineRegistration, searchChwMothers, type ChwMotherSearchResult } from "@/lib/api/chw"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
+import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { NetworkStatusIndicator } from "@/components/chw/network-status-indicator"
@@ -46,6 +47,8 @@ export default function ChwRegisterChildPage() {
   const { isOnline } = useNetworkStatus()
   const [userName, setUserName] = useState("")
   const [step, setStep] = useState<RegistrationStep>(1)
+  const [registrationState, setRegistrationState] = useState<"idle" | "success">("idle")
+  const [registeredChildName, setRegisteredChildName] = useState("")
   const [form, setForm] = useState<RegistrationForm>(initialForm)
   const [errors, setErrors] = useState<Partial<Record<keyof RegistrationForm, string>>>({})
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
@@ -212,12 +215,19 @@ export default function ChwRegisterChildPage() {
       })
 
       setSystemMessage("Registration saved and queued to backend successfully.")
+      setRegisteredChildName(form.childName)
       setForm(initialForm)
       setStep(1)
       setGpsStatus("idle")
+      setRegistrationState("success")
     } catch (error) {
       console.error("Failed to queue registration", error)
       setSystemMessage("Offline registration saved locally and will retry when connection improves.")
+      setRegisteredChildName(form.childName)
+      setForm(initialForm)
+      setStep(1)
+      setGpsStatus("idle")
+      setRegistrationState("success")
     } finally {
       setSaving(false)
     }
@@ -239,6 +249,50 @@ export default function ChwRegisterChildPage() {
       default:
         return "Record household GPS"
     }
+  }
+
+  if (registrationState === "success") {
+    return (
+      <div className="min-h-screen bg-muted/30">
+        <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
+          <div className="mx-auto flex max-w-4xl items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-4">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-foreground sm:text-lg">Registration complete</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <NetworkStatusIndicator />
+              <ThemeToggle />
+            </div>
+          </div>
+        </header>
+        <main className="mx-auto flex min-h-[calc(100vh-64px)] w-full max-w-md flex-col items-center justify-center gap-6 px-4 text-center">
+          <div className="h-40 w-40">
+            <DotLottieReact src="/Done.lottie" autoplay className="h-full w-full" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-foreground">Child registered</h2>
+            <p className="text-sm text-muted-foreground">
+              <strong>{registeredChildName}</strong> has been saved and queued to sync with the head office when you&apos;re back online.
+            </p>
+          </div>
+          <div className="flex w-full flex-col gap-3">
+            <Button
+              className="w-full gap-2"
+              onClick={() => {
+                setRegistrationState("idle")
+                setSystemMessage(null)
+              }}
+            >
+              <UserPlus className="h-4 w-4" />
+              Register another child
+            </Button>
+            <Button variant="outline" className="w-full" asChild>
+              <Link href="/chw/dashboard">Back to dashboard</Link>
+            </Button>
+          </div>
+        </main>
+      </div>
+    )
   }
 
   return (

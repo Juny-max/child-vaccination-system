@@ -1,18 +1,18 @@
-"use client"
+﻿"use client"
 
-import { useState } from "react"
-import Image from "next/image"
-import Link from "next/link"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { 
-  ArrowLeft, 
   Camera,
   CheckCircle2,
+  Clock,
   Search,
   ShieldCheck,
   XCircle,
   AlertTriangle,
   QrCode,
-  FileCheck
+  FileCheck,
+  Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -21,39 +21,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { ThemeToggle } from "@/components/theme-toggle"
+import { PHASidebar } from "@/components/pha/pha-sidebar"
 import { QRScanner } from "@/components/pha/qr-scanner"
-
-// Mock certificate database (in production, this would be an API call)
-const mockCertificateDatabase = {
-  "CERT-GH-2025-001234": {
-    isValid: true,
-    issuedDate: "2025-09-15",
-    completionStatus: "Complete",
-    vaccinesCompleted: ["BCG", "OPV0", "OPV1", "OPV2", "OPV3", "DPT1", "DPT2", "DPT3", "MR1"],
-    issuedBy: "Korle Bu Teaching Hospital",
-    region: "Greater Accra",
-  },
-  "CERT-GH-2025-005678": {
-    isValid: true,
-    issuedDate: "2025-10-22",
-    completionStatus: "Partial",
-    vaccinesCompleted: ["BCG", "OPV0", "OPV1", "DPT1"],
-    issuedBy: "Komfo Anokye Teaching Hospital",
-    region: "Ashanti",
-  },
-  "CERT-GH-2024-099888": {
-    isValid: true,
-    issuedDate: "2024-12-10",
-    completionStatus: "Complete",
-    vaccinesCompleted: ["BCG", "OPV0", "OPV1", "OPV2", "OPV3", "DPT1", "DPT2", "DPT3", "MR1", "Yellow Fever"],
-    issuedBy: "Ridge Hospital",
-    region: "Greater Accra",
-  },
-}
+import { verifyPHACertificate, type PHACertificateVerifyResult } from "@/lib/api/pha"
 
 type VerificationResult = {
-  status: "valid" | "invalid" | "not-found"
+  status: "valid" | "revoked" | "pending" | "not-found"
   certificateId: string
   data?: {
     issuedDate: string
@@ -64,57 +37,90 @@ type VerificationResult = {
   }
 }
 
+type LogEntry = {
+  time: string
+  certificateId: string
+  result: "Valid" | "Not Found" | "Revoked" | "Pending"
+}
+
 export default function VerifyCertificatePage() {
+  const router = useRouter()
   const [certificateId, setCertificateId] = useState("")
   const [isVerifying, setIsVerifying] = useState(false)
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null)
   const [showQRScanner, setShowQRScanner] = useState(false)
+  const [log, setLog] = useState<LogEntry[]>([])
 
-  const handleVerify = async () => {
+  useEffect(() => {
+    const legacyToken = localStorage.getItem("authToken")
+    const accessToken = localStorage.getItem("accessToken")
+    const userId = localStorage.getItem("userId")
+    const role = localStorage.getItem("userRole")
+    const detail = localStorage.getItem("userRoleDetail")
+
+    const hasAuth = Boolean(userId || accessToken || legacyToken)
+    if (!hasAuth || role !== "staff" || detail !== "pha") {
+      router.replace("/auth/login")
+    }
+  }, [router])
+
+  const runVerify = async (id: string) => {
+    setIsVerifying(true)
+    setVerificationResult(null)
+
+    try {
+      const res: PHACertificateVerifyResult = await verifyPHACertificate(id.trim())
+
+      if (!res.found) {
+        setVerificationResult({ status: "not-found", certificateId: id.trim() })
+        setLog((prev) => [{ time: "Just now", certificateId: id.trim(), result: "Not Found" }, ...prev.slice(0, 4)])
+        toast.error("Certificate not found in system")
+      } else if (res.isPending) {
+        setVerificationResult({ status: "pending", certificateId: res.certificateId })
+        setLog((prev) => [{ time: "Just now", certificateId: id.trim(), result: "Pending" }, ...prev.slice(0, 4)])
+        toast.info("Child is registered — vaccination in progress, no certificate issued yet")
+      } else if (!res.isValid) {
+        setVerificationResult({
+          status: "revoked",
+          certificateId: res.certificateId,
+          data: {
+            issuedDate: res.issuedDate ?? "",
+            completionStatus: res.completionStatus ?? "",
+            vaccinesCompleted: res.vaccinesCompleted ?? [],
+            issuedBy: res.issuedBy ?? "",
+            region: res.region ?? "",
+          },
+        })
+        setLog((prev) => [{ time: "Just now", certificateId: id.trim(), result: "Revoked" }, ...prev.slice(0, 4)])
+        toast.warning("Certificate found but is no longer valid")
+      } else {
+        setVerificationResult({
+          status: "valid",
+          certificateId: res.certificateId,
+          data: {
+            issuedDate: res.issuedDate ?? "",
+            completionStatus: res.completionStatus ?? "",
+            vaccinesCompleted: res.vaccinesCompleted ?? [],
+            issuedBy: res.issuedBy ?? "",
+            region: res.region ?? "",
+          },
+        })
+        setLog((prev) => [{ time: "Just now", certificateId: id.trim(), result: "Valid" }, ...prev.slice(0, 4)])
+        toast.success("Certificate verified successfully")
+      }
+    } catch {
+      toast.error("Verification failed. Check your connection and try again.")
+    } finally {
+      setIsVerifying(false)
+    }
+  }
+
+  const handleVerify = () => {
     if (!certificateId.trim()) {
       toast.error("Please enter a certificate ID")
       return
     }
-
-    setIsVerifying(true)
-    setVerificationResult(null)
-
-    const verifyPayload = {
-      certificateId: certificateId.trim(),
-      verifiedAt: new Date().toISOString(),
-      verifiedBy: "Public Health Authority",
-      verificationMethod: "manual-entry",
-    }
-
-  // TODO: Replace with API call to verify certificate
-  // Example: POST /api/pha/certificates/verify with verifyPayload
-    console.log("Verifying certificate", verifyPayload)
-
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 800))
-
-      // Mock verification logic
-      const certData = mockCertificateDatabase[certificateId.trim() as keyof typeof mockCertificateDatabase]
-
-      if (certData) {
-        setVerificationResult({
-          status: "valid",
-          certificateId: certificateId.trim(),
-          data: certData,
-        })
-        toast.success("Certificate verified successfully")
-      } else {
-        setVerificationResult({
-          status: "not-found",
-          certificateId: certificateId.trim(),
-        })
-        toast.error("Certificate not found in system")
-      }
-    } catch (error) {
-      toast.error("Verification failed. Please try again.")
-    } finally {
-      setIsVerifying(false)
-    }
+    runVerify(certificateId)
   }
 
   const handleScanQR = () => {
@@ -128,48 +134,7 @@ export default function VerifyCertificatePage() {
     setCertificateId(decodedText)
     setShowQRScanner(false)
     toast.success(`QR Code detected: ${decodedText}`)
-    // Auto-verify after successful scan
-    setTimeout(() => {
-      const verifyWithScannedId = async () => {
-        setIsVerifying(true)
-        setVerificationResult(null)
-
-        const verifyPayload = {
-          certificateId: decodedText.trim(),
-          verifiedAt: new Date().toISOString(),
-          verifiedBy: "Public Health Authority",
-          verificationMethod: "qr-scan",
-        }
-
-        console.log("Verifying certificate", verifyPayload)
-
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 800))
-
-          const certData = mockCertificateDatabase[decodedText.trim() as keyof typeof mockCertificateDatabase]
-
-          if (certData) {
-            setVerificationResult({
-              status: "valid",
-              certificateId: decodedText.trim(),
-              data: certData,
-            })
-            toast.success("Certificate verified successfully")
-          } else {
-            setVerificationResult({
-              status: "not-found",
-              certificateId: decodedText.trim(),
-            })
-            toast.error("Certificate not found in system")
-          }
-        } catch (error) {
-          toast.error("Verification failed. Please try again.")
-        } finally {
-          setIsVerifying(false)
-        }
-      }
-      verifyWithScannedId()
-    }, 500)
+    setTimeout(() => runVerify(decodedText), 500)
   }
 
   const handleReset = () => {
@@ -178,33 +143,11 @@ export default function VerifyCertificatePage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/20">
-      {/* Header */}
-      <header className="border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto max-w-5xl px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/pha/dashboard">
-                <Button variant="ghost" size="sm" className="gap-2">
-                  <ArrowLeft className="h-4 w-4" /> Back to Dashboard
-                </Button>
-              </Link>
-              <div className="flex items-center gap-3">
-                <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-primary/30 bg-primary/5">
-                  <Image src="/images/cvcc-logo.png" alt="System logo" fill sizes="40px" className="object-cover" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-foreground">Certificate Verification</h1>
-                  <p className="text-sm text-muted-foreground">Anti-fraud tool · Verify digital vaccination certificates</p>
-                </div>
-              </div>
-            </div>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+    <div className="flex h-screen overflow-hidden">
+      <PHASidebar />
 
-      <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+      <div className="flex-1 overflow-y-auto bg-muted/20">
+      <main className="space-y-6 px-6 py-8">
         {/* How It Works */}
         <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
           <CardHeader>
@@ -242,9 +185,7 @@ export default function VerifyCertificatePage() {
                   className="font-mono text-sm"
                   disabled={isVerifying}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleVerify()
-                    }
+                    if (e.key === "Enter") handleVerify()
                   }}
                 />
                 <p className="text-xs text-muted-foreground">
@@ -259,7 +200,7 @@ export default function VerifyCertificatePage() {
                   disabled={isVerifying || !certificateId.trim()}
                   className="gap-2"
                 >
-                  <Search className="h-4 w-4" />
+                  {isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                   {isVerifying ? "Verifying..." : "Verify Certificate"}
                 </Button>
                 <Button
@@ -290,19 +231,6 @@ export default function VerifyCertificatePage() {
                   />
                 </div>
               </div>
-
-              {/* Sample Certificate IDs for Testing */}
-              {!showQRScanner && (
-                <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/30 p-4">
-                  <p className="text-xs font-semibold text-muted-foreground">🧪 Test Certificate IDs</p>
-                  <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                    <li className="font-mono">• CERT-GH-2025-001234 (Complete)</li>
-                    <li className="font-mono">• CERT-GH-2025-005678 (Partial)</li>
-                    <li className="font-mono">• CERT-GH-2024-099888 (Complete)</li>
-                    <li className="font-mono">• CERT-GH-2025-FAKE99 (Invalid)</li>
-                  </ul>
-                </div>
-              )}
             </CardContent>
           </Card>
 
@@ -315,7 +243,7 @@ export default function VerifyCertificatePage() {
               <CardDescription>Certificate status and details</CardDescription>
             </CardHeader>
             <CardContent>
-              {!verificationResult && (
+              {!verificationResult && !isVerifying && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <ShieldCheck className="mb-4 h-16 w-16 text-muted-foreground/40" />
                   <p className="text-sm text-muted-foreground">
@@ -324,8 +252,15 @@ export default function VerifyCertificatePage() {
                 </div>
               )}
 
+              {isVerifying && (
+                <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                  <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Checking database…</p>
+                </div>
+              )}
+
               {/* Valid Certificate */}
-              {verificationResult?.status === "valid" && verificationResult.data && (
+              {!isVerifying && verificationResult?.status === "valid" && verificationResult.data && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-center rounded-lg border-2 border-green-300 bg-green-50 p-6 dark:bg-green-950/20">
                     <div className="text-center">
@@ -361,7 +296,9 @@ export default function VerifyCertificatePage() {
                                 : "border-amber-300 bg-amber-50 text-amber-700"
                             }
                           >
-                            {verificationResult.data.completionStatus === "Complete" ? "✓ All Mandatory Vaccinations Complete" : "⚠️ Partial - Vaccinations In Progress"}
+                            {verificationResult.data.completionStatus === "Complete"
+                              ? "✓ All Mandatory Vaccinations Complete"
+                              : "⚠ Partial - Vaccinations In Progress"}
                           </Badge>
                         </dd>
                       </div>
@@ -377,18 +314,20 @@ export default function VerifyCertificatePage() {
                   </div>
 
                   {/* Vaccines Completed */}
-                  <div className="rounded-lg border bg-muted/30 p-4">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Vaccines Recorded ({verificationResult.data.vaccinesCompleted.length})
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {verificationResult.data.vaccinesCompleted.map((vaccine) => (
-                        <Badge key={vaccine} variant="secondary" className="bg-primary/10 text-primary">
-                          {vaccine}
-                        </Badge>
-                      ))}
+                  {verificationResult.data.vaccinesCompleted.length > 0 && (
+                    <div className="rounded-lg border bg-muted/30 p-4">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Vaccines Recorded ({verificationResult.data.vaccinesCompleted.length})
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {verificationResult.data.vaccinesCompleted.map((vaccine) => (
+                          <Badge key={vaccine} variant="secondary" className="bg-primary/10 text-primary">
+                            {vaccine}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Privacy Notice */}
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:bg-blue-950/20">
@@ -399,8 +338,63 @@ export default function VerifyCertificatePage() {
                 </div>
               )}
 
-              {/* Invalid/Not Found Certificate */}
-              {verificationResult?.status === "not-found" && (
+              {/* Revoked Certificate */}
+              {!isVerifying && verificationResult?.status === "revoked" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-center rounded-lg border-2 border-amber-300 bg-amber-50 p-6 dark:bg-amber-950/20">
+                    <div className="text-center">
+                      <AlertTriangle className="mx-auto mb-3 h-16 w-16 text-amber-600" />
+                      <p className="text-lg font-bold text-amber-900 dark:text-amber-100">
+                        ⚠ CERTIFICATE REVOKED OR EXPIRED
+                      </p>
+                      <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
+                        This certificate exists but is no longer valid
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border bg-background p-4">
+                    <dl className="text-sm">
+                      <div className="flex items-center justify-between">
+                        <dt className="font-semibold text-foreground">Certificate ID</dt>
+                        <dd className="font-mono text-sm text-muted-foreground">{verificationResult.certificateId}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                </div>
+              )}
+
+              {/* Vaccination In Progress (TEMP- certificate ID) */}
+              {!isVerifying && verificationResult?.status === "pending" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-center rounded-lg border-2 border-blue-300 bg-blue-50 p-6 dark:bg-blue-950/20">
+                    <div className="text-center">
+                      <Clock className="mx-auto mb-3 h-16 w-16 text-blue-600" />
+                      <p className="text-lg font-bold text-blue-900 dark:text-blue-100">
+                        VACCINATION IN PROGRESS
+                      </p>
+                      <p className="mt-1 text-sm text-blue-700 dark:text-blue-400">
+                        This child is registered in CVCC but has not yet completed their vaccination schedule
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border bg-background p-4">
+                    <dl className="text-sm">
+                      <div className="flex items-center justify-between">
+                        <dt className="font-semibold text-foreground">Reference ID</dt>
+                        <dd className="font-mono text-sm text-muted-foreground">{verificationResult.certificateId}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:bg-blue-950/20">
+                    <p className="text-xs text-blue-700 dark:text-blue-400">
+                      This is a valid CVCC-registered child. A formal certificate will be issued once all mandatory vaccinations are complete. This ID is <strong>not fraudulent</strong>.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Not Found Certificate */}
+              {!isVerifying && verificationResult?.status === "not-found" && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-center rounded-lg border-2 border-red-300 bg-red-50 p-6 dark:bg-red-950/20">
                     <div className="text-center">
@@ -409,7 +403,7 @@ export default function VerifyCertificatePage() {
                         ✗ CERTIFICATE NOT FOUND
                       </p>
                       <p className="mt-1 text-sm text-red-700 dark:text-red-400">
-                        This certificate ID is not valid in our system
+                        This certificate ID is not in our system
                       </p>
                     </div>
                   </div>
@@ -442,56 +436,58 @@ export default function VerifyCertificatePage() {
           </Card>
         </div>
 
-        {/* Verification Log (Optional) */}
+        {/* Verification Log */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <FileCheck className="h-4 w-4 text-primary" /> Recent Verifications
             </CardTitle>
-            <CardDescription>Last 5 certificate verification attempts</CardDescription>
+            <CardDescription>Certificate verification attempts this session</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto rounded-lg border">
-              <table className="min-w-full divide-y divide-border text-sm">
-                <thead className="bg-muted/60">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Time
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Certificate ID
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Result
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Verified By
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border bg-background">
-                  <tr className="hover:bg-muted/30">
-                    <td className="px-4 py-3 text-muted-foreground">2 mins ago</td>
-                    <td className="px-4 py-3 font-mono">CERT-GH-2025-001234</td>
-                    <td className="px-4 py-3">
-                      <Badge className="border-green-300 bg-green-50 text-green-700">Valid</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">PHA Officer</td>
-                  </tr>
-                  <tr className="hover:bg-muted/30">
-                    <td className="px-4 py-3 text-muted-foreground">15 mins ago</td>
-                    <td className="px-4 py-3 font-mono">CERT-GH-2025-FAKE99</td>
-                    <td className="px-4 py-3">
-                      <Badge className="border-red-300 bg-red-50 text-red-700">Not Found</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">PHA Officer</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {log.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">No verifications yet this session.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="min-w-full divide-y divide-border text-sm">
+                  <thead className="bg-muted/60">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Time</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Certificate ID</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border bg-background">
+                    {log.map((entry, i) => (
+                      <tr key={i} className="hover:bg-muted/30">
+                        <td className="px-4 py-3 text-muted-foreground">{entry.time}</td>
+                        <td className="px-4 py-3 font-mono">{entry.certificateId}</td>
+                        <td className="px-4 py-3">
+                          <Badge
+                            variant="outline"
+                            className={
+                              entry.result === "Valid"
+                                ? "border-green-300 bg-green-50 text-green-700"
+                                : entry.result === "Revoked"
+                                ? "border-amber-300 bg-amber-50 text-amber-700"
+                                : entry.result === "Pending"
+                                ? "border-blue-300 bg-blue-50 text-blue-700"
+                                : "border-red-300 bg-red-50 text-red-700"
+                            }
+                          >
+                            {entry.result}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </main>
+      </div>
     </div>
   )
 }
