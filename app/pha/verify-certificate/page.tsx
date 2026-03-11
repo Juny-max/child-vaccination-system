@@ -131,10 +131,19 @@ export default function VerifyCertificatePage() {
   }
 
   const handleQRScanSuccess = (decodedText: string) => {
-    setCertificateId(decodedText)
+    // QR payload format is "certificateId|childId|childName" — extract just the first part
+    let certId = decodedText.trim()
+    try {
+      const parsed = JSON.parse(decodedText)
+      certId = parsed.certificateId || parsed.id || certId
+    } catch {
+      // Not JSON — split on pipe and take first segment
+      certId = decodedText.split("|")[0].trim()
+    }
+    setCertificateId(certId)
     setShowQRScanner(false)
-    toast.success(`QR Code detected: ${decodedText}`)
-    setTimeout(() => runVerify(decodedText), 500)
+    toast.success(`QR Code detected: ${certId}`)
+    setTimeout(() => runVerify(certId), 500)
   }
 
   const handleReset = () => {

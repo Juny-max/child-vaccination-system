@@ -763,6 +763,24 @@ export class PhaService {
       .single();
 
     if (error || !data) {
+      // No certificate found — check if a child with this CVCC ID exists.
+      // If so, they are registered but vaccination is still in progress.
+      const { data: child, error: childError } = await db
+        .from('children')
+        .select('cvcc_id, is_active')
+        .eq('cvcc_id', certificateId)
+        .single();
+
+      if (!childError && child) {
+        return {
+          found: true,
+          isValid: false,
+          isPending: true,
+          certificateId,
+          childCvccId: child.cvcc_id,
+        };
+      }
+
       return { found: false, certificateId };
     }
 

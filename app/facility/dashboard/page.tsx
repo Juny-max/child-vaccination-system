@@ -211,25 +211,6 @@ export default function FacilityDashboardPage() {
         throw new Error("Camera requires HTTPS connection. Please use https:// or localhost")
       }
 
-      // Request camera permission first
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: "environment" } 
-        })
-        // Stop the test stream immediately
-        stream.getTracks().forEach(track => track.stop())
-      } catch (permError: any) {
-        if (permError.name === 'NotAllowedError') {
-          throw new Error("Camera permission denied. Please allow camera access in your browser settings.")
-        } else if (permError.name === 'NotFoundError') {
-          throw new Error("No camera found on this device.")
-        } else if (permError.name === 'NotReadableError') {
-          throw new Error("Camera is already in use by another application. Please close other apps using the camera.")
-        } else {
-          throw new Error(`Camera error: ${permError.message || 'Unable to access camera'}`)
-        }
-      }
-
       // Verify the element exists
       const element = document.getElementById(scannerId)
       if (!element) {
