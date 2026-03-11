@@ -126,8 +126,10 @@ export class PhaService {
       const sinceDate = new Date();
       sinceDate.setMonth(sinceDate.getMonth() - timeRangeMonths);
 
-      // Filter strictly by Penta3 vaccine so the trend matches the KPI card
-      const trendQuery = db
+      // Filter strictly by Penta3 vaccine so the trend matches the KPI card.
+      // Build as one unbroken chain — Supabase builder does not support
+      // conditional chaining on a stored reference.
+      const trendBaseQuery = db
         .from('vaccination_events')
         .select('administered_date, child_id')
         .gte('administered_date', sinceDate.toISOString().slice(0, 10))
@@ -135,9 +137,9 @@ export class PhaService {
         .order('administered_date', { ascending: true })
         .limit(50000);
 
-      if (penta3Id) trendQuery.eq('vaccine_id', penta3Id);
-
-      const { data: trendRows } = await trendQuery;
+      const { data: trendRows } = await (penta3Id
+        ? trendBaseQuery.eq('vaccine_id', penta3Id)
+        : trendBaseQuery);
 
       const monthMap = new Map<string, Set<string>>();
       (trendRows ?? []).forEach((e: any) => {
