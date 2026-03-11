@@ -122,17 +122,13 @@ export class PhaService {
         ).length,
       };
 
-      // ── Step 5: Penta3 coverage trend (monthly) ───────────────────────────
-      const sinceDate = new Date();
-      sinceDate.setMonth(sinceDate.getMonth() - timeRangeMonths);
-
-      // Filter strictly by Penta3 vaccine so the trend matches the KPI card.
-      // Build as one unbroken chain — Supabase builder does not support
-      // conditional chaining on a stored reference.
+      // ── Step 5: Penta3 coverage trend (monthly, all-time) ────────────────
+      // No date cutoff — return every month that has data so the chart is
+      // never empty regardless of how old the seed records are.
+      // The frontend slices to the last N months based on the user's selection.
       const trendBaseQuery = db
         .from('vaccination_events')
         .select('administered_date, child_id')
-        .gte('administered_date', sinceDate.toISOString().slice(0, 10))
         .eq('status', 'completed')
         .order('administered_date', { ascending: true })
         .limit(50000);

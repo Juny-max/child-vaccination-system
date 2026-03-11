@@ -69,23 +69,27 @@ export default function PHADashboard() {
     }
   }, [router])
 
-  // Fetch real dashboard data from the secured backend API.
-  // Re-runs when selectedTimeRange changes so the chart reflects the chosen window.
+  // Fetch real dashboard data once on mount. The backend returns all historical
+  // trend data; we slice it locally based on selectedTimeRange so no refetch is needed.
   useEffect(() => {
     const token = localStorage.getItem("accessToken")
     if (!token) return // auth guard above will redirect
 
     setIsLoading(true)
     setApiError(null)
-    const months =
-      selectedTimeRange === "3months" ? 3 : selectedTimeRange === "6months" ? 6 : 12
-    getPHADashboard(months)
+    getPHADashboard()
       .then((data) => setDashData(data))
       .catch(() => setApiError("Could not load dashboard data. Check your connection and try again."))
       .finally(() => setIsLoading(false))
-  }, [selectedTimeRange])
+  }, [])
 
   const formatNumber = (num: number) => new Intl.NumberFormat("en-GH").format(num)
+
+  // Slice the trend array to the last N months for the selected time range.
+  // The array is chronological so we take from the end.
+  const trendMonthCount =
+    selectedTimeRange === "3months" ? 3 : selectedTimeRange === "6months" ? 6 : 12
+  const visibleTrend = (dashData?.coverageTrend ?? []).slice(-trendMonthCount)
 
   const coverageBarColor = (c: number) =>
     c >= 90 ? "bg-green-500" : c >= 80 ? "bg-amber-400" : "bg-red-500"
@@ -280,7 +284,7 @@ export default function PHADashboard() {
               ) : (
                 <>
                   <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={dashData?.coverageTrend ?? []}>
+                    <LineChart data={visibleTrend}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis
                         dataKey="month"
@@ -310,12 +314,12 @@ export default function PHADashboard() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                  {(dashData?.coverageTrend?.length ?? 0) > 1 && (
+                  {visibleTrend.length > 1 && (
                     <p className="mt-3 text-xs text-muted-foreground">
-                      Trend: {dashData!.coverageTrend[0].coverage.toFixed(1)}%
-                      ({dashData!.coverageTrend[0].month}) &rarr;{" "}
-                      {dashData!.coverageTrend[dashData!.coverageTrend.length - 1].coverage.toFixed(1)}%
-                      ({dashData!.coverageTrend[dashData!.coverageTrend.length - 1].month})
+                      Trend: {visibleTrend[0].coverage.toFixed(1)}%
+                      ({visibleTrend[0].month}) &rarr;{" "}
+                      {visibleTrend[visibleTrend.length - 1].coverage.toFixed(1)}%
+                      ({visibleTrend[visibleTrend.length - 1].month})
                     </p>
                   )}
                 </>
