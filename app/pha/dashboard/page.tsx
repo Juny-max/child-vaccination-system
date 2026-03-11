@@ -102,11 +102,11 @@ export default function PHADashboard() {
   )
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen overflow-hidden">
       <PHASidebar />
 
       <div className="flex-1 overflow-y-auto bg-muted/20">
-      <main className="space-y-6 px-6 py-8">
+      <main className="space-y-6 px-4 py-5 sm:px-6 sm:py-8">
         {/* Error banner */}
         {apiError && (
           <div className="flex items-center gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/20 dark:text-red-400">

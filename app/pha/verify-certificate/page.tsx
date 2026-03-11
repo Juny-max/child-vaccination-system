@@ -152,11 +152,11 @@ export default function VerifyCertificatePage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen overflow-hidden">
       <PHASidebar />
 
       <div className="flex-1 overflow-y-auto bg-muted/20">
-      <main className="space-y-6 px-6 py-8">
+      <main className="space-y-6 px-4 py-5 sm:px-6 sm:py-8">
         {/* How It Works */}
         <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
           <CardHeader>

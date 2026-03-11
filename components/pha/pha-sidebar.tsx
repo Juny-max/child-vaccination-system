@@ -1,9 +1,10 @@
 "use client"
 
+import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
-import { LayoutDashboard, FileText, ShieldCheck, LogOut } from "lucide-react"
+import { LayoutDashboard, FileText, ShieldCheck, LogOut, Menu, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -18,6 +19,7 @@ const navItems = [
 export function PHASidebar() {
   const router = useRouter()
   const pathname = usePathname()
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   const handleLogout = () => {
     localStorage.removeItem("authToken")
@@ -31,51 +33,122 @@ export function PHASidebar() {
     router.replace("/auth/login")
   }
 
+  const navLinks = navItems.map(({ href, label, icon: Icon }) => (
+    <Link
+      key={href}
+      href={href}
+      onClick={() => setMobileOpen(false)}
+      className={cn(
+        "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+        pathname === href
+          ? "bg-primary text-primary-foreground"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {label}
+    </Link>
+  ))
+
   return (
-    <aside className="flex h-screen w-56 shrink-0 flex-col border-r bg-background">
-      {/* Logo */}
-      <div className="flex items-center gap-3 border-b px-4 py-5">
-        <div className="relative h-9 w-9 overflow-hidden rounded-lg border border-primary/30 bg-primary/5">
-          <Image src="/images/cvcc-logo.png" alt="CVCC" fill sizes="36px" className="object-cover" />
+    <>
+      {/* ── Desktop sidebar (hidden on mobile) ─────────────────── */}
+      <aside className="hidden lg:flex h-screen w-56 shrink-0 flex-col border-r bg-background">
+        {/* Logo */}
+        <div className="flex items-center gap-3 border-b px-4 py-5">
+          <div className="relative h-9 w-9 overflow-hidden rounded-lg border border-primary/30 bg-primary/5">
+            <Image src="/images/cvcc-logo.png" alt="CVCC" fill sizes="36px" className="object-cover" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold leading-tight">National Health</p>
+            <p className="text-xs text-muted-foreground">PHA · Ghana</p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-bold leading-tight">National Health</p>
-          <p className="text-xs text-muted-foreground">PHA · Ghana</p>
-        </div>
-      </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-0.5 px-2 py-4">
-        {navItems.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className={cn(
-              "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
-              pathname === href
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
+        {/* Navigation */}
+        <nav className="flex-1 space-y-0.5 px-2 py-4">
+          {navLinks}
+        </nav>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t px-4 py-4">
+          <ThemeToggle />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-muted-foreground hover:text-destructive"
+            onClick={handleLogout}
           >
-            <Icon className="h-4 w-4 shrink-0" />
-            {label}
-          </Link>
-        ))}
-      </nav>
+            <LogOut className="h-4 w-4" />
+            Logout
+          </Button>
+        </div>
+      </aside>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between border-t px-4 py-4">
-        <ThemeToggle />
+      {/* ── Mobile top bar (hidden on desktop) ─────────────────── */}
+      <header className="flex items-center justify-between border-b bg-background px-4 py-3 lg:hidden sticky top-0 z-30">
         <Button
           variant="ghost"
-          size="sm"
-          className="gap-2 text-muted-foreground hover:text-destructive"
-          onClick={handleLogout}
+          size="icon"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open navigation menu"
         >
-          <LogOut className="h-4 w-4" />
-          Logout
+          <Menu className="h-5 w-5" />
         </Button>
-      </div>
-    </aside>
+
+        <div className="flex items-center gap-2">
+          <div className="relative h-7 w-7 overflow-hidden rounded-md border border-primary/30 bg-primary/5">
+            <Image src="/images/cvcc-logo.png" alt="CVCC" fill sizes="28px" className="object-cover" />
+          </div>
+          <span className="text-sm font-semibold">PHA · Ghana</span>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={handleLogout}
+            aria-label="Logout"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
+      </header>
+
+      {/* ── Mobile drawer overlay ───────────────────────────────── */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setMobileOpen(false)}
+          />
+          {/* Drawer panel */}
+          <div className="absolute left-0 top-0 h-full w-64 bg-background shadow-xl flex flex-col">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="relative h-7 w-7 overflow-hidden rounded-md border border-primary/30 bg-primary/5">
+                  <Image src="/images/cvcc-logo.png" alt="CVCC" fill sizes="28px" className="object-cover" />
+                </div>
+                <span className="text-sm font-semibold">National Health</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMobileOpen(false)}
+                aria-label="Close navigation menu"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <nav className="flex-1 space-y-0.5 px-2 py-4">
+              {navLinks}
+            </nav>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
