@@ -197,21 +197,20 @@ export class PhaService {
         }
       });
 
-      // Build regional coverage array (only regions with data)
-      const allRegions = new Set([
-        ...regionTotalMap.keys(),
-        ...regionVaxMap.keys(),
-      ]);
+      // Build regional coverage array — always emit all 16 Ghana regions
+      const GHANA_REGIONS = [
+        'Greater Accra', 'Ashanti', 'Western', 'Central', 'Eastern',
+        'Volta', 'Oti', 'Bono', 'Bono East', 'Ahafo',
+        'Northern', 'Savannah', 'North East', 'Upper East', 'Upper West', 'Western North',
+      ];
 
-      const regionalCoverage = Array.from(allRegions)
-        .map((region) => {
-          const vaccinated = regionVaxMap.get(region)?.size ?? 0;
-          const total = regionTotalMap.get(region) ?? vaccinated; // fallback: treat as 100%
-          const coverage =
-            total > 0 ? parseFloat(((vaccinated / total) * 100).toFixed(1)) : 0;
-          return { region, coverage };
-        })
-        .sort((a, b) => b.coverage - a.coverage);
+      const regionalCoverage = GHANA_REGIONS.map((region) => {
+        const vaccinated = regionVaxMap.get(region)?.size ?? 0;
+        const total = regionTotalMap.get(region) ?? 0;
+        const coverage =
+          total > 0 ? parseFloat(((vaccinated / total) * 100).toFixed(1)) : 0;
+        return { region, coverage };
+      }).sort((a, b) => b.coverage - a.coverage);
 
       return {
         kpis: {
