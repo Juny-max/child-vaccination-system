@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { SmsService } from '../common/sms.service';
@@ -27,6 +27,8 @@ import {
 
 @Injectable()
 export class FacilityService {
+  private readonly logger = new Logger(FacilityService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly emailService: EmailService,
@@ -430,6 +432,56 @@ export class FacilityService {
           notes: dto.notes || 'AEFI flagged during vaccination administration',
           notified_branch_nurse: false,
         });
+    }
+
+    // ── Decrement stock inventory ──────────────────────────────────────
+    // Find the batch that was used (match on facility + vaccine + batch number if known).
+    // We always decrement by 1 dose, using FIFO (earliest expiry first) as the fallback.
+    if (facilityId) {
+      try {
+        let stockBatch: { id: string; quantity_remaining: number | null; quantity_used: number | null } | null = null;
+
+        if (dto.batchNumber) {
+          // Prefer the exact batch that was administered
+          const { data } = await this.db.supabase
+            .from('stock_inventory')
+            .select('id, quantity_remaining, quantity_used')
+            .eq('vaccine_id', vaccine.id)
+            .eq('facility_id', facilityId)
+            .eq('batch_number', dto.batchNumber)
+            .limit(1)
+            .maybeSingle();
+          stockBatch = data;
+        }
+
+        if (!stockBatch) {
+          // Fallback: earliest-expiry batch with stock remaining (FIFO)
+          const { data } = await this.db.supabase
+            .from('stock_inventory')
+            .select('id, quantity_remaining, quantity_used')
+            .eq('vaccine_id', vaccine.id)
+            .eq('facility_id', facilityId)
+            .gt('quantity_remaining', 0)
+            .order('expiry_date', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          stockBatch = data;
+        }
+
+        if (stockBatch) {
+          const newRemaining = Math.max(0, (stockBatch.quantity_remaining ?? 0) - 1);
+          await this.db.supabase
+            .from('stock_inventory')
+            .update({
+              quantity_used: (stockBatch.quantity_used ?? 0) + 1,
+              quantity_remaining: newRemaining,
+            })
+            .eq('id', stockBatch.id);
+        }
+      } catch (stockError) {
+        // Stock decrement failure must not abort the vaccination record — log only
+        this.logger.warn(`Stock decrement failed for vaccine ${vaccine.name}: ${(stockError as Error).message}`);
+      }
     }
 
     return {
