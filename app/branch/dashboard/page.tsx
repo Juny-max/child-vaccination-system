@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -16,8 +16,10 @@ import {
   Compass,
   Gauge,
   Layers,
+  Loader2,
   MapPin,
   MessageSquareWarning,
+  Package,
   Radio,
   RefreshCw,
   ShieldCheck,
@@ -42,6 +44,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  getBranchDashboard,
+  getVaccineOptions,
+  recordStockDelivery,
+  type BranchDashboardData,
+  type VaccineOption,
+} from "@/lib/api/branch-manager"
 
 const SECTIONS = [
   { id: "overview", label: "Branch Overview", icon: Activity },
@@ -52,106 +64,6 @@ const SECTIONS = [
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]["id"]
-
-type StockAlert = {
-  vaccine: string
-  remaining: number
-  status: "critical" | "low" | "healthy"
-}
-
-type AlertItem = {
-  id: string
-  child: string
-  detail: string
-  status?: string
-  timestamp: string
-  type?: string
-}
-
-type StaffMember = {
-  id: string
-  name: string
-  role: "Nurse" | "CHW"
-  catchment?: string
-  lastActive: string
-}
-
-const kpiData = {
-  childrenRegistered: 1842,
-  vaccinationsToday: 96,
-  chwsActiveToday: 14,
-  pendingSyncs: 3,
-}
-
-const branchCoverage = [{ name: "Coverage", value: 84, fill: "#2563eb" }]
-
-const coverageTrend = [
-  { day: "Mon", measles: 80 },
-  { day: "Tue", measles: 82 },
-  { day: "Wed", measles: 83 },
-  { day: "Thu", measles: 84 },
-  { day: "Fri", measles: 84 },
-  { day: "Sat", measles: 85 },
-]
-
-const stockAlerts: StockAlert[] = [
-  { vaccine: "BCG", remaining: 18, status: "low" },
-  { vaccine: "OPV-1", remaining: 6, status: "critical" },
-  { vaccine: "MMR", remaining: 45, status: "healthy" },
-]
-
-const overdueVaccinations: AlertItem[] = [
-  { id: "OV-112", child: "Demo Agyeman", detail: "DPT-3 overdue by 5 days", timestamp: "10 mins ago" },
-  { id: "OV-108", child: "Yaw Mensah", detail: "Measles overdue by 2 days", timestamp: "25 mins ago" },
-  { id: "OV-099", child: "Efua Arhin", detail: "OPV-3 overdue by 1 day", timestamp: "1 hr ago" },
-]
-
-const aefiEvents: AlertItem[] = [
-  { id: "AEFI-52", child: "Kojo Sarfo", detail: "Fever and swelling reported", status: "Under review", timestamp: "15 mins ago" },
-  { id: "AEFI-46", child: "Akosua Boateng", detail: "Rash observed post MMR", status: "New", timestamp: "44 mins ago" },
-]
-
-const syncErrors: AlertItem[] = [
-  { id: "SYNC-21", child: "N/A", detail: "Data conflict on outreach form (CHW: Demo Aidoo)", timestamp: "12 mins ago" },
-  { id: "SYNC-17", child: "N/A", detail: "Offline form failed to upload (CHW: Kwesi Antwi)", timestamp: "1 hr ago" },
-]
-
-const notificationFailures: AlertItem[] = [
-  { id: "SMS-98", child: "Agnes Owusu", detail: "SMS reminder failed (invalid number)", timestamp: "18 mins ago" },
-  { id: "EMAIL-21", child: "Baffour Mensah", detail: "Email bounced (mailbox full)", timestamp: "36 mins ago" },
-]
-
-const staffRoster: StaffMember[] = [
-  { id: "STF-201", name: "Demo Aidoo", role: "Nurse", lastActive: "Today · 09:45" },
-  { id: "STF-238", name: "Kwesi Antwi", role: "CHW", catchment: "Jakpa North", lastActive: "Today · 08:58" },
-  { id: "STF-244", name: "Mabel Owusu", role: "CHW", catchment: "Jakpa South", lastActive: "Yesterday · 18:12" },
-  { id: "STF-259", name: "Yaw Mensah", role: "Nurse", lastActive: "Today · 07:30" },
-]
-
-const chwProductivityData = [
-  { name: "Kwesi Antwi", registrations: 18, vaccinations: 26 },
-  { name: "Mabel Owusu", registrations: 14, vaccinations: 22 },
-  { name: "Zeinab Yakubu", registrations: 9, vaccinations: 18 },
-  { name: "Haruna Adam", registrations: 11, vaccinations: 16 },
-]
-
-const heatmapCatchments = [
-  { name: "Jakpa North", coverage: 88, status: "High" },
-  { name: "Jakpa South", coverage: 72, status: "Moderate" },
-  { name: "Sanza", coverage: 64, status: "Low" },
-  { name: "Kalba", coverage: 58, status: "Critical" },
-]
-
-const dropoutData = [
-  { vaccine: "DPT", series1: 286, series3: 231 },
-  { vaccine: "OPV", series1: 304, series3: 248 },
-  { vaccine: "Pneumococcal", series1: 298, series3: 242 },
-]
-
-const branchMeta = {
-  name: "Jakpa District Health Centre",
-  region: "Savannah Region",
-}
 
 type HeatStatus = "High" | "Moderate" | "Low" | "Critical"
 
@@ -167,14 +79,47 @@ export default function BranchDashboardPage() {
   const [activeSection, setActiveSection] = useState<SectionId>("overview")
   const [userName, setUserName] = useState("")
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
+  const [dashData, setDashData] = useState<BranchDashboardData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Stock delivery modal state
+  const [stockModalOpen, setStockModalOpen] = useState(false)
+  const [stockVaccines, setStockVaccines] = useState<VaccineOption[]>([])
+  const [stockForm, setStockForm] = useState({
+    vaccineId: "",
+    batchNumber: "",
+    lotNumber: "",
+    manufacturer: "",
+    expiryDate: "",
+    quantityReceived: "",
+    receivedDate: new Date().toISOString().split("T")[0],
+  })
+  const [stockSubmitting, setStockSubmitting] = useState(false)
+  const [stockFormError, setStockFormError] = useState<string | null>(null)
+
+  const loadDashboard = useCallback(() => {
+    setIsLoading(true)
+    setLoadError(null)
+    getBranchDashboard()
+      .then((data) => setDashData(data))
+      .catch((err: Error) => {
+        console.error("Failed to load branch dashboard:", err)
+        setLoadError(err.message || "Failed to load dashboard data. Please try again.")
+      })
+      .finally(() => setIsLoading(false))
+  }, [])
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
+    const legacyToken = localStorage.getItem("authToken")
+    const accessToken = localStorage.getItem("accessToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
     const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
-    if (!token) {
+    const hasAuth = Boolean(accessToken || legacyToken)
+
+    if (!hasAuth) {
       router.push("/auth/login")
       return
     }
@@ -194,7 +139,10 @@ export default function BranchDashboardPage() {
     }
 
     setUserName(name || "Branch Manager")
-  }, [router])
+
+    // Fetch real dashboard data from the API
+    loadDashboard()
+  }, [router, loadDashboard])
 
   useEffect(() => {
     if (!systemMessage) return
@@ -202,21 +150,78 @@ export default function BranchDashboardPage() {
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
 
-  const activeStockAlerts = useMemo(() => stockAlerts.filter((alert) => alert.status !== "healthy"), [])
+  const activeStockAlerts = useMemo(
+    () => (dashData?.stockAlerts ?? []).filter((alert) => alert.status !== "healthy"),
+    [dashData],
+  )
+
+  const handleOpenStockModal = async () => {
+    setStockModalOpen(true)
+    setStockFormError(null)
+    if (stockVaccines.length === 0) {
+      try {
+        const list = await getVaccineOptions()
+        setStockVaccines(list)
+      } catch {
+        // Dropdown will be empty — user can still submit if they type manually via select
+      }
+    }
+  }
+
+  const handleStockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!stockForm.vaccineId || !stockForm.batchNumber || !stockForm.expiryDate || !stockForm.quantityReceived) {
+      setStockFormError("Please fill in all required fields.")
+      return
+    }
+    setStockSubmitting(true)
+    setStockFormError(null)
+    try {
+      await recordStockDelivery({
+        vaccineId: stockForm.vaccineId,
+        batchNumber: stockForm.batchNumber,
+        lotNumber: stockForm.lotNumber || undefined,
+        manufacturer: stockForm.manufacturer || undefined,
+        expiryDate: stockForm.expiryDate,
+        quantityReceived: parseInt(stockForm.quantityReceived, 10),
+        receivedDate: stockForm.receivedDate,
+      })
+      setStockModalOpen(false)
+      setStockForm({
+        vaccineId: "",
+        batchNumber: "",
+        lotNumber: "",
+        manufacturer: "",
+        expiryDate: "",
+        quantityReceived: "",
+        receivedDate: new Date().toISOString().split("T")[0],
+      })
+      setSystemMessage("Delivery logged. Stock levels have been updated.")
+      loadDashboard()
+    } catch (err: unknown) {
+      setStockFormError(err instanceof Error ? err.message : "Failed to log delivery. Please try again.")
+    } finally {
+      setStockSubmitting(false)
+    }
+  }
 
   const handleExportReports = () => {
     setSystemMessage("Branch analytics export queued. You will receive an email when it is ready to download.")
   }
 
-  const handleOpenModule = (module: "users" | "child-records" | "field-stock" | "chw-log") => {
+  const handleOpenModule = (module: "users" | "child-records" | "chw-log") => {
     const messages: Record<typeof module, string> = {
       users: "Branch user management will open once backend routes are integrated.",
       "child-records": "Child record search coming soon. Connect API to enable lookups.",
-      "field-stock": "Field stock management pending inventory service.",
       "chw-log": "CHW visit log viewer will load once data sync is wired.",
     }
     setSystemMessage(messages[module])
   }
+
+  const kpis = dashData?.kpis ?? { childrenRegistered: 0, vaccinationsToday: 0, chwsActiveToday: 0, pendingSyncs: 0, zeroDoseChildren: 0 }
+  const coverageTrendData = (dashData?.coverageTrend ?? []).map((p) => ({ day: p.day, measles: p.vaccinations }))
+  const branchCoverageValue = dashData?.branchCoverage ?? 0
+  const branchCoverageChart = [{ name: "Coverage", value: branchCoverageValue, fill: "#2563eb" }]
 
   const renderOverview = () => (
     <div className="space-y-6">
@@ -227,8 +232,7 @@ export default function BranchDashboardPage() {
             <CardDescription>Total children under this branch</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">{kpiData.childrenRegistered.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground mt-1">+124 in the last 30 days</p>
+            <p className="text-3xl font-semibold">{kpis.childrenRegistered.toLocaleString()}</p>
           </CardContent>
         </Card>
         <Card>
@@ -237,8 +241,7 @@ export default function BranchDashboardPage() {
             <CardDescription>Doses recorded since 00:00</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">{kpiData.vaccinationsToday}</p>
-            <p className="text-xs text-muted-foreground mt-1">Clinic sessions active since 07:30</p>
+            <p className="text-3xl font-semibold">{kpis.vaccinationsToday}</p>
           </CardContent>
         </Card>
         <Card>
@@ -247,18 +250,18 @@ export default function BranchDashboardPage() {
             <CardDescription>Sync activity in the last 24 hours</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">{kpiData.chwsActiveToday}</p>
-            <p className="text-xs text-muted-foreground mt-1">81% of deployed CHWs</p>
+            <p className="text-3xl font-semibold">{kpis.chwsActiveToday}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Data syncs pending</CardTitle>
-            <CardDescription>CHW devices offline &gt; 24 hours</CardDescription>
+            <CardTitle className="text-sm font-medium">Zero-dose children</CardTitle>
+            <CardDescription>Registered but never vaccinated</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">{kpiData.pendingSyncs}</p>
-            <p className="text-xs text-muted-foreground mt-1">Escalate to CHW leads</p>
+            <p className={`text-3xl font-semibold ${kpis.zeroDoseChildren > 0 ? "text-destructive" : ""}`}>
+              {kpis.zeroDoseChildren.toLocaleString()}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -269,15 +272,15 @@ export default function BranchDashboardPage() {
             <CardTitle className="flex items-center gap-2 text-lg">
               <Gauge className="h-5 w-5 text-primary" /> Branch coverage rate
             </CardTitle>
-            <CardDescription>Measles coverage across all registered children</CardDescription>
+            <CardDescription>Coverage across all registered children</CardDescription>
           </CardHeader>
           <CardContent className="flex-1">
             <ResponsiveContainer width="100%" height={280}>
-              <RadialBarChart innerRadius="60%" outerRadius="110%" data={branchCoverage} startAngle={90} endAngle={-270}>
+              <RadialBarChart innerRadius="60%" outerRadius="110%" data={branchCoverageChart} startAngle={90} endAngle={-270}>
                 <RadialBar background cornerRadius={18} dataKey="value" />
               </RadialBarChart>
             </ResponsiveContainer>
-            <p className="mt-4 text-center text-sm text-muted-foreground">Target: 90% · Last week: 82%</p>
+            <p className="mt-4 text-center text-sm text-muted-foreground">Coverage: {branchCoverageValue}%</p>
           </CardContent>
         </Card>
 
@@ -286,14 +289,14 @@ export default function BranchDashboardPage() {
             <CardTitle className="flex items-center gap-2 text-lg">
               <Activity className="h-5 w-5 text-primary" /> 7-day coverage trend
             </CardTitle>
-            <CardDescription>Daily measles coverage completion</CardDescription>
+            <CardDescription>Daily vaccination count (7 days)</CardDescription>
           </CardHeader>
           <CardContent className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={coverageTrend}>
+              <LineChart data={coverageTrendData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
-                <YAxis domain={[70, 90]} />
+                <YAxis />
                 <Tooltip />
                 <Line type="monotone" dataKey="measles" stroke="#2563eb" strokeWidth={2} />
               </LineChart>
@@ -307,22 +310,46 @@ export default function BranchDashboardPage() {
           <CardTitle className="flex items-center gap-2 text-lg">
             <ShieldCheck className="h-5 w-5 text-primary" /> Vaccine stock alerts
           </CardTitle>
-          <CardDescription>Monitor cold chain and outreach stock at a glance</CardDescription>
+          <CardDescription>Cold chain and outreach stock levels · sorted by urgency</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
-          {stockAlerts.map((alert) => (
-            <div key={alert.vaccine} className="rounded-lg border border-border bg-background p-4">
-              <p className="text-sm font-semibold text-foreground">{alert.vaccine}</p>
-              <p className="mt-2 text-2xl font-semibold">{alert.remaining} vials</p>
-              <Badge
-                className="mt-3"
-                variant={alert.status === "critical" ? "destructive" : alert.status === "low" ? "secondary" : "outline"}
-              >
-                {alert.status === "critical" ? "Critical" : alert.status === "low" ? "Low" : "Healthy"}
-              </Badge>
-              <p className="mt-2 text-xs text-muted-foreground">Update via Field Stock Management</p>
-            </div>
-          ))}
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {(dashData?.stockAlerts ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground col-span-4">No stock data yet. Run the seed-stock-inventory.sql script in Supabase to populate demo data.</p>
+          ) : (dashData?.stockAlerts ?? []).map((alert) => {
+            const statusConfig: Record<string, { label: string; badgeVariant: "destructive" | "secondary" | "outline"; barColor: string }> = {
+              "out-of-stock": { label: "Out of stock", badgeVariant: "destructive", barColor: "bg-destructive" },
+              critical:       { label: "Critical",     badgeVariant: "destructive", barColor: "bg-rose-500" },
+              low:            { label: "Low",          badgeVariant: "secondary",   barColor: "bg-amber-500" },
+              moderate:       { label: "Moderate",     badgeVariant: "secondary",   barColor: "bg-sky-500" },
+              adequate:       { label: "Adequate",     badgeVariant: "outline",     barColor: "bg-emerald-500" },
+            }
+            const cfg = statusConfig[alert.status] ?? statusConfig.adequate
+            const expiryWarning = alert.daysToExpiry <= 90
+            return (
+              <div key={alert.vaccine} className="rounded-lg border border-border bg-background p-4 flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground leading-tight">{alert.vaccine}</p>
+                  <Badge variant={cfg.badgeVariant} className="shrink-0 text-xs">{cfg.label}</Badge>
+                </div>
+                <p className="text-2xl font-bold text-foreground">
+                  {alert.remaining.toLocaleString()}
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">doses</span>
+                </p>
+                {/* Stock level bar — max anchored at 500 for visual comparison */}
+                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${cfg.barColor}`}
+                    style={{ width: `${Math.min(100, (alert.remaining / 500) * 100)}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  <p className={`text-xs ${expiryWarning ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
+                    Exp: {alert.expiryDate} {expiryWarning && `(${alert.daysToExpiry}d)`}
+                  </p>
+                </div>
+              </div>
+            )
+          })}
         </CardContent>
       </Card>
     </div>
@@ -332,20 +359,37 @@ export default function BranchDashboardPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Overdue vaccinations</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-destructive" /> Overdue vaccinations
+          </CardTitle>
           <CardDescription>Reach out to guardians and schedule immediate follow-ups.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {overdueVaccinations.map((item) => (
-            <div key={item.id} className="rounded-lg border border-border bg-background p-4">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-foreground">{item.child}</p>
-                <Badge variant="secondary">{item.id}</Badge>
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
-              <p className="mt-2 text-xs text-muted-foreground">{item.timestamp}</p>
+          {(dashData?.overdueVaccinations ?? []).length === 0 ? (
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-4">
+              <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+              <p className="text-sm text-muted-foreground">All vaccinations are up to date. No overdue appointments.</p>
             </div>
-          ))}
+          ) : (dashData?.overdueVaccinations ?? []).map((item) => {
+            const days = item.daysOverdue ?? 0
+            const urgencyVariant: "destructive" | "secondary" | "outline" =
+              days > 14 ? "destructive" : days > 7 ? "secondary" : "secondary"
+            const urgencyColor = days > 14 ? "border-destructive/60" : days > 7 ? "border-amber-400/60" : "border-border"
+            return (
+              <div key={item.id} className={`rounded-lg border bg-background p-4 ${urgencyColor}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-foreground">{item.child}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">{item.detail}</p>
+                  </div>
+                  <Badge variant={urgencyVariant} className="shrink-0 whitespace-nowrap">
+                    {days} day{days !== 1 ? "s" : ""} overdue
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground/70">{item.timestamp}</p>
+              </div>
+            )
+          })}
         </CardContent>
       </Card>
 
@@ -358,7 +402,9 @@ export default function BranchDashboardPage() {
             <CardDescription>Coordinate with district health officers for rapid response.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {aefiEvents.map((event) => (
+            {(dashData?.aefiEvents ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No AEFI events reported.</p>
+            ) : (dashData?.aefiEvents ?? []).map((event) => (
               <div key={event.id} className="rounded-lg border border-border bg-background p-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-foreground">{event.child}</p>
@@ -379,7 +425,9 @@ export default function BranchDashboardPage() {
             <CardDescription>Resolve data conflicts and failed submissions quickly.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {syncErrors.map((error) => (
+            {(dashData?.syncErrors ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No sync errors.</p>
+            ) : (dashData?.syncErrors ?? []).map((error) => (
               <div key={error.id} className="rounded-lg border border-border bg-background p-3">
                 <p className="text-sm font-semibold text-foreground">{error.detail}</p>
                 <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground/80">{error.timestamp}</p>
@@ -396,7 +444,9 @@ export default function BranchDashboardPage() {
             <CardDescription>Follow up with guardians whose reminders did not deliver.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {notificationFailures.map((failure) => (
+            {(dashData?.notificationFailures ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No notification failures.</p>
+            ) : (dashData?.notificationFailures ?? []).map((failure) => (
               <div key={failure.id} className="rounded-lg border border-border bg-background p-3">
                 <p className="text-sm font-semibold text-foreground">{failure.child}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{failure.detail}</p>
@@ -427,13 +477,15 @@ export default function BranchDashboardPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {staffRoster.map((staff) => (
+              {(dashData?.staffRoster ?? []).length === 0 ? (
+                <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">No staff assigned to this branch.</td></tr>
+              ) : (dashData?.staffRoster ?? []).map((staff) => (
                 <tr key={staff.id} className="text-foreground">
                   <td className="py-2 pr-4 font-medium">{staff.name}</td>
                   <td className="py-2 pr-4">
                     <Badge variant={staff.role === "Nurse" ? "secondary" : "outline"}>{staff.role}</Badge>
                   </td>
-                  <td className="py-2 pr-4">{staff.role === "CHW" ? staff.catchment ?? "Unassigned" : "Clinic"}</td>
+                  <td className="py-2 pr-4">{staff.role === "CHW" ? "Field" : "Clinic"}</td>
                   <td className="py-2 pr-4 text-muted-foreground">{staff.lastActive}</td>
                 </tr>
               ))}
@@ -451,7 +503,7 @@ export default function BranchDashboardPage() {
         </CardHeader>
         <CardContent className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chwProductivityData}>
+            <BarChart data={dashData?.chwProductivity ?? []}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
               <YAxis />
@@ -489,7 +541,7 @@ export default function BranchDashboardPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
-            {heatmapCatchments.map((catchment) => (
+            {(dashData?.catchmentCoverage ?? []).map((catchment) => (
               <div
                 key={catchment.name}
                 className={`relative overflow-hidden rounded-xl border border-border bg-background p-4`}
@@ -519,7 +571,7 @@ export default function BranchDashboardPage() {
         </CardHeader>
         <CardContent className="h-[320px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={dropoutData}>
+            <BarChart data={dashData?.dropoutData ?? []}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="vaccine" />
               <YAxis />
@@ -579,13 +631,13 @@ export default function BranchDashboardPage() {
       <Card className="border border-primary/30">
         <CardHeader>
           <CardTitle className="text-lg">Field stock management</CardTitle>
-          <CardDescription>Update vaccine and supply balances after outreach.</CardDescription>
+          <CardDescription>Log incoming vaccine deliveries and monitor stock levels.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <Button onClick={() => handleOpenModule("field-stock")} className="gap-2">
-            <Compass className="h-4 w-4" /> Manage stock
+          <Button onClick={handleOpenStockModal} className="gap-2">
+            <Package className="h-4 w-4" /> Log new delivery
           </Button>
-          <p className="text-xs text-muted-foreground">Log issues, returns, and usage per session.</p>
+          <p className="text-xs text-muted-foreground">Record each shipment received from the district medical store.</p>
         </CardContent>
       </Card>
     </div>
@@ -618,8 +670,10 @@ export default function BranchDashboardPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Branch Operations Console</p>
-              <p className="text-xl font-semibold text-foreground">{branchMeta.name}</p>
-              <p className="text-xs text-muted-foreground">{branchMeta.region}</p>
+              <p className="text-xl font-semibold text-foreground">{dashData?.branchMeta?.name ?? "Loading..."}</p>
+              <p className="text-xs text-muted-foreground">
+                {[dashData?.branchMeta?.district, dashData?.branchMeta?.region].filter(Boolean).join(" · ")}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -634,9 +688,12 @@ export default function BranchDashboardPage() {
               className="gap-2"
               onClick={() => {
                 localStorage.removeItem("authToken")
+                localStorage.removeItem("accessToken")
                 localStorage.removeItem("userRole")
                 localStorage.removeItem("userRoleDetail")
                 localStorage.removeItem("userName")
+                localStorage.removeItem("userId")
+                localStorage.removeItem("branchId")
                 sessionStorage.removeItem("userName")
                 router.push("/")
               }}
@@ -689,10 +746,144 @@ export default function BranchDashboardPage() {
                 <AlertDescription>{systemMessage}</AlertDescription>
               </Alert>
             ) : null}
-            {renderContent()}
+            {isLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-3 text-muted-foreground">Loading dashboard...</span>
+              </div>
+            ) : loadError ? (
+              <div className="flex flex-col items-center justify-center gap-4 py-20">
+                <AlertCircle className="h-10 w-10 text-destructive" />
+                <p className="max-w-sm text-center text-sm text-muted-foreground">{loadError}</p>
+                <Button onClick={loadDashboard} className="gap-2">
+                  <RefreshCw className="h-4 w-4" /> Try again
+                </Button>
+              </div>
+            ) : renderContent()}
           </section>
         </div>
       </main>
+
+      {/* ── Stock Delivery Modal ──────────────────────────────────────────── */}
+      <Dialog open={stockModalOpen} onOpenChange={setStockModalOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-primary" /> Log vaccine delivery
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleStockSubmit} className="space-y-4 pt-1">
+            {/* Vaccine */}
+            <div className="space-y-1">
+              <Label htmlFor="stock-vaccine">Vaccine *</Label>
+              <select
+                id="stock-vaccine"
+                value={stockForm.vaccineId}
+                onChange={(e) => setStockForm((f) => ({ ...f, vaccineId: e.target.value }))}
+                required
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                <option value="">Select vaccine…</option>
+                {stockVaccines.map((v) => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Batch / Lot */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="stock-batch">Batch number *</Label>
+                <Input
+                  id="stock-batch"
+                  placeholder="e.g. BCG-2026-001"
+                  value={stockForm.batchNumber}
+                  onChange={(e) => setStockForm((f) => ({ ...f, batchNumber: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="stock-lot">Lot number</Label>
+                <Input
+                  id="stock-lot"
+                  placeholder="e.g. LOT-A1"
+                  value={stockForm.lotNumber}
+                  onChange={(e) => setStockForm((f) => ({ ...f, lotNumber: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Manufacturer */}
+            <div className="space-y-1">
+              <Label htmlFor="stock-mfr">Manufacturer</Label>
+              <Input
+                id="stock-mfr"
+                placeholder="e.g. Serum Institute of India"
+                value={stockForm.manufacturer}
+                onChange={(e) => setStockForm((f) => ({ ...f, manufacturer: e.target.value }))}
+              />
+            </div>
+
+            {/* Qty / Received date */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="stock-qty">Quantity received *</Label>
+                <Input
+                  id="stock-qty"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 500"
+                  value={stockForm.quantityReceived}
+                  onChange={(e) => setStockForm((f) => ({ ...f, quantityReceived: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="stock-rcvd">Date received *</Label>
+                <Input
+                  id="stock-rcvd"
+                  type="date"
+                  value={stockForm.receivedDate}
+                  onChange={(e) => setStockForm((f) => ({ ...f, receivedDate: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Expiry date */}
+            <div className="space-y-1">
+              <Label htmlFor="stock-exp">Expiry date *</Label>
+              <Input
+                id="stock-exp"
+                type="date"
+                value={stockForm.expiryDate}
+                onChange={(e) => setStockForm((f) => ({ ...f, expiryDate: e.target.value }))}
+                required
+              />
+            </div>
+
+            {stockFormError && (
+              <p className="text-sm text-destructive">{stockFormError}</p>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStockModalOpen(false)}
+                disabled={stockSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={stockSubmitting} className="gap-2">
+                {stockSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {stockSubmitting ? "Saving…" : "Log delivery"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

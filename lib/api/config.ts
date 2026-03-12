@@ -63,6 +63,8 @@ export async function handleResponse<T>(response: Response, skipAuthRedirect = f
 
 /**
  * API request helper
+ * Includes a 20-second AbortController timeout so requests never hang
+ * indefinitely (e.g. when the Render backend is waking up from sleep).
  */
 export async function apiRequest<T>(
   endpoint: string,
@@ -70,15 +72,27 @@ export async function apiRequest<T>(
   skipAuthRedirect = false
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...getAuthHeaders(),
-      ...options.headers,
-    },
-    credentials: 'include', // CRITICAL: Send HttpOnly cookies with every request
-  });
-  
-  return handleResponse<T>(response, skipAuthRedirect);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        ...getAuthHeaders(),
+        ...options.headers,
+      },
+      credentials: 'include', // CRITICAL: Send HttpOnly cookies with every request
+    });
+    clearTimeout(timeoutId);
+    return handleResponse<T>(response, skipAuthRedirect);
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timed out. The server may be starting up — please try again in a moment.');
+    }
+    throw error;
+  }
 }

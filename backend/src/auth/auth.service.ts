@@ -338,6 +338,7 @@ export class AuthService {
         role: user.role,
         phoneNumber: user.phone_number,
         lastLogin: user.last_login,
+        branchId: user.branch_id || undefined,
       };
     } catch (error: any) {
       // For network/Supabase errors, return null to trigger 401
