@@ -98,6 +98,10 @@ export default function BranchDashboardPage() {
   const [stockSubmitting, setStockSubmitting] = useState(false)
   const [stockFormError, setStockFormError] = useState<string | null>(null)
 
+  // Stock warning modal — auto-opens on load when vaccines are expired or out of stock
+  const [stockWarningModalOpen, setStockWarningModalOpen] = useState(false)
+  const [stockWarningAcknowledged, setStockWarningAcknowledged] = useState(false)
+
   const loadDashboard = useCallback(() => {
     setIsLoading(true)
     setLoadError(null)
@@ -149,6 +153,15 @@ export default function BranchDashboardPage() {
     const timeout = window.setTimeout(() => setSystemMessage(null), 5000)
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
+
+  // Auto-open the stock warning modal once per mount when critical alerts exist
+  useEffect(() => {
+    if (!dashData || stockWarningAcknowledged) return
+    const hasCritical = (dashData.stockAlerts ?? []).some(
+      (a) => a.status === 'expired' || a.status === 'out-of-stock',
+    )
+    if (hasCritical) setStockWarningModalOpen(true)
+  }, [dashData, stockWarningAcknowledged])
 
   const activeStockAlerts = useMemo(
     () => (dashData?.stockAlerts ?? []).filter((alert) => alert.status !== "healthy"),
@@ -317,6 +330,7 @@ export default function BranchDashboardPage() {
             <p className="text-sm text-muted-foreground col-span-4">No stock data yet. Run the seed-stock-inventory.sql script in Supabase to populate demo data.</p>
           ) : (dashData?.stockAlerts ?? []).map((alert) => {
             const statusConfig: Record<string, { label: string; badgeVariant: "destructive" | "secondary" | "outline"; barColor: string }> = {
+              expired:        { label: "Expired",      badgeVariant: "destructive", barColor: "bg-rose-800" },
               "out-of-stock": { label: "Out of stock", badgeVariant: "destructive", barColor: "bg-destructive" },
               critical:       { label: "Critical",     badgeVariant: "destructive", barColor: "bg-rose-500" },
               low:            { label: "Low",          badgeVariant: "secondary",   barColor: "bg-amber-500" },
@@ -763,6 +777,74 @@ export default function BranchDashboardPage() {
           </section>
         </div>
       </main>
+
+      {/* ── Urgent Stock Warning Modal ─────────────────────────────────────── */}
+      <Dialog
+        open={stockWarningModalOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setStockWarningModalOpen(false)
+            setStockWarningAcknowledged(true)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <div className="flex flex-col items-center gap-3 pb-2 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+                <AlertTriangle className="h-9 w-9 text-destructive" />
+              </div>
+              <DialogTitle className="text-xl font-bold text-destructive">
+                Urgent Stock Alert
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                The following vaccines require <span className="font-semibold text-foreground">immediate action</span>.
+                Contact your district medical store to arrange replenishment or safe disposal.
+              </p>
+            </div>
+          </DialogHeader>
+
+          <div className="max-h-72 space-y-3 overflow-y-auto py-1">
+            {(dashData?.stockAlerts ?? [])
+              .filter((a) => a.status === "expired" || a.status === "out-of-stock")
+              .map((alert) => (
+                <div
+                  key={alert.vaccine}
+                  className={`flex items-center justify-between rounded-xl border p-4 ${
+                    alert.status === "expired"
+                      ? "border-rose-500/60 bg-rose-50 dark:bg-rose-950/40"
+                      : "border-orange-400/60 bg-orange-50 dark:bg-orange-950/40"
+                  }`}
+                >
+                  <div>
+                    <p className="font-semibold text-foreground">{alert.vaccine}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {alert.status === "expired"
+                        ? `Expired on ${alert.expiryDate}`
+                        : `Stock fully depleted — 0 doses remaining`}
+                    </p>
+                  </div>
+                  <Badge variant="destructive" className="shrink-0 px-3 py-1 text-sm font-bold tracking-wide">
+                    {alert.status === "expired" ? "EXPIRED" : "FINISHED"}
+                  </Badge>
+                </div>
+              ))}
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              variant="destructive"
+              className="w-full gap-2 py-5 text-base font-semibold"
+              onClick={() => {
+                setStockWarningModalOpen(false)
+                setStockWarningAcknowledged(true)
+              }}
+            >
+              <CheckCircle2 className="h-5 w-5" /> Acknowledged — I will take action
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Stock Delivery Modal ──────────────────────────────────────────── */}
       <Dialog open={stockModalOpen} onOpenChange={setStockModalOpen}>

@@ -241,7 +241,9 @@ export class BranchManagerService {
         const isExpiringSoon = earliestExpiry <= ninetyDaysOut;
 
         let status: string;
-        if (remaining === 0) {
+        if (daysToExpiry <= 0) {
+          status = 'expired';
+        } else if (remaining === 0) {
           status = 'out-of-stock';
         } else if (isExpiringSoon && remaining < 100) {
           status = 'critical';
@@ -264,7 +266,7 @@ export class BranchManagerService {
 
       // Sort: out-of-stock first, then critical, low, moderate, adequate
       const statusOrder: Record<string, number> = {
-        'out-of-stock': 0, critical: 1, low: 2, moderate: 3, adequate: 4,
+        'expired': 0, 'out-of-stock': 1, critical: 2, low: 3, moderate: 4, adequate: 5,
       };
       stockAlerts.sort((a, b) => (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5));
 
