@@ -102,6 +102,9 @@ export default function BranchDashboardPage() {
   const [stockWarningModalOpen, setStockWarningModalOpen] = useState(false)
   const [stockWarningAcknowledged, setStockWarningAcknowledged] = useState(false)
 
+  // Logout state
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+
   const loadDashboard = useCallback(() => {
     setIsLoading(true)
     setLoadError(null)
@@ -700,7 +703,9 @@ export default function BranchDashboardPage() {
               variant="outline"
               size="sm"
               className="gap-2"
+              disabled={isLoggingOut}
               onClick={() => {
+                setIsLoggingOut(true)
                 localStorage.removeItem("authToken")
                 localStorage.removeItem("accessToken")
                 localStorage.removeItem("userRole")
@@ -712,7 +717,8 @@ export default function BranchDashboardPage() {
                 router.push("/")
               }}
             >
-              Logout
+              {isLoggingOut && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isLoggingOut ? "Logging out..." : "Logout"}
             </Button>
           </div>
         </div>
