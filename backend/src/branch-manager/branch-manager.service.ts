@@ -15,19 +15,37 @@ export class BranchManagerService {
     const db = this.databaseService.supabase;
 
     try {
-      // ── Step 1: Fetch branch metadata ──────────────────────────────────
-      const { data: branch } = await db
-        .from('branches')
-        .select('id, name, region, district, code')
-        .eq('id', branchId)
-        .single();
-
-      // ── Step 2: Run independent aggregate queries in parallel ──────────
+      // ── Step 1: Fetch branch metadata + children (parallel) ───────────
+      // Children are fetched here (not in Step 4) so childIdList is available
+      // for the today-count and weekly-trend queries below.  The inner-join on
+      // child_guardian excludes orphaned seed records — matching the nurse portal.
       const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
 
+      const [branchResult, childrenEarlyResult] = await Promise.all([
+        db.from('branches')
+          .select('id, name, region, district, code')
+          .eq('id', branchId)
+          .single(),
+        db.from('children')
+          .select('id, full_name, date_of_birth, child_guardian!inner(child_id)')
+          .eq('primary_facility_id', branchId)
+          .eq('is_active', true),
+      ]);
+      const branch = branchResult.data;
+
+      // Deduplicate (a child with 2 guardians returns 2 rows from the inner-join)
+      const seenChildIds = new Set<string>();
+      const allChildrenIds = (childrenEarlyResult.data ?? []).filter((c: any) => {
+        if (seenChildIds.has(c.id)) return false;
+        seenChildIds.add(c.id);
+        return true;
+      });
+      const childIdList = allChildrenIds.map((c: any) => c.id);
+
+      // ── Step 2: Run independent aggregate queries in parallel ──────────
       const [
         childrenCount,
         vaccinationsTodayCount,
@@ -39,6 +57,7 @@ export class BranchManagerService {
         visitLogRows,
         weeklyVaxRows,
         catchmentRows,
+        vaccinatedEventsResult,
       ] = await Promise.all([
         // Total children registered at this branch
         db
@@ -47,13 +66,16 @@ export class BranchManagerService {
           .eq('primary_facility_id', branchId)
           .eq('is_active', true),
 
-        // Vaccinations completed today at this branch
-        db
-          .from('vaccination_events')
-          .select('id', { count: 'exact', head: true })
-          .eq('facility_id', branchId)
-          .eq('status', 'completed')
-          .eq('administered_date', todayStr),
+        // Vaccinations completed today — scoped via child_id so historical events
+        // with facility_id = null are still counted correctly.
+        childIdList.length > 0
+          ? db
+              .from('vaccination_events')
+              .select('id', { count: 'exact', head: true })
+              .in('child_id', childIdList)
+              .eq('status', 'completed')
+              .eq('administered_date', todayStr)
+          : Promise.resolve({ count: 0, data: null, error: null }),
 
         // Staff assigned to this branch (nurses + CHWs)
         db
@@ -104,27 +126,37 @@ export class BranchManagerService {
           .order('visit_date', { ascending: false })
           .limit(50),
 
-        // Weekly vaccination data for trend chart (last 7 days)
-        db
-          .from('vaccination_events')
-          .select('administered_date')
-          .eq('facility_id', branchId)
-          .eq('status', 'completed')
-          .gte('administered_date', sevenDaysAgoStr)
-          .order('administered_date', { ascending: true }),
+        // Weekly vaccination data for trend chart (last 7 days) — child_id scoped
+        childIdList.length > 0
+          ? db
+              .from('vaccination_events')
+              .select('administered_date')
+              .in('child_id', childIdList)
+              .eq('status', 'completed')
+              .gte('administered_date', sevenDaysAgoStr)
+              .order('administered_date', { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
 
         // Catchment areas under this branch
         db
           .from('catchment_areas')
           .select('id, name, code, population_estimate, assigned_chw_id')
           .eq('branch_id', branchId),
+
+        // All completed vaccination events for branch children (coverage + overdue)
+        childIdList.length > 0
+          ? db
+              .from('vaccination_events')
+              .select('child_id, vaccine_id, dose_number')
+              .in('child_id', childIdList)
+              .eq('status', 'completed')
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       // ── Step 3: Compute KPIs ──────────────────────────────────────────
       const totalChildren = childrenCount.count ?? 0;
-      const vaccinationsToday = vaccinationsTodayCount.count ?? 0;
+      const vaccinationsToday = (vaccinationsTodayCount as any).count ?? 0;
       const staff = staffRows.data ?? [];
-      const chwCount = staff.filter((s: any) => s.role === 'chw').length;
 
       // CHWs "active today" = logged in within last 24 hours
       const oneDayAgo = new Date();
@@ -136,39 +168,16 @@ export class BranchManagerService {
       const pendingSyncs = (syncQueueRows.data ?? []).length;
 
       // ── Step 4: Branch coverage — unique children with ≥ 1 completed vaccination ──
-      // We fetch all child_ids from vaccination_events and deduplicate in JS so that
-      // a child who received 10 vaccines still counts as ONE vaccinated child (not 10).
-      // First get the IDs of all children registered at this branch.
-      // Inner-join child_guardian so orphaned / seed children with no guardian
-      // are excluded — those would never appear in the nurse portal either.
-      const { data: allChildrenIds } = await db
-        .from('children')
-        .select('id, full_name, date_of_birth, child_guardian!inner(child_id)')
-        .eq('primary_facility_id', branchId)
-        .eq('is_active', true);
-
-      const childIdList = (allChildrenIds ?? []).map((c: any) => c.id);
-
-      // Fetch ALL completed vaccination events for children at this branch,
-      // regardless of which facility administered them. A child vaccinated at
-      // another facility during outreach must not appear as overdue here.
-      const { data: vaccinatedEvents } = childIdList.length > 0
-        ? await db
-            .from('vaccination_events')
-            .select('child_id, vaccine_id, dose_number')
-            .in('child_id', childIdList)
-            .eq('status', 'completed')
-        : { data: [] };
+      // vaccinatedEvents and allChildrenIds are already available from Steps 1 & 2.
+      const vaccinatedEvents = vaccinatedEventsResult.data ?? [];
 
       const uniqueVaccinatedIds = new Set(
-        (vaccinatedEvents ?? []).map((e: any) => e.child_id),
+        vaccinatedEvents.map((e: any) => e.child_id),
       );
       const uniqueVaccinatedCount = uniqueVaccinatedIds.size;
 
       // Zero-dose children: registered at this branch but NEVER received any vaccine.
-      // This is a critical public-health alert — these children are entirely unprotected.
-
-      const zeroDoseChildren = (allChildrenIds ?? []).filter(
+      const zeroDoseChildren = allChildrenIds.filter(
         (c: any) => !uniqueVaccinatedIds.has(c.id),
       ).length;
 
@@ -269,7 +278,7 @@ export class BranchManagerService {
       const receivedExact = new Set<string>();
       // Loose set: child + vaccine only    (for legacy events where dose_number is null)
       const receivedVaccine = new Set<string>();
-      (vaccinatedEvents ?? []).forEach((ev: any) => {
+      (vaccinatedEvents).forEach((ev: any) => {
         if (!ev.vaccine_id) return;
         if (ev.dose_number != null) {
           receivedExact.add(`${ev.child_id}:${ev.vaccine_id}:${ev.dose_number}`);
@@ -280,7 +289,7 @@ export class BranchManagerService {
       });
 
       const rawOverdue: any[] = [];
-      for (const child of (allChildrenIds ?? [])) {
+      for (const child of allChildrenIds) {
         if (!child.date_of_birth) continue;
         const dob = new Date(child.date_of_birth);
         const ageInDays = Math.floor(
