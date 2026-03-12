@@ -92,13 +92,15 @@ export class BranchManagerService {
           .eq('is_mandatory', true)
           .order('due_days_from_birth', { ascending: true }),
 
-        // AEFI events at this branch (via vaccination_events)
-        db
-          .from('aefi_reports')
-          .select('id, severity, status, symptoms, created_at, children(full_name), vaccination_events!inner(facility_id)')
-          .eq('vaccination_events.facility_id', branchId)
-          .order('created_at', { ascending: false })
-          .limit(10),
+        // AEFI events at this branch — scoped by child_id (not facility_id)
+        childIdList.length > 0
+          ? db
+              .from('aefi_reports')
+              .select('id, severity, status, symptoms, created_at, children(full_name)')
+              .in('child_id', childIdList)
+              .order('created_at', { ascending: false })
+              .limit(10)
+          : Promise.resolve({ data: [], error: null }),
 
         // Pending sync queue items from staff at this branch
         db
@@ -109,13 +111,16 @@ export class BranchManagerService {
           .order('created_at', { ascending: false })
           .limit(10),
 
-        // Failed notifications for children at this branch
-        db
-          .from('notifications')
-          .select('id, channel, recipient_contact, message, status, error_message, created_at')
-          .in('status', ['failed', 'bounced'])
-          .order('created_at', { ascending: false })
-          .limit(10),
+        // Failed notifications for children at this branch — scoped by child_id
+        childIdList.length > 0
+          ? db
+              .from('notifications')
+              .select('id, channel, recipient_contact, message, status, error_message, created_at, child_id, children(full_name)')
+              .in('child_id', childIdList)
+              .in('status', ['failed', 'bounced'])
+              .order('created_at', { ascending: false })
+              .limit(10)
+          : Promise.resolve({ data: [], error: null }),
 
         // CHW visit logs for the past 7 days
         db
@@ -350,8 +355,8 @@ export class BranchManagerService {
       // ── Step 10: Format notification failures ─────────────────────────
       const notificationFailures = (notificationRows.data ?? []).map((n: any) => ({
         id: n.id,
-        child: n.recipient_contact ?? 'Unknown',
-        detail: `${n.channel?.toUpperCase() ?? 'Notification'} ${n.status}: ${n.error_message || 'delivery failed'}`,
+        child: (n.children as any)?.full_name ?? 'Guardian/Unknown',
+        detail: `${n.channel?.toUpperCase() ?? 'Notification'} to ${n.recipient_contact ?? 'unknown contact'} — ${n.error_message || n.status}`,
         timestamp: this.timeAgo(new Date(n.created_at)),
       }));
 
