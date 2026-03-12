@@ -144,6 +144,28 @@ export async function administerVaccine(
   });
 }
 
+export interface VaccineStockInfo {
+  batchNumber: string;
+  expiryDate: string; // YYYY-MM-DD
+}
+
+/**
+ * Fetch the current in-stock batch number and expiry date for a vaccine at a
+ * given facility. Returns null when no stock record exists.
+ */
+export async function getVaccineStockInfo(
+  vaccineName: string,
+  facilityId: string
+): Promise<VaccineStockInfo | null> {
+  try {
+    return await apiRequest<VaccineStockInfo | null>(
+      `/facility/vaccine-stock?vaccine=${encodeURIComponent(vaccineName)}&facilityId=${encodeURIComponent(facilityId)}`
+    );
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Growth monitoring measurement
  */

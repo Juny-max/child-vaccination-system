@@ -74,7 +74,7 @@ export class FacilityController {
     @Body() dto: AdministerVaccineDto,
     @Request() req: any,
   ) {
-    return this.facilityService.administerVaccine(childId, dto, req.user.id);
+    return this.facilityService.administerVaccine(childId, dto, req.user.id, req.user.branchId);
   }
 
   /**
@@ -230,5 +230,18 @@ export class FacilityController {
   @Get('branch/:id')
   async getBranchDetails(@Param('id') branchId: string) {
     return this.facilityService.getBranchDetails(branchId);
+  }
+
+  /**
+   * GET /api/facility/vaccine-stock?vaccine=<name>&facilityId=<id>
+   * Returns the current batch number and expiry date for a vaccine at a facility.
+   */
+  @Get('vaccine-stock')
+  async getVaccineStockInfo(
+    @Query('vaccine') vaccine: string,
+    @Query('facilityId') facilityId: string,
+  ) {
+    if (!vaccine || !facilityId) return null;
+    return this.facilityService.getVaccineStockInfo(vaccine, facilityId);
   }
 }

@@ -271,6 +271,8 @@ export default function ChildPatientChartPage() {
   const [scheduledVaccines, setScheduledVaccines] = useState<facilityApi.ScheduledVaccine[]>([])
   const [isLoadingVaccines, setIsLoadingVaccines] = useState(true)
   const [isSavingVaccine, setIsSavingVaccine] = useState(false)
+  const [isLoadingStock, setIsLoadingStock] = useState(false)
+  const [stockFromInventory, setStockFromInventory] = useState(false)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [isOnline, setIsOnline] = useState(true)
   
@@ -729,8 +731,9 @@ export default function ChildPatientChartPage() {
     }
   }
 
-  const openAdministerModal = (entry: VaccineEntry) => {
+  const openAdministerModal = async (entry: VaccineEntry) => {
     setSelectedDose(entry)
+    setStockFromInventory(false)
     setAdministerForm({
       batchNumber: entry.batchNumber ?? "",
       dateAdministered: new Date().toISOString().split("T")[0],
@@ -740,6 +743,27 @@ export default function ChildPatientChartPage() {
       aefiFlag: false,
       aefiNotes: "",
     })
+
+    // Auto-fill batch number and expiry date from stock inventory
+    const facilityId = childProfile?.facilityId
+    if (facilityId && entry.vaccine) {
+      setIsLoadingStock(true)
+      try {
+        const stock = await facilityApi.getVaccineStockInfo(entry.vaccine, facilityId)
+        if (stock) {
+          setAdministerForm((prev) => ({
+            ...prev,
+            batchNumber: stock.batchNumber,
+            expiryDate: stock.expiryDate,
+          }))
+          setStockFromInventory(true)
+        }
+      } catch {
+        // Leave fields empty — nurse fills them in manually
+      } finally {
+        setIsLoadingStock(false)
+      }
+    }
   }
 
   const closeAdministerModal = () => {
@@ -1554,23 +1578,45 @@ export default function ChildPatientChartPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="batchNumber">Batch / lot number</Label>
+                  <Label htmlFor="batchNumber" className="flex items-center gap-2">
+                    Batch / lot number
+                    {isLoadingStock && <span className="text-xs text-muted-foreground animate-pulse">Loading…</span>}
+                    {stockFromInventory && !isLoadingStock && (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">From inventory</span>
+                    )}
+                  </Label>
                   <Input
                     id="batchNumber"
                     required
-                    placeholder="e.g. PEN-44192"
+                    placeholder={isLoadingStock ? "Fetching…" : "e.g. PEN-44192"}
                     value={administerForm.batchNumber}
-                    onChange={(event) => handleAdministerChange("batchNumber", event.target.value)}
+                    readOnly={stockFromInventory}
+                    className={stockFromInventory ? "bg-muted cursor-not-allowed" : ""}
+                    onChange={(event) => !stockFromInventory && handleAdministerChange("batchNumber", event.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="expiryDate">Expiry date</Label>
-                  <DatePicker
-                    date={administerForm.expiryDate ? new Date(`${administerForm.expiryDate}T00:00:00`) : undefined}
-                    onDateChange={(selectedDate) =>
-                      handleAdministerChange("expiryDate", selectedDate ? formatDateForInput(selectedDate) : "")
-                    }
-                  />
+                  <Label htmlFor="expiryDate" className="flex items-center gap-2">
+                    Expiry date
+                    {stockFromInventory && !isLoadingStock && (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">From inventory</span>
+                    )}
+                  </Label>
+                  {stockFromInventory ? (
+                    <Input
+                      id="expiryDate"
+                      value={administerForm.expiryDate}
+                      readOnly
+                      className="bg-muted cursor-not-allowed"
+                    />
+                  ) : (
+                    <DatePicker
+                      date={administerForm.expiryDate ? new Date(`${administerForm.expiryDate}T00:00:00`) : undefined}
+                      onDateChange={(selectedDate) =>
+                        handleAdministerChange("expiryDate", selectedDate ? formatDateForInput(selectedDate) : "")
+                      }
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="site">Site of injection</Label>

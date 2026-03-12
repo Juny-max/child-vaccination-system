@@ -378,6 +378,7 @@ export class FacilityService {
     childId: string,
     dto: AdministerVaccineDto,
     userId: string,
+    facilityId?: string,
   ): Promise<VaccinationEventDto> {
     // Get vaccine info from the database
     const { data: vaccine, error: vaccineError } = await this.db.supabase
@@ -399,6 +400,7 @@ export class FacilityService {
         dose_number: 1, // You might want to calculate this based on history
         administered_date: dto.administeredDate,
         administered_by_user_id: userId,
+        facility_id: facilityId || null,
         batch_number: dto.batchNumber,
         lot_number: dto.batchNumber, // Using batch as lot for now
         expiry_date: dto.expiryDate || null,
@@ -1449,6 +1451,49 @@ export class FacilityService {
       address: branch.address,
       phone: branch.phone,
       email: branch.email,
+    };
+  }
+
+  /**
+   * Get the current in-stock batch info (batch number + expiry date) for a
+   * vaccine at a given facility.  Returns null when no matching stock is found.
+   */
+  async getVaccineStockInfo(
+    vaccineName: string,
+    facilityId: string,
+  ): Promise<{ batchNumber: string; expiryDate: string } | null> {
+    // Resolve vaccine by name
+    const { data: vaccine } = await this.db.supabase
+      .from('vaccines')
+      .select('id')
+      .ilike('name', vaccineName.trim())
+      .limit(1)
+      .maybeSingle();
+
+    if (!vaccine) return null;
+
+    const today = new Date().toISOString().split('T')[0];
+
+    // Pick the most recently received, non-expired batch with remaining stock
+    const { data: stock } = await this.db.supabase
+      .from('stock_inventory')
+      .select('batch_number, expiry_date, quantity_received, quantity_used')
+      .eq('vaccine_id', vaccine.id)
+      .eq('facility_id', facilityId)
+      .gte('expiry_date', today)
+      .order('received_date', { ascending: false })
+      .limit(10);
+
+    if (!stock || stock.length === 0) return null;
+
+    // Prefer a batch that still has remaining units; fall back to first result
+    const available = stock.find(
+      (s: any) => (s.quantity_received - (s.quantity_used ?? 0)) > 0,
+    ) ?? stock[0];
+
+    return {
+      batchNumber: available.batch_number,
+      expiryDate: available.expiry_date,
     };
   }
 }
