@@ -706,6 +706,154 @@ export class BranchManagerService {
     });
   }
 
+  async getHqAnalytics(filters: { region?: string; branch?: string; window?: string }) {
+    const db = this.databaseService.supabase;
+    const regionFilter = (filters.region ?? '').trim();
+    const branchFilter = (filters.branch ?? '').trim();
+    const windowFilter = (filters.window ?? '').trim();
+    const windowMonths = this.resolveAnalyticsWindowMonths(windowFilter);
+
+    const endDate = new Date();
+    const startDate = new Date(endDate.getFullYear(), endDate.getMonth() - (windowMonths - 1), 1);
+    const startDateStr = startDate.toISOString().split('T')[0];
+
+    let branchQuery = db
+      .from('branches')
+      .select('id, name, code, region');
+
+    if (regionFilter && regionFilter !== 'All regions') {
+      branchQuery = branchQuery.eq('region', regionFilter);
+    }
+
+    const { data: branchRows, error: branchError } = await branchQuery;
+
+    if (branchError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load analytics branches: ${branchError.message}`,
+        code: 'HQ_ANALYTICS_BRANCH_FETCH_FAILED',
+      });
+    }
+
+    const filteredBranches = (branchRows ?? []).filter((branch: any) => {
+      if (!branchFilter || branchFilter === 'All branches') return true;
+      const normalizedFilter = branchFilter.toLowerCase();
+      return (
+        String(branch.name ?? '').toLowerCase() === normalizedFilter
+        || String(branch.code ?? '').toLowerCase() === normalizedFilter
+      );
+    });
+
+    const branchIds = filteredBranches.map((branch: any) => branch.id);
+    const trendSkeleton = this.buildMonthlyTrendSkeleton(startDate, windowMonths);
+
+    if (!branchIds.length) {
+      return {
+        filters: {
+          region: regionFilter || 'All regions',
+          branch: branchFilter || 'All branches',
+          window: windowFilter || `Last ${windowMonths} months`,
+        },
+        trend: trendSkeleton,
+      };
+    }
+
+    const { data: vaccineRows, error: vaccineError } = await db
+      .from('vaccines')
+      .select('id, name, code');
+
+    if (vaccineError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load vaccines for analytics: ${vaccineError.message}`,
+        code: 'HQ_ANALYTICS_VACCINE_FETCH_FAILED',
+      });
+    }
+
+    const measlesVaccineIds = (vaccineRows ?? [])
+      .filter((vaccine: any) => {
+        const name = String(vaccine.name ?? '').toLowerCase();
+        const code = String(vaccine.code ?? '').toLowerCase();
+        return name.includes('measles') || code.includes('measles') || code.includes('mmr');
+      })
+      .map((vaccine: any) => vaccine.id);
+
+    const dpt3VaccineIds = (vaccineRows ?? [])
+      .filter((vaccine: any) => {
+        const name = String(vaccine.name ?? '').toLowerCase();
+        const code = String(vaccine.code ?? '').toLowerCase();
+        return (
+          name.includes('dpt')
+          || code.includes('dpt')
+          || name.includes('penta')
+          || code.includes('penta')
+        );
+      })
+      .map((vaccine: any) => vaccine.id);
+
+    const [measlesEventsResult, dpt3EventsResult] = await Promise.all([
+      measlesVaccineIds.length
+        ? db
+            .from('vaccination_events')
+            .select('administered_date')
+            .in('facility_id', branchIds)
+            .in('vaccine_id', measlesVaccineIds)
+            .eq('status', 'completed')
+            .gte('administered_date', startDateStr)
+        : Promise.resolve({ data: [], error: null as any }),
+      dpt3VaccineIds.length
+        ? db
+            .from('vaccination_events')
+            .select('administered_date')
+            .in('facility_id', branchIds)
+            .in('vaccine_id', dpt3VaccineIds)
+            .eq('status', 'completed')
+            .gte('administered_date', startDateStr)
+        : Promise.resolve({ data: [], error: null as any }),
+    ]);
+
+    if (measlesEventsResult.error) {
+      throw new InternalServerErrorException({
+        message: `Failed to load measles analytics: ${measlesEventsResult.error.message}`,
+        code: 'HQ_ANALYTICS_MEASLES_FETCH_FAILED',
+      });
+    }
+
+    if (dpt3EventsResult.error) {
+      throw new InternalServerErrorException({
+        message: `Failed to load DPT analytics: ${dpt3EventsResult.error.message}`,
+        code: 'HQ_ANALYTICS_DPT_FETCH_FAILED',
+      });
+    }
+
+    const measlesByMonth = new Map<string, number>();
+    (measlesEventsResult.data ?? []).forEach((event: any) => {
+      if (!event.administered_date) return;
+      const monthKey = String(event.administered_date).slice(0, 7);
+      measlesByMonth.set(monthKey, (measlesByMonth.get(monthKey) ?? 0) + 1);
+    });
+
+    const dptByMonth = new Map<string, number>();
+    (dpt3EventsResult.data ?? []).forEach((event: any) => {
+      if (!event.administered_date) return;
+      const monthKey = String(event.administered_date).slice(0, 7);
+      dptByMonth.set(monthKey, (dptByMonth.get(monthKey) ?? 0) + 1);
+    });
+
+    const trend = trendSkeleton.map((row) => ({
+      period: row.period,
+      measles: measlesByMonth.get(row.monthKey) ?? 0,
+      dpt3: dptByMonth.get(row.monthKey) ?? 0,
+    }));
+
+    return {
+      filters: {
+        region: regionFilter || 'All regions',
+        branch: branchFilter || 'All branches',
+        window: windowFilter || `Last ${windowMonths} months`,
+      },
+      trend,
+    };
+  }
+
   async createHqBranch(dto: CreateHqBranchDto) {
     const db = this.databaseService.supabase;
     const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
@@ -1228,6 +1376,26 @@ export class BranchManagerService {
     }, 0);
 
     return `BR-${String(maxCode + 1).padStart(3, '0')}`;
+  }
+
+  private resolveAnalyticsWindowMonths(windowValue?: string): number {
+    const normalized = String(windowValue ?? '').toLowerCase();
+    if (normalized.includes('12')) return 12;
+    if (normalized.includes('6')) return 6;
+    return 6;
+  }
+
+  private buildMonthlyTrendSkeleton(startDate: Date, months: number): Array<{ monthKey: string; period: string }> {
+    return Array.from({ length: months }).map((_, index) => {
+      const monthDate = new Date(startDate.getFullYear(), startDate.getMonth() + index, 1);
+      const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+      const period = monthDate.toLocaleDateString('en-GH', {
+        month: 'short',
+        year: 'numeric',
+      });
+
+      return { monthKey, period };
+    });
   }
 
   private async replaceCatchmentsForBranch(

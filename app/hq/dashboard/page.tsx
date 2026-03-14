@@ -46,6 +46,7 @@ import {
   updateHqUser,
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
+import { getHqAnalytics } from "@/lib/api/hq-analytics"
 
 const SECTIONS = [
   { id: "overview", label: "National Dashboard", icon: Activity },
@@ -438,6 +439,8 @@ export default function HqDashboardPage() {
     branch: "All branches",
     window: "Last 6 months",
   })
+  const [analyticsTrendData, setAnalyticsTrendData] = useState(coverageTrendData)
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false)
 
   const [templates, setTemplates] = useState(initialTemplates)
   const [activeTemplateId, setActiveTemplateId] = useState(initialTemplates[0]?.id ?? "")
@@ -521,6 +524,40 @@ export default function HqDashboardPage() {
       isMounted = false
     }
   }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadHqAnalytics = async () => {
+      if (!isMounted) return
+      setIsAnalyticsLoading(true)
+
+      try {
+        const response = await getHqAnalytics({
+          region: analyticsFilters.region,
+          branch: analyticsFilters.branch,
+          window: analyticsFilters.window,
+        })
+
+        if (!isMounted) return
+        setAnalyticsTrendData(response.trend)
+      } catch (error) {
+        console.error("Failed to load HQ analytics data", error)
+        if (!isMounted) return
+        setAnalyticsTrendData(coverageTrendData)
+        setSystemMessage("Could not load filtered analytics. Showing fallback trend data.")
+      } finally {
+        if (isMounted) {
+          setIsAnalyticsLoading(false)
+        }
+      }
+    }
+
+    loadHqAnalytics()
+    return () => {
+      isMounted = false
+    }
+  }, [analyticsFilters.branch, analyticsFilters.region, analyticsFilters.window])
 
   useEffect(() => {
     let isMounted = true
@@ -906,6 +943,11 @@ export default function HqDashboardPage() {
   }
 
   const handleCoverageExport = () => {
+    if (!analyticsTrendData.length) {
+      setSystemMessage("No analytics data available for the selected filters.")
+      return
+    }
+
     try {
       const reportDate = new Date()
       const generatedAt = reportDate.toISOString()
@@ -920,7 +962,7 @@ export default function HqDashboardPage() {
         ["Reporting Window", analyticsFilters.window],
         [],
         ["Period", "Measles", "DPT-3"],
-        ...coverageTrendData.map((row) => [row.period, row.measles, row.dpt3]),
+        ...analyticsTrendData.map((row) => [row.period, row.measles, row.dpt3]),
       ]
 
       const csv = lines
@@ -953,6 +995,11 @@ export default function HqDashboardPage() {
   }
 
   const handleCoveragePdfExport = async () => {
+    if (!analyticsTrendData.length) {
+      setSystemMessage("No analytics data available for the selected filters.")
+      return
+    }
+
     try {
       const reportDate = new Date()
       const generatedAt = reportDate.toISOString()
@@ -986,7 +1033,7 @@ export default function HqDashboardPage() {
       document.line(40, y, 560, y)
 
       document.setFontSize(10)
-      coverageTrendData.forEach((row) => {
+      analyticsTrendData.forEach((row) => {
         y += 18
 
         if (y > 780) {
@@ -1822,22 +1869,32 @@ export default function HqDashboardPage() {
             </select>
           </div>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={coverageTrendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="period" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="measles" fill="#2563eb" name="Measles" />
-                <Bar dataKey="dpt3" fill="#10b981" name="DPT-3" />
-              </BarChart>
-            </ResponsiveContainer>
+            {isAnalyticsLoading ? (
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                Loading filtered analytics...
+              </div>
+            ) : analyticsTrendData.length === 0 ? (
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 px-4 text-center text-sm text-muted-foreground">
+                No coverage data found for the selected filters.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={analyticsTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="measles" fill="#2563eb" name="Measles" />
+                  <Bar dataKey="dpt3" fill="#10b981" name="DPT-3" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="gap-2" onClick={handleCoverageExport}>
+            <Button variant="outline" className="gap-2" onClick={handleCoverageExport} disabled={isAnalyticsLoading}>
               <ArrowDownToLine className="h-4 w-4" /> Export coverage report (CSV)
             </Button>
-            <Button variant="outline" className="gap-2" onClick={handleCoveragePdfExport}>
+            <Button variant="outline" className="gap-2" onClick={handleCoveragePdfExport} disabled={isAnalyticsLoading}>
               <ArrowDownToLine className="h-4 w-4" /> Export coverage report (PDF)
             </Button>
           </div>
@@ -1851,16 +1908,22 @@ export default function HqDashboardPage() {
         </CardHeader>
         <CardContent className="grid gap-6 md:grid-cols-2">
           <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={coverageTrendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="period" />
-                <YAxis />
-                <Tooltip />
-                <Area type="monotone" dataKey="measles" stroke="#f59e0b" fill="#fbbf24" name="Measles" />
-                <Area type="monotone" dataKey="dpt3" stroke="#ef4444" fill="#f87171" name="DPT-3" />
-              </AreaChart>
-            </ResponsiveContainer>
+            {isAnalyticsLoading || analyticsTrendData.length === 0 ? (
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                {isAnalyticsLoading ? "Loading trend..." : "No dropout trend data for selected filters."}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={analyticsTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" />
+                  <YAxis />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="measles" stroke="#f59e0b" fill="#fbbf24" name="Measles" />
+                  <Area type="monotone" dataKey="dpt3" stroke="#ef4444" fill="#f87171" name="DPT-3" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
             <p className="mt-2 text-xs text-muted-foreground text-center">
               Dropout spikes indicate follow-up campaigns needed.
             </p>
