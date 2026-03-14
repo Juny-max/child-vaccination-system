@@ -836,7 +836,7 @@ export class BranchManagerService {
 
     const { data, error } = await db
       .from('users')
-      .select('id, full_name, email, role, status, branch_id, branches(name, code)')
+      .select('id, full_name, email, role, status, branch_id')
       .in('role', ['hq-admin', 'branch-manager', 'facility-nurse', 'chw', 'data-officer', 'pha'])
       .order('full_name', { ascending: true });
 
@@ -847,12 +847,38 @@ export class BranchManagerService {
       });
     }
 
+    const branchIds = Array.from(
+      new Set((data ?? []).map((user: any) => user.branch_id).filter(Boolean)),
+    );
+
+    const { data: branches, error: branchesError } = branchIds.length
+      ? await db
+          .from('branches')
+          .select('id, name, code')
+          .in('id', branchIds)
+      : { data: [], error: null as any };
+
+    if (branchesError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load branch lookup: ${branchesError.message}`,
+        code: 'HQ_USERS_BRANCH_LOOKUP_FAILED',
+      });
+    }
+
+    const branchMap = new Map<string, { name: string; code: string }>();
+    (branches ?? []).forEach((branch: any) => {
+      branchMap.set(branch.id, {
+        name: branch.name,
+        code: branch.code,
+      });
+    });
+
     return (data ?? []).map((user: any) => ({
       id: user.id,
       name: user.full_name,
       email: user.email,
       role: this.toDisplayRole(user.role),
-      branch: user.branches?.name ?? undefined,
+      branch: user.branch_id ? branchMap.get(user.branch_id)?.name : undefined,
       status: user.status === 'inactive' ? 'inactive' : 'active',
     }));
   }
