@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../common/database/database.service';
-import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto } from './dto';
+import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto, UserRole } from './dto';
 
 @Injectable()
 export class AuthService {
@@ -15,7 +15,7 @@ export class AuthService {
    * Enhanced with security audit logging
    */
   async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-    const { email, password } = loginDto;
+    const { email, password, userType } = loginDto;
 
     // Get user from database
     const user = await this.databaseService.getUserByEmail(email);
@@ -69,8 +69,19 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Check if user is active (schema uses 'status' column)
-    if (user.status !== 'active') {
+    const normalizedRole = this.normalizeRole(user.role);
+    if (!normalizedRole) {
+      throw new UnauthorizedException('Invalid account role configuration');
+    }
+
+    // If a non-parent userType is requested, enforce role match.
+    // We intentionally keep parent/default login permissive for the unified login UX.
+    if (userType && userType !== UserRole.PARENT && userType !== normalizedRole) {
+      throw new UnauthorizedException('Access denied for the selected account type');
+    }
+
+    // Check if user is active across both legacy and current schemas
+    if (!this.isUserActive(user)) {
       // Log attempt to access deactivated account
       try {
         await this.databaseService.createAuditLog(
@@ -99,7 +110,7 @@ export class AuthService {
     const payload: TokenPayload = {
       sub: user.id,
       email: user.email,
-      role: user.role,
+      role: normalizedRole,
       fullName: user.full_name,
       branchId: user.branch_id || undefined,
     };
@@ -117,7 +128,7 @@ export class AuthService {
           after: { 
             event: 'successful_login',
             login_time: new Date().toISOString(),
-            role: user.role
+            role: normalizedRole
           } 
         }
       );
@@ -133,13 +144,30 @@ export class AuthService {
         id: user.id,
         email: user.email,
         fullName: user.full_name,
-        role: user.role,
+        role: normalizedRole,
         phoneNumber: user.phone_number,
         lastLogin: user.last_login,
         branchId: user.branch_id || undefined,
       },
       mustChangePassword: user.must_change_password || false,
     };
+  }
+
+  /**
+   * Admin-only login path for HQ dashboard access
+   */
+  async loginAdmin(credentials: { email: string; password: string }): Promise<AuthResponseDto> {
+    const authResponse = await this.login({
+      email: credentials.email,
+      password: credentials.password,
+      userType: UserRole.HQ_ADMIN,
+    });
+
+    if (authResponse.user.role !== UserRole.HQ_ADMIN) {
+      throw new UnauthorizedException('Only HQ admins can access this endpoint');
+    }
+
+    return authResponse;
   }
 
   /**
@@ -239,7 +267,7 @@ export class AuthService {
   async refreshToken(userId: string): Promise<{ accessToken: string }> {
     const user = await this.databaseService.getUserById(userId);
     
-    if (!user || !user.is_active) {
+    if (!user || !this.isUserActive(user)) {
       // Log suspicious token refresh attempt
       try {
         await this.databaseService.createAuditLog(
@@ -357,6 +385,20 @@ export class AuthService {
       // Re-throw other errors
       throw error;
     }
+  }
+
+  private normalizeRole(role: string | null | undefined): UserRole | null {
+    if (!role) return null;
+
+    const normalized = role.toLowerCase().replace(/_/g, '-').trim();
+    const validRoles = Object.values(UserRole);
+    return validRoles.includes(normalized as UserRole) ? (normalized as UserRole) : null;
+  }
+
+  private isUserActive(user: { status?: string | null; is_active?: boolean | null }): boolean {
+    const statusFlag = typeof user.status === 'string' ? user.status === 'active' : true;
+    const booleanFlag = typeof user.is_active === 'boolean' ? user.is_active : true;
+    return statusFlag && booleanFlag;
   }
 
   /**

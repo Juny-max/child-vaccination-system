@@ -1,7 +1,7 @@
 import { Controller, Post, Get, Body, UseGuards, Request, Response, HttpCode, HttpStatus } from '@nestjs/common';
 import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { AuthService } from './auth.service';
-import { LoginDto, RegisterDto, AuthResponseDto, UserProfileDto, ChangePasswordDto } from './dto';
+import { LoginDto, RegisterDto, AuthResponseDto, UserProfileDto, ChangePasswordDto, AdminLoginDto } from './dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 interface AuthenticatedRequest extends ExpressRequest {
@@ -50,6 +50,30 @@ export class AuthController {
     res.cookie('accessToken', authResponse.accessToken, this.getCookieOptions(req));
     
     // Return user data without exposing token
+    return res.json({
+      accessToken: authResponse.accessToken,
+      tokenType: authResponse.tokenType,
+      expiresIn: authResponse.expiresIn,
+      user: authResponse.user,
+      mustChangePassword: authResponse.mustChangePassword,
+    });
+  }
+
+  /**
+   * POST /api/auth/admin/login
+   * HQ admin login endpoint for admin dashboard
+   */
+  @Post('admin/login')
+  @HttpCode(HttpStatus.OK)
+  async adminLogin(
+    @Body() adminLoginDto: AdminLoginDto,
+    @Request() req: ExpressRequest,
+    @Response() res: ExpressResponse
+  ): Promise<ExpressResponse> {
+    const authResponse = await this.authService.loginAdmin(adminLoginDto);
+
+    res.cookie('accessToken', authResponse.accessToken, this.getCookieOptions(req));
+
     return res.json({
       accessToken: authResponse.accessToken,
       tokenType: authResponse.tokenType,

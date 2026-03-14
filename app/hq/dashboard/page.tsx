@@ -342,7 +342,7 @@ export default function HqDashboardPage() {
   )
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
+    const token = localStorage.getItem("accessToken") || localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
     const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
@@ -438,6 +438,7 @@ export default function HqDashboardPage() {
   }, [activeChwBranchId, branches])
 
   const handleLogout = () => {
+    localStorage.removeItem("accessToken")
     localStorage.removeItem("authToken")
     localStorage.removeItem("userRole")
     localStorage.removeItem("userRoleDetail")

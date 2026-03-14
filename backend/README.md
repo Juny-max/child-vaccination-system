@@ -14,7 +14,7 @@ The service currently deploys to **Render** from the `/backend` subdirectory. Us
 ### Environment Variables (set in Railway dashboard)
 
 | Variable | Description | Example |
-|----------|-------------|---------|
+| ---------- | ------------- | --------- |
 | `SUPABASE_URL` | Supabase project URL | `https://xxx.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | `eyJ...` |
 | `JWT_SECRET` | Secret key for JWT tokens | `your-secret-key` |
@@ -56,13 +56,19 @@ pnpm run start:prod
 
 ```bash
 curl -X POST http://localhost:3001/api/auth/login \
-	-H "Content-Type: application/json" \
-	-d '{"email":"akosua.asante@example.com","password":"password1234","userType":"parent"}'
+  -H "Content-Type: application/json" \
+  -d '{"email":"akosua.asante@example.com","password":"password1234","userType":"parent"}'
+
+# HQ admin login
+curl -X POST http://localhost:3001/api/auth/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@health.gov.gh","password":"password1234"}'
 ```
 
 ## API Endpoints
 
 - `POST /api/auth/login` - User login
+- `POST /api/auth/admin/login` - HQ admin login
 - `POST /api/auth/register` - Parent registration
 - `GET /api/parent/dashboard` - Parent dashboard data
 - `GET /api/parent/children` - List children
