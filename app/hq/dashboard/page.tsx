@@ -433,6 +433,11 @@ export default function HqDashboardPage() {
     dueDays: "",
   })
   const [editingVaccineId, setEditingVaccineId] = useState<string | null>(null)
+  const [analyticsFilters, setAnalyticsFilters] = useState({
+    region: "All regions",
+    branch: "All branches",
+    window: "Last 6 months",
+  })
 
   const [templates, setTemplates] = useState(initialTemplates)
   const [activeTemplateId, setActiveTemplateId] = useState(initialTemplates[0]?.id ?? "")
@@ -901,8 +906,114 @@ export default function HqDashboardPage() {
   }
 
   const handleCoverageExport = () => {
-    setSystemMessage("Coverage report export queued. You'll receive a download link shortly.")
-    appendAuditLog({ action: "Queued coverage report export", category: "Reporting" })
+    try {
+      const reportDate = new Date()
+      const generatedAt = reportDate.toISOString()
+      const filenameDate = generatedAt.replace(/[:.]/g, "-")
+      const filename = `coverage-report-${filenameDate}.csv`
+
+      const lines = [
+        ["Report", "Coverage Report"],
+        ["Generated At", generatedAt],
+        ["Region Filter", analyticsFilters.region],
+        ["Branch Filter", analyticsFilters.branch],
+        ["Reporting Window", analyticsFilters.window],
+        [],
+        ["Period", "Measles", "DPT-3"],
+        ...coverageTrendData.map((row) => [row.period, row.measles, row.dpt3]),
+      ]
+
+      const csv = lines
+        .map((row) =>
+          row
+            .map((value) => {
+              const text = String(value ?? "")
+              return `"${text.replace(/"/g, '""')}"`
+            })
+            .join(","),
+        )
+        .join("\n")
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+      const url = window.URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.setAttribute("download", filename)
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      window.URL.revokeObjectURL(url)
+
+      setSystemMessage(`Coverage report exported as ${filename}.`)
+      appendAuditLog({ action: `Exported coverage report (${filename})`, category: "Reporting" })
+    } catch (error) {
+      console.error("Failed to export coverage report", error)
+      setSystemMessage("Could not export coverage report. Please try again.")
+    }
+  }
+
+  const handleCoveragePdfExport = async () => {
+    try {
+      const reportDate = new Date()
+      const generatedAt = reportDate.toISOString()
+      const filenameDate = generatedAt.replace(/[:.]/g, "-")
+      const filename = `coverage-report-${filenameDate}.pdf`
+
+      const { jsPDF } = await import("jspdf")
+      const document = new jsPDF({ unit: "pt", format: "a4" })
+
+      let y = 48
+      document.setFontSize(16)
+      document.text("Coverage Report", 40, y)
+
+      y += 24
+      document.setFontSize(10)
+      document.text(`Generated At: ${generatedAt}`, 40, y)
+      y += 16
+      document.text(`Region Filter: ${analyticsFilters.region}`, 40, y)
+      y += 16
+      document.text(`Branch Filter: ${analyticsFilters.branch}`, 40, y)
+      y += 16
+      document.text(`Reporting Window: ${analyticsFilters.window}`, 40, y)
+
+      y += 28
+      document.setFontSize(11)
+      document.text("Period", 40, y)
+      document.text("Measles", 200, y)
+      document.text("DPT-3", 300, y)
+
+      y += 8
+      document.line(40, y, 560, y)
+
+      document.setFontSize(10)
+      coverageTrendData.forEach((row) => {
+        y += 18
+
+        if (y > 780) {
+          document.addPage()
+          y = 48
+          document.setFontSize(11)
+          document.text("Period", 40, y)
+          document.text("Measles", 200, y)
+          document.text("DPT-3", 300, y)
+          y += 8
+          document.line(40, y, 560, y)
+          document.setFontSize(10)
+        }
+
+        document.text(String(row.period), 40, y)
+        document.text(String(row.measles), 200, y)
+        document.text(String(row.dpt3), 300, y)
+      })
+
+      document.save(filename)
+
+      setSystemMessage(`Coverage report exported as ${filename}.`)
+      appendAuditLog({ action: `Exported coverage report (${filename})`, category: "Reporting" })
+    } catch (error) {
+      console.error("Failed to export coverage report PDF", error)
+      setSystemMessage("Could not export coverage report PDF. Please try again.")
+    }
   }
 
   const handleAuditExport = () => {
@@ -1680,19 +1791,31 @@ export default function HqDashboardPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm">
+            <select
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              value={analyticsFilters.region}
+              onChange={(event) => setAnalyticsFilters((previous) => ({ ...previous, region: event.target.value }))}
+            >
               <option>All regions</option>
               <option>Greater Accra</option>
               <option>Ashanti</option>
               <option>Northern</option>
             </select>
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm">
+            <select
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              value={analyticsFilters.branch}
+              onChange={(event) => setAnalyticsFilters((previous) => ({ ...previous, branch: event.target.value }))}
+            >
               <option>All branches</option>
               {branches.map((branch) => (
                 <option key={branch.id}>{branch.name}</option>
               ))}
             </select>
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm">
+            <select
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              value={analyticsFilters.window}
+              onChange={(event) => setAnalyticsFilters((previous) => ({ ...previous, window: event.target.value }))}
+            >
               <option>Last 6 months</option>
               <option>Last 12 months</option>
               <option>Custom range</option>
@@ -1710,9 +1833,14 @@ export default function HqDashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <Button variant="outline" className="gap-2" onClick={handleCoverageExport}>
-            <ArrowDownToLine className="h-4 w-4" /> Export coverage report (CSV)
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="gap-2" onClick={handleCoverageExport}>
+              <ArrowDownToLine className="h-4 w-4" /> Export coverage report (CSV)
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={handleCoveragePdfExport}>
+              <ArrowDownToLine className="h-4 w-4" /> Export coverage report (PDF)
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
