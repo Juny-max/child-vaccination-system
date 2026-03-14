@@ -6,6 +6,7 @@
     "build": "next build",
     "dev": "next dev",
     "dev:all": "zsh ./scripts/start-local-dev.zsh",
+    "start:dev": "zsh ./scripts/start-backend-dev.zsh",
     "lint": "eslint .",
     "start": "next start"
   },
