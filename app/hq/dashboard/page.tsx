@@ -329,9 +329,48 @@ const extractErrorMessage = (error: unknown): string => {
   return "Unexpected error"
 }
 
+const extractErrorCode = (error: unknown): string | null => {
+  if (!error || typeof error !== "object") return null
+  const maybeCode = (error as { code?: unknown }).code
+  return typeof maybeCode === "string" ? maybeCode : null
+}
+
 const mapUserManagementError = (error: unknown): { tone: "warning" | "destructive"; title: string; detail: string } => {
+  const code = extractErrorCode(error)
   const message = extractErrorMessage(error)
   const normalized = message.toLowerCase()
+
+  if (code === "EMAIL_EXISTS") {
+    return {
+      tone: "destructive",
+      title: "Email already exists",
+      detail: "A user with this email already exists. Use another email or edit the existing user.",
+    }
+  }
+
+  if (code === "BRANCH_NOT_FOUND") {
+    return {
+      tone: "warning",
+      title: "Branch not found",
+      detail: "Enter a valid branch code/name or leave branch empty for HQ users.",
+    }
+  }
+
+  if (code === "USER_NOT_FOUND") {
+    return {
+      tone: "warning",
+      title: "User not found",
+      detail: "Refresh user list and try again.",
+    }
+  }
+
+  if (code === "SESSION_EXPIRED") {
+    return {
+      tone: "warning",
+      title: "Session expired",
+      detail: "Please login again to continue.",
+    }
+  }
 
   if (normalized.includes("already exists")) {
     return {
@@ -490,8 +529,9 @@ export default function HqDashboardPage() {
         console.error("Failed to load HQ users from backend", error)
         if (!isMounted) return
 
-        const errorMessage = error instanceof Error ? error.message.toLowerCase() : ""
-        if (errorMessage.includes("session expired") || errorMessage.includes("unauthorized")) {
+        const errorCode = extractErrorCode(error)
+        const errorMessage = extractErrorMessage(error).toLowerCase()
+        if (errorCode === "SESSION_EXPIRED" || errorMessage.includes("session expired") || errorMessage.includes("unauthorized")) {
           return
         }
 

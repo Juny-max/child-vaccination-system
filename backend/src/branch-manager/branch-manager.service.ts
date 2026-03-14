@@ -841,7 +841,10 @@ export class BranchManagerService {
       .order('full_name', { ascending: true });
 
     if (error) {
-      throw new InternalServerErrorException(`Failed to load users: ${error.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to load users: ${error.message}`,
+        code: 'HQ_USERS_FETCH_FAILED',
+      });
     }
 
     return (data ?? []).map((user: any) => ({
@@ -868,12 +871,18 @@ export class BranchManagerService {
 
     if (existingError) {
       throw new InternalServerErrorException(
-        `Failed to validate user email: ${existingError.message}`,
+        {
+          message: `Failed to validate user email: ${existingError.message}`,
+          code: 'HQ_USER_EMAIL_VALIDATION_FAILED',
+        },
       );
     }
 
     if (existing) {
-      throw new ConflictException(`User with email ${normalizedEmail} already exists`);
+      throw new ConflictException({
+        message: `User with email ${normalizedEmail} already exists`,
+        code: 'EMAIL_EXISTS',
+      });
     }
 
     const temporaryPassword = this.generateTemporaryPassword();
@@ -895,7 +904,10 @@ export class BranchManagerService {
 
     if (createError || !createdUser) {
       throw new BadRequestException(
-        `Failed to create user: ${createError?.message ?? 'unknown error'}`,
+        {
+          message: `Failed to create user: ${createError?.message ?? 'unknown error'}`,
+          code: 'HQ_USER_CREATE_FAILED',
+        },
       );
     }
 
@@ -931,10 +943,16 @@ export class BranchManagerService {
 
     if (error || !updated) {
       if (error?.code === 'PGRST116' || !updated) {
-        throw new NotFoundException('User not found');
+        throw new NotFoundException({
+          message: 'User not found',
+          code: 'USER_NOT_FOUND',
+        });
       }
       const message = (error as any)?.message ?? 'unknown error';
-      throw new BadRequestException(`Failed to update user: ${message}`);
+      throw new BadRequestException({
+        message: `Failed to update user: ${message}`,
+        code: 'HQ_USER_UPDATE_FAILED',
+      });
     }
 
     const users = await this.getHqUsers();
@@ -952,11 +970,17 @@ export class BranchManagerService {
 
     if (error || !updated) {
       if (error?.code === 'PGRST116' || !updated) {
-        throw new NotFoundException('User not found');
+        throw new NotFoundException({
+          message: 'User not found',
+          code: 'USER_NOT_FOUND',
+        });
       }
       const message = (error as any)?.message ?? 'unknown error';
       throw new BadRequestException(
-        `Failed to update user status: ${message}`,
+        {
+          message: `Failed to update user status: ${message}`,
+          code: 'HQ_USER_STATUS_UPDATE_FAILED',
+        },
       );
     }
 
@@ -975,7 +999,10 @@ export class BranchManagerService {
       .single();
 
     if (userError || !user) {
-      throw new NotFoundException(`User not found for email ${normalizedEmail}`);
+      throw new NotFoundException({
+        message: `User not found for email ${normalizedEmail}`,
+        code: 'USER_NOT_FOUND',
+      });
     }
 
     const temporaryPassword = this.generateTemporaryPassword();
@@ -990,7 +1017,10 @@ export class BranchManagerService {
       .eq('id', user.id);
 
     if (updateError) {
-      throw new BadRequestException(`Failed to reset password: ${updateError.message}`);
+      throw new BadRequestException({
+        message: `Failed to reset password: ${updateError.message}`,
+        code: 'PASSWORD_RESET_UPDATE_FAILED',
+      });
     }
 
     const emailDispatch = await this.emailService.sendPasswordResetEmailWithStatus(
@@ -1084,7 +1114,10 @@ export class BranchManagerService {
       .maybeSingle();
 
     if (codeError) {
-      throw new InternalServerErrorException(`Failed to resolve branch: ${codeError.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to resolve branch: ${codeError.message}`,
+        code: 'BRANCH_RESOLVE_FAILED',
+      });
     }
 
     if (branchByCode) return branchByCode.id;
@@ -1096,11 +1129,17 @@ export class BranchManagerService {
       .maybeSingle();
 
     if (nameError) {
-      throw new InternalServerErrorException(`Failed to resolve branch: ${nameError.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to resolve branch: ${nameError.message}`,
+        code: 'BRANCH_RESOLVE_FAILED',
+      });
     }
 
     if (!branchByName) {
-      throw new NotFoundException(`Branch "${normalized}" not found`);
+      throw new NotFoundException({
+        message: `Branch "${normalized}" not found`,
+        code: 'BRANCH_NOT_FOUND',
+      });
     }
 
     return branchByName.id;

@@ -64,7 +64,7 @@ export async function login(credentials: LoginRequest): Promise<AuthResponse> {
   if (typeof window !== 'undefined') {
     if (response.accessToken) {
       localStorage.setItem('accessToken', response.accessToken);
-      localStorage.setItem('authToken', response.accessToken);
+      localStorage.removeItem('authToken');
     }
     localStorage.setItem('userRole', response.user.role);
     sessionStorage.setItem('userName', response.user.fullName);
@@ -90,7 +90,7 @@ export async function register(data: RegisterRequest): Promise<AuthResponse> {
   if (typeof window !== 'undefined') {
     if (response.accessToken) {
       localStorage.setItem('accessToken', response.accessToken);
-      localStorage.setItem('authToken', response.accessToken);
+      localStorage.removeItem('authToken');
     }
     localStorage.setItem('userRole', response.user.role);
     sessionStorage.setItem('userName', response.user.fullName);
@@ -126,7 +126,7 @@ export async function refreshToken(): Promise<{ accessToken?: string }> {
 
   if (typeof window !== 'undefined' && response.accessToken) {
     localStorage.setItem('accessToken', response.accessToken);
-    localStorage.setItem('authToken', response.accessToken);
+    localStorage.removeItem('authToken');
   }
 
   return response;
