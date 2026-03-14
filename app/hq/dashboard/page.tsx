@@ -1968,16 +1968,24 @@ export default function HqDashboardPage() {
           <div
             role="status"
             aria-live="polite"
-            className={`pointer-events-auto rounded-xl border px-4 py-3 shadow-2xl backdrop-blur ${
+            className={`pointer-events-auto rounded-xl border bg-background/95 px-4 py-3 text-foreground shadow-2xl backdrop-blur supports-[backdrop-filter]:bg-background/90 ${
               messageTone === "success"
-                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-100"
+                ? "border-emerald-500/50"
                 : messageTone === "warning"
-                ? "border-amber-500/50 bg-amber-500/10 text-amber-100"
-                : "border-red-500/50 bg-red-500/10 text-red-100"
+                ? "border-amber-500/50"
+                : "border-red-500/50"
             }`}
           >
             <div className="flex items-start gap-3">
-              <div className="mt-0.5">
+              <div
+                className={`mt-0.5 ${
+                  messageTone === "success"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : messageTone === "warning"
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-red-600 dark:text-red-400"
+                }`}
+              >
                 {messageTone === "success" ? (
                   <CheckCircle2 className="h-5 w-5" />
                 ) : messageTone === "warning" ? (
@@ -1987,19 +1995,27 @@ export default function HqDashboardPage() {
                 )}
               </div>
               <div className="flex-1">
-                <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
+                <p
+                  className={`text-xs font-semibold uppercase tracking-wide ${
+                    messageTone === "success"
+                      ? "text-emerald-700 dark:text-emerald-300"
+                      : messageTone === "warning"
+                      ? "text-amber-700 dark:text-amber-300"
+                      : "text-red-700 dark:text-red-300"
+                  }`}
+                >
                   {messageTone === "success"
                     ? "Succesfull"
                     : messageTone === "warning"
                     ? "Needs Attention"
                     : "Action Failed"}
                 </p>
-                <p className="mt-1 text-sm leading-relaxed">{systemMessage}</p>
+                <p className="mt-1 text-sm leading-relaxed text-foreground/90">{systemMessage}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setSystemMessage(null)}
-                className="rounded-md p-1 opacity-80 transition hover:bg-white/10 hover:opacity-100"
+                className="rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
                 aria-label="Dismiss notification"
               >
                 <X className="h-4 w-4" />
