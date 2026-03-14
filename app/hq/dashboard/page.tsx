@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import {
@@ -21,6 +21,7 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  X,
   Users as UsersIcon,
 } from "lucide-react"
 import { ResponsiveContainer, RadialBarChart, RadialBar, Legend, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, LineChart, Line, AreaChart, Area } from "recharts"
@@ -30,8 +31,21 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import {
+  createHqBranch,
+  getHqBranches,
+  updateHqBranch,
+  updateHqBranchChws,
+  updateHqBranchStatus,
+} from "@/lib/api/hq-branches"
+import {
+  createHqUser,
+  getHqUsers,
+  resetHqUserPassword,
+  updateHqUser,
+  updateHqUserStatus,
+} from "@/lib/api/hq-users"
 
 const SECTIONS = [
   { id: "overview", label: "National Dashboard", icon: Activity },
@@ -286,6 +300,70 @@ const pendingSyncDevices = [
   { id: "CHW-304", name: "Zeinab Yakubu", branch: "Wa Central", lastSync: "22 hours ago", pending: 8 },
 ]
 
+const normalizeCommaSeparatedValues = (value: string): string[] => {
+  const deduplicated = new Set(
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )
+
+  return Array.from(deduplicated)
+}
+
+const mapUserRoleToApiRole = (role: string): string => {
+  const roleMap: Record<string, string> = {
+    "HQ Admin": "hq-admin",
+    "Branch Manager": "branch-manager",
+    "Facility Nurse": "facility-nurse",
+    "Community Health Worker": "chw",
+    "Data Officer": "data-officer",
+    "Public Health Authority": "pha",
+  }
+
+  return roleMap[role] ?? role
+}
+
+const extractErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message
+  return "Unexpected error"
+}
+
+const mapUserManagementError = (error: unknown): { tone: "warning" | "destructive"; title: string; detail: string } => {
+  const message = extractErrorMessage(error)
+  const normalized = message.toLowerCase()
+
+  if (normalized.includes("already exists")) {
+    return {
+      tone: "destructive",
+      title: "Email already exists",
+      detail: "A user with this email already exists. Use another email or edit the existing user.",
+    }
+  }
+
+  if (normalized.includes("branch") && normalized.includes("not found")) {
+    return {
+      tone: "warning",
+      title: "Branch not found",
+      detail: "Enter a valid branch code/name or leave branch empty for HQ users.",
+    }
+  }
+
+  if (normalized.includes("not found")) {
+    return {
+      tone: "warning",
+      title: "User not found",
+      detail: "Refresh user list and try again.",
+    }
+  }
+
+  return {
+    tone: "destructive",
+    title: "Action failed",
+    detail: message,
+  }
+}
+
 export default function HqDashboardPage() {
   const router = useRouter()
   const [activeSection, setActiveSection] = useState<SectionId>("overview")
@@ -307,6 +385,7 @@ export default function HqDashboardPage() {
     role: "Branch Manager",
     branch: "",
   })
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
 
   const [vaccines, setVaccines] = useState(initialVaccines)
   const [vaccineForm, setVaccineForm] = useState({
@@ -324,6 +403,15 @@ export default function HqDashboardPage() {
   const [activeChwBranchId, setActiveChwBranchId] = useState<string | null>(null)
   const [chwFormNames, setChwFormNames] = useState("")
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([])
+  const [userResetStatusById, setUserResetStatusById] = useState<
+    Record<string, { status: "sent" | "failed"; detail: string; time: string }>
+  >({})
+  const [userActionNotice, setUserActionNotice] = useState<
+    { tone: "success" | "warning" | "destructive"; title: string; detail: string } | null
+  >(null)
+  const branchEditPanelRef = useRef<HTMLDivElement | null>(null)
+  const userFormPanelRef = useRef<HTMLDivElement | null>(null)
+  const chwAssignmentPanelRef = useRef<HTMLDivElement | null>(null)
 
   const appendAuditLog = useCallback(
     ({ action, category }: { action: string; category: string }) => {
@@ -364,6 +452,52 @@ export default function HqDashboardPage() {
 
     setUserName(name || "Admin")
   }, [router])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadBranches = async () => {
+      try {
+        const remoteBranches = await getHqBranches()
+        if (!isMounted) return
+        if (remoteBranches.length > 0) {
+          setBranches(remoteBranches)
+        }
+      } catch (error) {
+        console.error("Failed to load HQ branches from backend", error)
+        if (!isMounted) return
+        setSystemMessage("Using local fallback data while branch API is unavailable.")
+      }
+    }
+
+    loadBranches()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadUsers = async () => {
+      try {
+        const remoteUsers = await getHqUsers()
+        if (!isMounted) return
+        if (remoteUsers.length > 0) {
+          setUsers(remoteUsers)
+        }
+      } catch (error) {
+        console.error("Failed to load HQ users from backend", error)
+        if (!isMounted) return
+        setSystemMessage("Using local fallback data while user API is unavailable.")
+      }
+    }
+
+    loadUsers()
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   // Pull escalations staged by data officers via localStorage until the backend wiring is ready
   const ingestQueuedConflicts = useCallback(() => {
@@ -432,6 +566,18 @@ export default function HqDashboardPage() {
   }, [systemMessage])
 
   const activeTemplate = useMemo(() => templates.find((template) => template.id === activeTemplateId) ?? null, [activeTemplateId, templates])
+  const messageTone = useMemo(() => {
+    if (!systemMessage) return "neutral"
+    const normalized = systemMessage.toLowerCase()
+    if (normalized.includes("could not") || normalized.includes("failed") || normalized.includes("error")) {
+      return "error"
+    }
+    if (normalized.includes("fallback") || normalized.includes("saved locally")) {
+      return "warning"
+    }
+    return "success"
+  }, [systemMessage])
+
   const activeChwBranch = useMemo(() => {
     if (!activeChwBranchId) return null
     return branches.find((branch) => branch.id === activeChwBranchId) ?? null
@@ -456,6 +602,10 @@ export default function HqDashboardPage() {
       manager: branch.manager,
       catchmentAreas: branch.catchmentAreas.join(", "),
     })
+
+    window.setTimeout(() => {
+      branchEditPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 80)
   }
 
   const cancelBranchEditing = () => {
@@ -463,26 +613,24 @@ export default function HqDashboardPage() {
     setBranchForm({ name: "", region: "", manager: "", catchmentAreas: "" })
   }
 
-  const toggleBranchStatus = (branchId: string) => {
-    let targetName = ""
-    let resultingStatus: Branch["status"] = "active"
+  const toggleBranchStatus = async (branchId: string) => {
+    const branch = branches.find((item) => item.id === branchId)
+    if (!branch) return
 
-    setBranches((previous) =>
-      previous.map((branch) => {
-        if (branch.id !== branchId) return branch
-        const nextStatus = branch.status === "active" ? "inactive" : "active"
-        targetName = branch.name
-        resultingStatus = nextStatus
-        return { ...branch, status: nextStatus }
-      }),
-    )
+    const nextStatus: Branch["status"] = branch.status === "active" ? "inactive" : "active"
 
-    if (targetName) {
-      setSystemMessage(`Branch "${targetName}" ${resultingStatus === "active" ? "re-activated" : "deactivated"}.`)
+    try {
+      const updatedBranch = await updateHqBranchStatus(branch.id, nextStatus)
+      setBranches((previous) => previous.map((item) => (item.id === updatedBranch.id ? updatedBranch : item)))
+
+      setSystemMessage(`Branch "${updatedBranch.name}" ${nextStatus === "active" ? "re-activated" : "deactivated"}.`)
       appendAuditLog({
-        action: `${resultingStatus === "active" ? "Reactivated" : "Deactivated"} branch ${targetName}`,
+        action: `${nextStatus === "active" ? "Reactivated" : "Deactivated"} branch ${updatedBranch.name}`,
         category: "Branch",
       })
+    } catch (error) {
+      console.error("Failed to update branch status", error)
+      setSystemMessage("Could not update branch status. Please try again.")
     }
 
     cancelBranchEditing()
@@ -493,6 +641,11 @@ export default function HqDashboardPage() {
     cancelBranchEditing()
     setActiveChwBranchId(branch.id)
     setChwFormNames(branch.assignedChws.join(", "))
+    setSystemMessage(`Managing CHW assignment for ${branch.name}.`)
+
+    window.setTimeout(() => {
+      chwAssignmentPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 80)
   }
 
   const cancelChwAssignment = () => {
@@ -500,95 +653,134 @@ export default function HqDashboardPage() {
     setChwFormNames("")
   }
 
-  const handleChwAssignmentSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleChwAssignmentSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!activeChwBranchId) return
 
-    const normalized = chwFormNames
-      .split(",")
-      .map((name) => name.trim())
-      .filter(Boolean)
+    const normalized = normalizeCommaSeparatedValues(chwFormNames)
+    const targetBranch = branches.find((branch) => branch.id === activeChwBranchId)
 
-    let targetName = ""
+    try {
+      const updatedBranch = await updateHqBranchChws(activeChwBranchId, normalized)
+      setBranches((previous) => previous.map((branch) => (branch.id === updatedBranch.id ? updatedBranch : branch)))
+      setSystemMessage(`Assigned ${normalized.length} CHW${normalized.length === 1 ? "" : "s"} to ${updatedBranch.name}.`)
+      appendAuditLog({ action: `Updated CHW assignment for ${updatedBranch.name}`, category: "Branch" })
+    } catch (error) {
+      console.error("Failed to update CHW assignment", error)
 
-    setBranches((previous) =>
-      previous.map((branch) => {
-        if (branch.id !== activeChwBranchId) return branch
-        targetName = branch.name
-        return { ...branch, assignedChws: normalized }
-      }),
-    )
+      if (targetBranch) {
+        setBranches((previous) =>
+          previous.map((branch) =>
+            branch.id === targetBranch.id
+              ? { ...branch, assignedChws: normalized }
+              : branch,
+          ),
+        )
 
-    if (targetName) {
-      setSystemMessage(`Assigned ${normalized.length} CHW${normalized.length === 1 ? "" : "s"} to ${targetName}.`)
-      appendAuditLog({ action: `Updated CHW assignment for ${targetName}`, category: "Branch" })
+        setSystemMessage(
+          `Assigned ${normalized.length} CHW${normalized.length === 1 ? "" : "s"} to ${targetBranch.name} (saved locally).`,
+        )
+        appendAuditLog({ action: `Updated CHW assignment for ${targetBranch.name} (local fallback)`, category: "Branch" })
+      } else {
+        setSystemMessage("Could not save CHW assignments. Please try again.")
+      }
     }
 
     cancelChwAssignment()
   }
 
-  const handleBranchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleBranchSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!branchForm.name.trim() || !branchForm.region.trim()) return
 
-    const normalizedCatchments = branchForm.catchmentAreas
-      .split(",")
-      .map((area) => area.trim())
-      .filter(Boolean)
+    const normalizedCatchments = normalizeCommaSeparatedValues(branchForm.catchmentAreas)
 
-    if (editingBranchId) {
-      setBranches((previous) =>
-        previous.map((branch) =>
-          branch.id === editingBranchId
-            ? {
-                ...branch,
-                name: branchForm.name.trim(),
-                region: branchForm.region.trim(),
-                manager: branchForm.manager.trim() || "Unassigned",
-                catchmentAreas: normalizedCatchments,
-              }
-            : branch,
-        ),
-      )
-      const updatedName = branchForm.name.trim()
-      setSystemMessage(`Branch "${updatedName}" updated.`)
-      appendAuditLog({ action: `Updated branch ${updatedName}`, category: "Branch" })
-    } else {
-      const nextBranch: Branch = {
-        id: `BR-${Math.floor(Math.random() * 900 + 100)}`,
-        name: branchForm.name.trim(),
-        region: branchForm.region.trim(),
-        manager: branchForm.manager.trim() || "Unassigned",
-        catchmentAreas: normalizedCatchments,
-        status: "active",
-        assignedChws: [],
+    if (!normalizedCatchments.length) {
+      setSystemMessage("Please provide at least one catchment area.")
+      return
+    }
+
+    try {
+      if (editingBranchId) {
+        const updatedBranch = await updateHqBranch(editingBranchId, {
+          name: branchForm.name.trim(),
+          region: branchForm.region.trim(),
+          manager: branchForm.manager.trim() || "Unassigned",
+          catchmentAreas: normalizedCatchments,
+        })
+
+        setBranches((previous) =>
+          previous.map((branch) => (branch.id === updatedBranch.id ? updatedBranch : branch)),
+        )
+        setSystemMessage(`Branch "${updatedBranch.name}" updated.`)
+        appendAuditLog({ action: `Updated branch ${updatedBranch.name}`, category: "Branch" })
+      } else {
+        const createdBranch = await createHqBranch({
+          name: branchForm.name.trim(),
+          region: branchForm.region.trim(),
+          manager: branchForm.manager.trim() || "Unassigned",
+          catchmentAreas: normalizedCatchments,
+        })
+
+        setBranches((previous) => [createdBranch, ...previous])
+        setSystemMessage(`Branch "${createdBranch.name}" registered.`)
+        appendAuditLog({ action: `Registered branch ${createdBranch.name}`, category: "Branch" })
       }
-      setBranches((previous) => [nextBranch, ...previous])
-      setSystemMessage(`Branch "${nextBranch.name}" registered.`)
-      appendAuditLog({ action: `Registered branch ${nextBranch.name}`, category: "Branch" })
+    } catch (error) {
+      console.error("Failed to save branch", error)
+      setSystemMessage("Could not save branch details. Please try again.")
+      return
     }
 
     setBranchForm({ name: "", region: "", manager: "", catchmentAreas: "" })
     setEditingBranchId(null)
   }
 
-  const handleAddUser = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleAddUser = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!userForm.name.trim() || !userForm.email.trim()) return
 
-    const nextUser: UserRecord = {
-      id: `USR-${Math.floor(Math.random() * 900 + 100)}`,
-      name: userForm.name.trim(),
-      email: userForm.email.trim().toLowerCase(),
-      role: userForm.role,
+    const normalizedEmail = userForm.email.trim().toLowerCase()
+
+    const payload = {
+      fullName: userForm.name.trim(),
+      email: normalizedEmail,
+      role: mapUserRoleToApiRole(userForm.role),
       branch: userForm.branch.trim() || undefined,
-      status: "active",
     }
 
-  setUsers((previous) => [nextUser, ...previous])
-  setUserForm({ name: "", email: "", role: "Branch Manager", branch: "" })
-  setSystemMessage(`User "${nextUser.name}" created.`)
-    appendAuditLog({ action: `Provisioned user ${nextUser.name}`, category: "User" })
+    try {
+      if (editingUserId) {
+        const updatedUser = await updateHqUser(editingUserId, payload)
+        setUsers((previous) => previous.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
+        setSystemMessage(`User "${updatedUser.name}" profile updated.`)
+        setUserActionNotice({
+          tone: "success",
+          title: "User profile updated",
+          detail: `${updatedUser.name} was updated succesfull.`,
+        })
+        appendAuditLog({ action: `Updated profile for ${updatedUser.name}`, category: "User" })
+      } else {
+        const createdUser = await createHqUser(payload)
+        setUsers((previous) => [createdUser, ...previous])
+        setSystemMessage(`User "${createdUser.name}" created.`)
+        setUserActionNotice({
+          tone: "success",
+          title: "User created",
+          detail: `${createdUser.name} was created succesfull.`,
+        })
+        appendAuditLog({ action: `Provisioned user ${createdUser.name}`, category: "User" })
+      }
+    } catch (error) {
+      console.error("Failed to save user", error)
+      const notice = mapUserManagementError(error)
+      setUserActionNotice(notice)
+      setSystemMessage(notice.detail)
+      return
+    }
+
+    setEditingUserId(null)
+    setUserForm({ name: "", email: "", role: "Branch Manager", branch: "" })
   }
 
   const handleAddVaccine = (event: React.FormEvent<HTMLFormElement>) => {
@@ -652,34 +844,94 @@ export default function HqDashboardPage() {
     appendAuditLog({ action: `Previewed notification template ${activeTemplate.label}`, category: "Notifications" })
   }
 
-  const handleUserResetPassword = (user: UserRecord) => {
-    setSystemMessage(`Password reset link queued for ${user.email}.`)
-    appendAuditLog({ action: `Initiated password reset for ${user.name}`, category: "User" })
+  const handleUserResetPassword = async (user: UserRecord) => {
+    try {
+      const response = await resetHqUserPassword(user.email)
+      setSystemMessage(response.message)
+      setUserActionNotice(
+        response.emailSent
+          ? {
+              tone: "success",
+              title: "Reset email sent",
+              detail: `Password reset email was sent to ${user.email}.`,
+            }
+          : {
+              tone: "destructive",
+              title: "Reset email failed",
+              detail: response.reason || response.message,
+            },
+      )
+      setUserResetStatusById((previous) => ({
+        ...previous,
+        [user.id]: {
+          status: response.emailSent ? "sent" : "failed",
+          detail: response.emailSent ? response.message : response.reason || response.message,
+          time: new Date().toLocaleTimeString(),
+        },
+      }))
+      appendAuditLog({ action: `Initiated password reset for ${user.name}`, category: "User" })
+    } catch (error) {
+      console.error("Failed to reset user password", error)
+      const notice = mapUserManagementError(error)
+      setUserActionNotice(notice)
+      setSystemMessage(`Could not reset password for ${user.email}. ${notice.detail}`)
+      setUserResetStatusById((previous) => ({
+        ...previous,
+        [user.id]: {
+          status: "failed",
+          detail: error instanceof Error ? error.message : "Request failed",
+          time: new Date().toLocaleTimeString(),
+        },
+      }))
+    }
   }
 
   const handleUserEditRoles = (user: UserRecord) => {
-    setSystemMessage(`Role editor for ${user.name} will open after backend integration.`)
-    appendAuditLog({ action: `Opened role editor for ${user.name}`, category: "User" })
+    setEditingUserId(user.id)
+    setUserForm({
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      branch: user.branch ?? "",
+    })
+    setSystemMessage(`Editing user profile for ${user.name}.`)
+    setUserActionNotice(null)
+    appendAuditLog({ action: `Opened user editor for ${user.name}`, category: "User" })
+
+    window.setTimeout(() => {
+      userFormPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 80)
   }
 
-  const handleUserStatusToggle = (userId: string) => {
-    let targetName = ""
-    let resultingStatus: UserRecord["status"] = "active"
+  const handleUserStatusToggle = async (userId: string) => {
+    const targetUser = users.find((user) => user.id === userId)
+    if (!targetUser) return
 
-    setUsers((previous) =>
-      previous.map((user) => {
-        if (user.id !== userId) return user
-        const nextStatus = user.status === "active" ? "inactive" : "active"
-        targetName = user.name
-        resultingStatus = nextStatus
-        return { ...user, status: nextStatus }
-      }),
-    )
+    const nextStatus: UserRecord["status"] = targetUser.status === "active" ? "inactive" : "active"
 
-    if (targetName) {
-      setSystemMessage(`User "${targetName}" ${resultingStatus === "active" ? "re-activated" : "deactivated"}.`)
-      appendAuditLog({ action: `${resultingStatus === "active" ? "Reactivated" : "Deactivated"} user ${targetName}`, category: "User" })
+    try {
+      const updatedUser = await updateHqUserStatus(userId, nextStatus)
+      setUsers((previous) => previous.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
+
+      setSystemMessage(`User "${updatedUser.name}" ${nextStatus === "active" ? "re-activated" : "deactivated"}.`)
+      setUserActionNotice({
+        tone: "success",
+        title: nextStatus === "active" ? "User activated" : "User deactivated",
+        detail: `${updatedUser.name} was ${nextStatus === "active" ? "activated" : "deactivated"} succesfull.`,
+      })
+      appendAuditLog({ action: `${nextStatus === "active" ? "Reactivated" : "Deactivated"} user ${updatedUser.name}`, category: "User" })
+    } catch (error) {
+      console.error("Failed to update user status", error)
+      const notice = mapUserManagementError(error)
+      setUserActionNotice(notice)
+      setSystemMessage(notice.detail)
     }
+  }
+
+  const cancelUserEditing = () => {
+    setEditingUserId(null)
+    setUserForm({ name: "", email: "", role: "Branch Manager", branch: "" })
+    setUserActionNotice(null)
   }
 
   const handleVaccineEdit = (vaccine: VaccineConfig) => {
@@ -923,10 +1175,10 @@ export default function HqDashboardPage() {
 
   const renderBranches = () => (
     <div className="space-y-6">
-      <Card className="border-primary/40">
+      <Card ref={branchEditPanelRef} className="border-primary/40">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Building2 className="h-5 w-5 text-primary" /> Register New Branch
+            <Building2 className="h-5 w-5 text-primary" /> {editingBranchId ? "Edit Branch Profile" : "Register New Branch"}
           </CardTitle>
           <CardDescription>Capture essential branch details and assign leadership.</CardDescription>
         </CardHeader>
@@ -1043,7 +1295,7 @@ export default function HqDashboardPage() {
       </Card>
 
       {activeChwBranch ? (
-        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+        <div ref={chwAssignmentPanelRef} className="rounded-xl border border-primary/30 bg-primary/5 p-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-base font-semibold text-foreground">Assign Community Health Workers</p>
@@ -1084,10 +1336,10 @@ export default function HqDashboardPage() {
 
   const renderUsers = () => (
     <div className="space-y-6">
-      <Card className="border-primary/40">
+      <Card ref={userFormPanelRef} className="border-primary/40">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <UsersIcon className="h-5 w-5 text-primary" /> Create or Assign User
+            <UsersIcon className="h-5 w-5 text-primary" /> {editingUserId ? "Edit User Profile" : "Create or Assign User"}
           </CardTitle>
           <CardDescription>Provision HQ, branch, and supervisory accounts.</CardDescription>
         </CardHeader>
@@ -1138,9 +1390,33 @@ export default function HqDashboardPage() {
                 onChange={(event) => setUserForm((prev) => ({ ...prev, branch: event.target.value }))}
               />
             </div>
-            <div className="md:col-span-2 flex justify-end">
+            {userActionNotice ? (
+              <div className={`md:col-span-2 rounded-md border px-3 py-2 ${
+                userActionNotice.tone === "success"
+                  ? "border-emerald-200 bg-emerald-50"
+                  : userActionNotice.tone === "warning"
+                  ? "border-amber-200 bg-amber-50"
+                  : "border-red-200 bg-red-50"
+              }`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant={userActionNotice.tone === "destructive" ? "destructive" : "secondary"}
+                    className={userActionNotice.tone === "warning" ? "bg-amber-100 text-amber-800" : undefined}
+                  >
+                    {userActionNotice.title}
+                  </Badge>
+                  <p className="text-xs text-muted-foreground">{userActionNotice.detail}</p>
+                </div>
+              </div>
+            ) : null}
+            <div className="md:col-span-2 flex justify-end gap-2">
+              {editingUserId ? (
+                <Button type="button" variant="ghost" onClick={cancelUserEditing}>
+                  Cancel edit
+                </Button>
+              ) : null}
               <Button type="submit" className="gap-2">
-                <Shield className="h-4 w-4" /> Provision user
+                <Shield className="h-4 w-4" /> {editingUserId ? "Save user" : "Provision user"}
               </Button>
             </div>
           </form>
@@ -1155,6 +1431,11 @@ export default function HqDashboardPage() {
         <CardContent className="space-y-4">
           {users.map((user) => (
             <div key={user.id} className="rounded-lg border border-border bg-background p-4">
+              {(() => {
+                const resetStatus = userResetStatusById[user.id]
+
+                return (
+                  <>
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-base font-semibold text-foreground">{user.name}</p>
@@ -1186,6 +1467,34 @@ export default function HqDashboardPage() {
                   {user.status === "active" ? "Deactivate" : "Activate"}
                 </Button>
               </div>
+              {resetStatus ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <p className={`text-xs ${resetStatus.status === "sent" ? "text-emerald-700" : "text-destructive"}`}>
+                    {resetStatus.status === "sent" ? "Email sent" : "Email failed"} at {resetStatus.time}: {resetStatus.detail}
+                  </p>
+                  {resetStatus.status === "failed" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[11px]"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(resetStatus.detail)
+                          setSystemMessage(`Copied email failure reason for ${user.email}.`)
+                        } catch (error) {
+                          console.error("Failed to copy reset error", error)
+                          setSystemMessage("Could not copy error message. Please copy it manually.")
+                        }
+                      }}
+                    >
+                      Copy error
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+                  </>
+                )
+              })()}
             </div>
           ))}
         </CardContent>
@@ -1451,13 +1760,6 @@ export default function HqDashboardPage() {
 
   const renderSystem = () => (
     <div className="space-y-6">
-      {systemMessage ? (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{systemMessage}</AlertDescription>
-        </Alert>
-      ) : null}
-
       <Card>
         <CardHeader>
           <CardTitle>System Status</CardTitle>
@@ -1610,16 +1912,56 @@ export default function HqDashboardPage() {
           </aside>
 
           <section className="flex-1 space-y-4">
-            {systemMessage && activeSection !== "system" ? (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{systemMessage}</AlertDescription>
-              </Alert>
-            ) : null}
             {renderContent()}
           </section>
         </div>
       </main>
+
+      {systemMessage ? (
+        <div className="pointer-events-none fixed bottom-5 right-5 z-[70] w-full max-w-sm">
+          <div
+            role="status"
+            aria-live="polite"
+            className={`pointer-events-auto rounded-xl border px-4 py-3 shadow-2xl backdrop-blur ${
+              messageTone === "success"
+                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-100"
+                : messageTone === "warning"
+                ? "border-amber-500/50 bg-amber-500/10 text-amber-100"
+                : "border-red-500/50 bg-red-500/10 text-red-100"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5">
+                {messageTone === "success" ? (
+                  <CheckCircle2 className="h-5 w-5" />
+                ) : messageTone === "warning" ? (
+                  <ShieldAlert className="h-5 w-5" />
+                ) : (
+                  <AlertCircle className="h-5 w-5" />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
+                  {messageTone === "success"
+                    ? "Succesfull"
+                    : messageTone === "warning"
+                    ? "Needs Attention"
+                    : "Action Failed"}
+                </p>
+                <p className="mt-1 text-sm leading-relaxed">{systemMessage}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSystemMessage(null)}
+                className="rounded-md p-1 opacity-80 transition hover:bg-white/10 hover:opacity-100"
+                aria-label="Dismiss notification"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { Injectable, ExecutionContext } from '@nestjs/common';
+import { Injectable, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Observable } from 'rxjs';
 
@@ -13,9 +13,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   handleRequest(err: any, user: any, info: any) {
-    // You can throw an exception based on either "info" or "err" arguments
+    // Throw a proper 401 instead of generic Error(500)
     if (err || !user) {
-      throw err || new Error('Unauthorized access');
+      if (err instanceof UnauthorizedException) {
+        throw err;
+      }
+
+      const message = info?.message || err?.message || 'Unauthorized access';
+      throw new UnauthorizedException(message);
     }
     return user;
   }

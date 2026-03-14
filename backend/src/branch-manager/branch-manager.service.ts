@@ -1,11 +1,29 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { createHash, randomBytes } from 'crypto';
 import { DatabaseService } from '../common/database/database.service';
+import { EmailService } from '../common/email.service';
+import { CreateHqBranchDto, UpdateHqBranchDto } from './hq-branches.dto';
+import {
+  CreateHqUserDto,
+  HqUserStatus,
+  UpdateHqUserDto,
+} from './hq-users.dto';
 
 @Injectable()
 export class BranchManagerService {
   private readonly logger = new Logger(BranchManagerService.name);
 
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly emailService: EmailService,
+  ) {}
 
   /**
    * Returns all data for the Branch Manager dashboard in a single request.
@@ -630,5 +648,511 @@ export class BranchManagerService {
       throw new Error(`Failed to log delivery: ${error.message}`);
     }
     return data;
+  }
+
+  async getHqBranches() {
+    const db = this.databaseService.supabase;
+
+    const { data: branches, error: branchError } = await db
+      .from('branches')
+      .select('id, name, code, region, status, metadata')
+      .order('code', { ascending: true });
+
+    if (branchError) {
+      throw new Error(`Failed to load branches: ${branchError.message}`);
+    }
+
+    const branchIds = (branches ?? []).map((branch: any) => branch.id);
+    const { data: catchments, error: catchmentError } = branchIds.length
+      ? await db
+          .from('catchment_areas')
+          .select('branch_id, name')
+          .in('branch_id', branchIds)
+      : { data: [], error: null as any };
+
+    if (catchmentError) {
+      throw new Error(`Failed to load catchment areas: ${catchmentError.message}`);
+    }
+
+    const catchmentMap = new Map<string, string[]>();
+    (catchments ?? []).forEach((catchment: any) => {
+      const existing = catchmentMap.get(catchment.branch_id) ?? [];
+      existing.push(catchment.name);
+      catchmentMap.set(catchment.branch_id, existing);
+    });
+
+    return (branches ?? []).map((branch: any) => {
+      const metadata = (branch.metadata ?? {}) as {
+        managerName?: string;
+        assignedChwNames?: string[];
+      };
+
+      return {
+        id: branch.code,
+        dbId: branch.id,
+        name: branch.name,
+        region: branch.region,
+        manager: metadata.managerName ?? 'Unassigned',
+        status: branch.status,
+        catchmentAreas: catchmentMap.get(branch.id) ?? [],
+        assignedChws: metadata.assignedChwNames ?? [],
+      };
+    });
+  }
+
+  async createHqBranch(dto: CreateHqBranchDto) {
+    const db = this.databaseService.supabase;
+    const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
+
+    if (!normalizedCatchments.length) {
+      throw new Error('At least one catchment area is required');
+    }
+
+    const code = await this.generateNextBranchCode();
+    const { data: createdBranch, error: createError } = await db
+      .from('branches')
+      .insert({
+        name: dto.name.trim(),
+        code,
+        region: dto.region.trim(),
+        status: 'active',
+        metadata: {
+          managerName: dto.manager?.trim() || 'Unassigned',
+          assignedChwNames: [],
+        },
+      })
+      .select('id, name, code, region, status, metadata')
+      .single();
+
+    if (createError || !createdBranch) {
+      throw new Error(`Failed to create branch: ${createError?.message ?? 'unknown error'}`);
+    }
+
+    await this.replaceCatchmentsForBranch(createdBranch.id, createdBranch.code, normalizedCatchments);
+    const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === createdBranch.id));
+    return fullBranch;
+  }
+
+  async updateHqBranch(code: string, dto: UpdateHqBranchDto) {
+    const db = this.databaseService.supabase;
+    const normalizedCode = code.trim();
+    const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
+
+    if (!normalizedCatchments.length) {
+      throw new Error('At least one catchment area is required');
+    }
+
+    const { data: currentBranch, error: currentError } = await db
+      .from('branches')
+      .select('id, metadata')
+      .eq('code', normalizedCode)
+      .single();
+
+    if (currentError || !currentBranch) {
+      throw new Error(`Branch not found: ${normalizedCode}`);
+    }
+
+    const currentMetadata = (currentBranch.metadata ?? {}) as {
+      assignedChwNames?: string[];
+      managerName?: string;
+    };
+
+    const { error: updateError } = await db
+      .from('branches')
+      .update({
+        name: dto.name.trim(),
+        region: dto.region.trim(),
+        metadata: {
+          ...currentMetadata,
+          managerName: dto.manager?.trim() || 'Unassigned',
+          assignedChwNames: currentMetadata.assignedChwNames ?? [],
+        },
+      })
+      .eq('id', currentBranch.id);
+
+    if (updateError) {
+      throw new Error(`Failed to update branch: ${updateError.message}`);
+    }
+
+    await this.replaceCatchmentsForBranch(currentBranch.id, normalizedCode, normalizedCatchments);
+
+    const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === currentBranch.id));
+    return fullBranch;
+  }
+
+  async updateHqBranchStatus(code: string, status: 'active' | 'inactive') {
+    const db = this.databaseService.supabase;
+    const { data: branch, error: branchError } = await db
+      .from('branches')
+      .update({ status })
+      .eq('code', code.trim())
+      .select('id')
+      .single();
+
+    if (branchError || !branch) {
+      throw new Error(`Failed to update branch status: ${branchError?.message ?? 'branch not found'}`);
+    }
+
+    const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === branch.id));
+    return fullBranch;
+  }
+
+  async updateHqBranchChws(code: string, assignedChws: string[]) {
+    const db = this.databaseService.supabase;
+    const normalizedChws = this.normalizeUniqueValues(assignedChws);
+
+    const { data: branch, error: branchError } = await db
+      .from('branches')
+      .select('id, metadata')
+      .eq('code', code.trim())
+      .single();
+
+    if (branchError || !branch) {
+      throw new Error(`Branch not found: ${code}`);
+    }
+
+    const metadata = (branch.metadata ?? {}) as Record<string, any>;
+    const { error: updateError } = await db
+      .from('branches')
+      .update({
+        metadata: {
+          ...metadata,
+          assignedChwNames: normalizedChws,
+          managerName: metadata.managerName ?? 'Unassigned',
+        },
+      })
+      .eq('id', branch.id);
+
+    if (updateError) {
+      throw new Error(`Failed to update CHW assignment: ${updateError.message}`);
+    }
+
+    const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === branch.id));
+    return fullBranch;
+  }
+
+  async getHqUsers() {
+    const db = this.databaseService.supabase;
+
+    const { data, error } = await db
+      .from('users')
+      .select('id, full_name, email, role, status, branch_id, branches(name, code)')
+      .in('role', ['hq-admin', 'branch-manager', 'facility-nurse', 'chw', 'data-officer', 'pha'])
+      .order('full_name', { ascending: true });
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to load users: ${error.message}`);
+    }
+
+    return (data ?? []).map((user: any) => ({
+      id: user.id,
+      name: user.full_name,
+      email: user.email,
+      role: this.toDisplayRole(user.role),
+      branch: user.branches?.name ?? undefined,
+      status: user.status === 'inactive' ? 'inactive' : 'active',
+    }));
+  }
+
+  async createHqUser(dto: CreateHqUserDto) {
+    const db = this.databaseService.supabase;
+    const normalizedEmail = dto.email.trim().toLowerCase();
+    const role = this.toStorageRole(dto.role);
+    const branchId = await this.resolveBranchId(dto.branch);
+
+    const { data: existing, error: existingError } = await db
+      .from('users')
+      .select('id')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+
+    if (existingError) {
+      throw new InternalServerErrorException(
+        `Failed to validate user email: ${existingError.message}`,
+      );
+    }
+
+    if (existing) {
+      throw new ConflictException(`User with email ${normalizedEmail} already exists`);
+    }
+
+    const temporaryPassword = this.generateTemporaryPassword();
+    const passwordHash = this.hashPassword(temporaryPassword);
+
+    const { data: createdUser, error: createError } = await db
+      .from('users')
+      .insert({
+        full_name: dto.fullName.trim(),
+        email: normalizedEmail,
+        role,
+        status: 'active',
+        branch_id: branchId,
+        password_hash: passwordHash,
+        must_change_password: true,
+      })
+      .select('id')
+      .single();
+
+    if (createError || !createdUser) {
+      throw new BadRequestException(
+        `Failed to create user: ${createError?.message ?? 'unknown error'}`,
+      );
+    }
+
+    await this.emailService.sendStaffInviteEmail(
+      {
+        email: normalizedEmail,
+        name: dto.fullName.trim(),
+        role: this.toDisplayRole(role),
+      },
+      temporaryPassword,
+    );
+
+    const users = await this.getHqUsers();
+    return users.find((item) => item.id === createdUser.id);
+  }
+
+  async updateHqUser(userId: string, dto: UpdateHqUserDto) {
+    const db = this.databaseService.supabase;
+    const branchId = await this.resolveBranchId(dto.branch);
+
+    const payload: Record<string, any> = {};
+    if (dto.fullName !== undefined) payload.full_name = dto.fullName.trim();
+    if (dto.email !== undefined) payload.email = dto.email.trim().toLowerCase();
+    if (dto.role !== undefined) payload.role = this.toStorageRole(dto.role);
+    if (dto.branch !== undefined) payload.branch_id = branchId;
+
+    const { data: updated, error } = await db
+      .from('users')
+      .update(payload)
+      .eq('id', userId)
+      .select('id')
+      .single();
+
+    if (error || !updated) {
+      if (error?.code === 'PGRST116' || !updated) {
+        throw new NotFoundException('User not found');
+      }
+      const message = (error as any)?.message ?? 'unknown error';
+      throw new BadRequestException(`Failed to update user: ${message}`);
+    }
+
+    const users = await this.getHqUsers();
+    return users.find((item) => item.id === updated.id);
+  }
+
+  async updateHqUserStatus(userId: string, status: HqUserStatus) {
+    const db = this.databaseService.supabase;
+    const { data: updated, error } = await db
+      .from('users')
+      .update({ status })
+      .eq('id', userId)
+      .select('id')
+      .single();
+
+    if (error || !updated) {
+      if (error?.code === 'PGRST116' || !updated) {
+        throw new NotFoundException('User not found');
+      }
+      const message = (error as any)?.message ?? 'unknown error';
+      throw new BadRequestException(
+        `Failed to update user status: ${message}`,
+      );
+    }
+
+    const users = await this.getHqUsers();
+    return users.find((item) => item.id === updated.id);
+  }
+
+  async resetHqUserPassword(email: string) {
+    const db = this.databaseService.supabase;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const { data: user, error: userError } = await db
+      .from('users')
+      .select('id, email, full_name')
+      .eq('email', normalizedEmail)
+      .single();
+
+    if (userError || !user) {
+      throw new NotFoundException(`User not found for email ${normalizedEmail}`);
+    }
+
+    const temporaryPassword = this.generateTemporaryPassword();
+    const passwordHash = this.hashPassword(temporaryPassword);
+
+    const { error: updateError } = await db
+      .from('users')
+      .update({
+        password_hash: passwordHash,
+        must_change_password: true,
+      })
+      .eq('id', user.id);
+
+    if (updateError) {
+      throw new BadRequestException(`Failed to reset password: ${updateError.message}`);
+    }
+
+    const emailDispatch = await this.emailService.sendPasswordResetEmailWithStatus(
+      {
+        email: user.email,
+        name: user.full_name ?? 'User',
+      },
+      temporaryPassword,
+    );
+
+    if (emailDispatch.success) {
+      return {
+        emailSent: true,
+        message: `Password reset email sent to ${user.email}.`,
+        reason: null,
+      };
+    }
+
+    return {
+      emailSent: false,
+      message: `Password was reset for ${user.email}, but email delivery failed.`,
+      reason: emailDispatch.errorMessage ?? 'SMTP delivery failed',
+    };
+  }
+
+  private normalizeUniqueValues(values: string[] | string): string[] {
+    const list = Array.isArray(values) ? values : values.split(',');
+    const deduped = new Set(
+      list
+        .map((value) => value.trim())
+        .filter(Boolean),
+    );
+    return Array.from(deduped);
+  }
+
+  private generateTemporaryPassword(length = 10): string {
+    return randomBytes(length)
+      .toString('base64')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, length);
+  }
+
+  private hashPassword(password: string): string {
+    return createHash('sha256').update(password).digest('hex');
+  }
+
+  private toStorageRole(role: string): string {
+    const roleMap: Record<string, string> = {
+      'HQ Admin': 'hq-admin',
+      'Branch Manager': 'branch-manager',
+      'Facility Nurse': 'facility-nurse',
+      'Community Health Worker': 'chw',
+      'Data Officer': 'data-officer',
+      'Public Health Authority': 'pha',
+      'hq-admin': 'hq-admin',
+      'branch-manager': 'branch-manager',
+      'facility-nurse': 'facility-nurse',
+      chw: 'chw',
+      'data-officer': 'data-officer',
+      pha: 'pha',
+    };
+
+    return roleMap[role] ?? role;
+  }
+
+  private toDisplayRole(role: string): string {
+    const displayMap: Record<string, string> = {
+      'hq-admin': 'HQ Admin',
+      'branch-manager': 'Branch Manager',
+      'facility-nurse': 'Facility Nurse',
+      chw: 'Community Health Worker',
+      'data-officer': 'Data Officer',
+      pha: 'Public Health Authority',
+      parent: 'Parent',
+    };
+
+    return displayMap[role] ?? role;
+  }
+
+  private async resolveBranchId(branch?: string): Promise<string | null> {
+    if (branch === undefined) return null;
+    const normalized = branch.trim();
+    if (!normalized) return null;
+
+    const db = this.databaseService.supabase;
+
+    const { data: branchByCode, error: codeError } = await db
+      .from('branches')
+      .select('id')
+      .eq('code', normalized)
+      .maybeSingle();
+
+    if (codeError) {
+      throw new InternalServerErrorException(`Failed to resolve branch: ${codeError.message}`);
+    }
+
+    if (branchByCode) return branchByCode.id;
+
+    const { data: branchByName, error: nameError } = await db
+      .from('branches')
+      .select('id')
+      .eq('name', normalized)
+      .maybeSingle();
+
+    if (nameError) {
+      throw new InternalServerErrorException(`Failed to resolve branch: ${nameError.message}`);
+    }
+
+    if (!branchByName) {
+      throw new NotFoundException(`Branch "${normalized}" not found`);
+    }
+
+    return branchByName.id;
+  }
+
+  private async generateNextBranchCode(): Promise<string> {
+    const db = this.databaseService.supabase;
+    const { data: rows, error } = await db
+      .from('branches')
+      .select('code');
+
+    if (error) {
+      throw new Error(`Failed to generate branch code: ${error.message}`);
+    }
+
+    const maxCode = (rows ?? []).reduce((highest: number, row: any) => {
+      const parsed = Number.parseInt(String(row.code ?? '').replace('BR-', ''), 10);
+      return Number.isNaN(parsed) ? highest : Math.max(highest, parsed);
+    }, 0);
+
+    return `BR-${String(maxCode + 1).padStart(3, '0')}`;
+  }
+
+  private async replaceCatchmentsForBranch(
+    branchId: string,
+    branchCode: string,
+    catchmentAreas: string[],
+  ) {
+    const db = this.databaseService.supabase;
+
+    const { error: deleteError } = await db
+      .from('catchment_areas')
+      .delete()
+      .eq('branch_id', branchId);
+
+    if (deleteError) {
+      throw new Error(`Failed to clear catchment areas: ${deleteError.message}`);
+    }
+
+    const payload = catchmentAreas.map((name, index) => ({
+      branch_id: branchId,
+      name,
+      community: name,
+      code: `CA-${branchCode.replace('BR-', '')}-${String(index + 1).padStart(2, '0')}`,
+    }));
+
+    const { error: insertError } = await db
+      .from('catchment_areas')
+      .insert(payload);
+
+    if (insertError) {
+      throw new Error(`Failed to save catchment areas: ${insertError.message}`);
+    }
   }
 }
