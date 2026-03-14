@@ -659,7 +659,10 @@ export class BranchManagerService {
       .order('code', { ascending: true });
 
     if (branchError) {
-      throw new Error(`Failed to load branches: ${branchError.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to load branches: ${branchError.message}`,
+        code: 'HQ_BRANCHES_FETCH_FAILED',
+      });
     }
 
     const branchIds = (branches ?? []).map((branch: any) => branch.id);
@@ -671,7 +674,10 @@ export class BranchManagerService {
       : { data: [], error: null as any };
 
     if (catchmentError) {
-      throw new Error(`Failed to load catchment areas: ${catchmentError.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to load catchment areas: ${catchmentError.message}`,
+        code: 'HQ_BRANCHES_CATCHMENT_FETCH_FAILED',
+      });
     }
 
     const catchmentMap = new Map<string, string[]>();
@@ -705,7 +711,10 @@ export class BranchManagerService {
     const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
 
     if (!normalizedCatchments.length) {
-      throw new Error('At least one catchment area is required');
+      throw new BadRequestException({
+        message: 'At least one catchment area is required',
+        code: 'CATCHMENT_REQUIRED',
+      });
     }
 
     const code = await this.generateNextBranchCode();
@@ -725,7 +734,10 @@ export class BranchManagerService {
       .single();
 
     if (createError || !createdBranch) {
-      throw new Error(`Failed to create branch: ${createError?.message ?? 'unknown error'}`);
+      throw new BadRequestException({
+        message: `Failed to create branch: ${createError?.message ?? 'unknown error'}`,
+        code: 'HQ_BRANCH_CREATE_FAILED',
+      });
     }
 
     await this.replaceCatchmentsForBranch(createdBranch.id, createdBranch.code, normalizedCatchments);
@@ -739,7 +751,10 @@ export class BranchManagerService {
     const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
 
     if (!normalizedCatchments.length) {
-      throw new Error('At least one catchment area is required');
+      throw new BadRequestException({
+        message: 'At least one catchment area is required',
+        code: 'CATCHMENT_REQUIRED',
+      });
     }
 
     const { data: currentBranch, error: currentError } = await db
@@ -749,7 +764,10 @@ export class BranchManagerService {
       .single();
 
     if (currentError || !currentBranch) {
-      throw new Error(`Branch not found: ${normalizedCode}`);
+      throw new NotFoundException({
+        message: `Branch not found: ${normalizedCode}`,
+        code: 'BRANCH_NOT_FOUND',
+      });
     }
 
     const currentMetadata = (currentBranch.metadata ?? {}) as {
@@ -771,7 +789,10 @@ export class BranchManagerService {
       .eq('id', currentBranch.id);
 
     if (updateError) {
-      throw new Error(`Failed to update branch: ${updateError.message}`);
+      throw new BadRequestException({
+        message: `Failed to update branch: ${updateError.message}`,
+        code: 'HQ_BRANCH_UPDATE_FAILED',
+      });
     }
 
     await this.replaceCatchmentsForBranch(currentBranch.id, normalizedCode, normalizedCatchments);
@@ -788,9 +809,20 @@ export class BranchManagerService {
       .eq('code', code.trim())
       .select('id')
       .single();
+    const branchErrorMessage = (branchError as { message?: string } | null)?.message;
 
     if (branchError || !branch) {
-      throw new Error(`Failed to update branch status: ${branchError?.message ?? 'branch not found'}`);
+      if ((branchError as any)?.code === 'PGRST116' || !branch) {
+        throw new NotFoundException({
+          message: `Branch not found: ${code.trim()}`,
+          code: 'BRANCH_NOT_FOUND',
+        });
+      }
+
+      throw new BadRequestException({
+        message: `Failed to update branch status: ${branchErrorMessage ?? 'unknown error'}`,
+        code: 'HQ_BRANCH_STATUS_UPDATE_FAILED',
+      });
     }
 
     const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === branch.id));
@@ -808,7 +840,10 @@ export class BranchManagerService {
       .single();
 
     if (branchError || !branch) {
-      throw new Error(`Branch not found: ${code}`);
+      throw new NotFoundException({
+        message: `Branch not found: ${code}`,
+        code: 'BRANCH_NOT_FOUND',
+      });
     }
 
     const metadata = (branch.metadata ?? {}) as Record<string, any>;
@@ -824,7 +859,10 @@ export class BranchManagerService {
       .eq('id', branch.id);
 
     if (updateError) {
-      throw new Error(`Failed to update CHW assignment: ${updateError.message}`);
+      throw new BadRequestException({
+        message: `Failed to update CHW assignment: ${updateError.message}`,
+        code: 'HQ_BRANCH_CHW_UPDATE_FAILED',
+      });
     }
 
     const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === branch.id));
@@ -1178,7 +1216,10 @@ export class BranchManagerService {
       .select('code');
 
     if (error) {
-      throw new Error(`Failed to generate branch code: ${error.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to generate branch code: ${error.message}`,
+        code: 'HQ_BRANCH_CODE_GENERATION_FAILED',
+      });
     }
 
     const maxCode = (rows ?? []).reduce((highest: number, row: any) => {
@@ -1202,7 +1243,10 @@ export class BranchManagerService {
       .eq('branch_id', branchId);
 
     if (deleteError) {
-      throw new Error(`Failed to clear catchment areas: ${deleteError.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to clear catchment areas: ${deleteError.message}`,
+        code: 'HQ_BRANCH_CATCHMENT_CLEAR_FAILED',
+      });
     }
 
     const payload = catchmentAreas.map((name, index) => ({
@@ -1217,7 +1261,10 @@ export class BranchManagerService {
       .insert(payload);
 
     if (insertError) {
-      throw new Error(`Failed to save catchment areas: ${insertError.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to save catchment areas: ${insertError.message}`,
+        code: 'HQ_BRANCH_CATCHMENT_SAVE_FAILED',
+      });
     }
   }
 }
