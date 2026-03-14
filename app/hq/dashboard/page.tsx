@@ -489,6 +489,12 @@ export default function HqDashboardPage() {
       } catch (error) {
         console.error("Failed to load HQ users from backend", error)
         if (!isMounted) return
+
+        const errorMessage = error instanceof Error ? error.message.toLowerCase() : ""
+        if (errorMessage.includes("session expired") || errorMessage.includes("unauthorized")) {
+          return
+        }
+
         setSystemMessage("Using local fallback data while user API is unavailable.")
       }
     }

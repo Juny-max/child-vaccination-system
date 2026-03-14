@@ -11,7 +11,7 @@ export function getAuthHeaders(): HeadersInit {
   let authorizationHeader: string | undefined;
 
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('accessToken');
+    const token = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
     if (token) {
       authorizationHeader = `Bearer ${token}`;
     }
