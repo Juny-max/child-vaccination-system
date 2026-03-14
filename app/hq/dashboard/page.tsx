@@ -432,6 +432,7 @@ export default function HqDashboardPage() {
     schedule: "",
     dueDays: "",
   })
+  const [editingVaccineId, setEditingVaccineId] = useState<string | null>(null)
 
   const [templates, setTemplates] = useState(initialTemplates)
   const [activeTemplateId, setActiveTemplateId] = useState(initialTemplates[0]?.id ?? "")
@@ -445,11 +446,12 @@ export default function HqDashboardPage() {
   const [userResetStatusById, setUserResetStatusById] = useState<
     Record<string, { status: "sent" | "failed"; detail: string; time: string }>
   >({})
-  const [userActionNotice, setUserActionNotice] = useState<
+  const [, setUserActionNotice] = useState<
     { tone: "success" | "warning" | "destructive"; title: string; detail: string } | null
   >(null)
   const branchEditPanelRef = useRef<HTMLDivElement | null>(null)
   const userFormPanelRef = useRef<HTMLDivElement | null>(null)
+  const vaccineFormPanelRef = useRef<HTMLDivElement | null>(null)
   const chwAssignmentPanelRef = useRef<HTMLDivElement | null>(null)
 
   const appendAuditLog = useCallback(
@@ -834,6 +836,29 @@ export default function HqDashboardPage() {
     const parsedDays = Number.parseInt(vaccineForm.dueDays, 10)
     if (!vaccineForm.name.trim() || Number.isNaN(parsedDays)) return
 
+    if (editingVaccineId) {
+      let updatedName = ""
+
+      setVaccines((previous) =>
+        previous.map((vaccine) => {
+          if (vaccine.id !== editingVaccineId) return vaccine
+          updatedName = vaccineForm.name.trim()
+          return {
+            ...vaccine,
+            name: vaccineForm.name.trim(),
+            schedule: vaccineForm.schedule.trim() || "Custom schedule",
+            dueDays: parsedDays,
+          }
+        }),
+      )
+
+      setSystemMessage(`Schedule for "${updatedName}" updated.`)
+      appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
+      setEditingVaccineId(null)
+      setVaccineForm({ name: "", schedule: "", dueDays: "" })
+      return
+    }
+
     const nextVaccine: VaccineConfig = {
       id: `VAC-${Math.floor(Math.random() * 900 + 100)}`,
       name: vaccineForm.name.trim(),
@@ -842,9 +867,10 @@ export default function HqDashboardPage() {
       status: "active",
     }
 
-  setVaccines((previous) => [nextVaccine, ...previous])
-  setVaccineForm({ name: "", schedule: "", dueDays: "" })
-  setSystemMessage(`Vaccine "${nextVaccine.name}" added to master list.`)
+    setVaccines((previous) => [nextVaccine, ...previous])
+    setVaccineForm({ name: "", schedule: "", dueDays: "" })
+    setSystemMessage(`Vaccine "${nextVaccine.name}" added to master list.`)
+    appendAuditLog({ action: `Added vaccine ${nextVaccine.name} to master registry`, category: "Schedule" })
   }
 
   const handleTemplateUpdate = () => {
@@ -980,9 +1006,25 @@ export default function HqDashboardPage() {
     setUserActionNotice(null)
   }
 
+  const cancelVaccineEditing = () => {
+    setEditingVaccineId(null)
+    setVaccineForm({ name: "", schedule: "", dueDays: "" })
+    setSystemMessage("Vaccine schedule editing cancelled.")
+  }
+
   const handleVaccineEdit = (vaccine: VaccineConfig) => {
-    setSystemMessage(`Schedule editor for ${vaccine.name} will open once the API is connected.`)
+    setEditingVaccineId(vaccine.id)
+    setVaccineForm({
+      name: vaccine.name,
+      schedule: vaccine.schedule,
+      dueDays: String(vaccine.dueDays),
+    })
+    setSystemMessage(`Editing schedule for ${vaccine.name}.`)
     appendAuditLog({ action: `Opened schedule editor for ${vaccine.name}`, category: "Schedule" })
+
+    window.setTimeout(() => {
+      vaccineFormPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 80)
   }
 
   const handleVaccineArchiveToggle = (vaccineId: string) => {
@@ -1436,25 +1478,6 @@ export default function HqDashboardPage() {
                 onChange={(event) => setUserForm((prev) => ({ ...prev, branch: event.target.value }))}
               />
             </div>
-            {userActionNotice ? (
-              <div className={`md:col-span-2 rounded-md border px-3 py-2 ${
-                userActionNotice.tone === "success"
-                  ? "border-emerald-200 bg-emerald-50"
-                  : userActionNotice.tone === "warning"
-                  ? "border-amber-200 bg-amber-50"
-                  : "border-red-200 bg-red-50"
-              }`}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant={userActionNotice.tone === "destructive" ? "destructive" : "secondary"}
-                    className={userActionNotice.tone === "warning" ? "bg-amber-100 text-amber-800" : undefined}
-                  >
-                    {userActionNotice.title}
-                  </Badge>
-                  <p className="text-xs text-muted-foreground">{userActionNotice.detail}</p>
-                </div>
-              </div>
-            ) : null}
             <div className="md:col-span-2 flex justify-end gap-2">
               {editingUserId ? (
                 <Button type="button" variant="ghost" onClick={cancelUserEditing}>
@@ -1550,12 +1573,16 @@ export default function HqDashboardPage() {
 
   const renderVaccines = () => (
     <div className="space-y-6">
-      <Card className="border-primary/40">
+      <Card ref={vaccineFormPanelRef} className="border-primary/40">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Shield className="h-5 w-5 text-primary" /> Master Vaccine Registry
+            <Shield className="h-5 w-5 text-primary" /> {editingVaccineId ? "Edit Vaccine Schedule" : "Master Vaccine Registry"}
           </CardTitle>
-          <CardDescription>Centralise vaccine metadata before syncing to branches.</CardDescription>
+          <CardDescription>
+            {editingVaccineId
+              ? "Update vaccine name and timing, then save changes."
+              : "Centralise vaccine metadata before syncing to branches."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleAddVaccine} className="grid gap-4 md:grid-cols-3">
@@ -1590,9 +1617,14 @@ export default function HqDashboardPage() {
                 required
               />
             </div>
-            <div className="md:col-span-3 flex justify-end">
+            <div className="md:col-span-3 flex justify-end gap-2">
+              {editingVaccineId ? (
+                <Button type="button" variant="ghost" onClick={cancelVaccineEditing}>
+                  Cancel edit
+                </Button>
+              ) : null}
               <Button type="submit" className="gap-2">
-                <CheckCircle2 className="h-4 w-4" /> Add vaccine to schedule
+                <CheckCircle2 className="h-4 w-4" /> {editingVaccineId ? "Save schedule" : "Add vaccine to schedule"}
               </Button>
             </div>
           </form>
@@ -1620,7 +1652,7 @@ export default function HqDashboardPage() {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => handleVaccineEdit(vaccine)} disabled={isArchived}>
+                  <Button size="sm" variant="outline" onClick={() => handleVaccineEdit(vaccine)}>
                     Edit timing
                   </Button>
                   <Button
