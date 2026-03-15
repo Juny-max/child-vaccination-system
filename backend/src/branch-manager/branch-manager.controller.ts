@@ -2,7 +2,10 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
+  Param,
+  Query,
   UseGuards,
   ForbiddenException,
 } from '@nestjs/common';
@@ -12,6 +15,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { BranchManagerService } from './branch-manager.service';
 import { LogStockDto } from './log-stock.dto';
+import { RegisterStaffDto } from './register-staff.dto';
+import { UpdateStaffDto, UpdateStaffStatusDto } from './update-staff.dto';
 
 /**
  * Branch Manager Controller
@@ -84,6 +89,88 @@ export class BranchManagerController {
       user.branchId,
       user.id,
       dto,
+    );
+  }
+
+  /**
+   * POST /api/branch-manager/staff
+   * Register a new staff member (nurse or CHW) at this branch.
+   * Returns the temporary password that should be sent to the staff member.
+   */
+  @Post('staff')
+  async registerStaff(
+    @CurrentUser() user: any,
+    @Body() dto: RegisterStaffDto,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+    return this.branchManagerService.registerStaff(user.branchId, dto);
+  }
+
+  /**
+   * GET /api/branch-manager/staff
+   * Get list of staff at this branch with optional filters.
+   * Query params: role, status, search
+   */
+  @Get('staff')
+  async getStaffList(
+    @CurrentUser() user: any,
+    @Query('role') role?: 'facility-nurse' | 'chw',
+    @Query('status') status?: 'active' | 'suspended' | 'inactive',
+    @Query('search') search?: string,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+    return this.branchManagerService.getStaffList(user.branchId, {
+      role,
+      status,
+      search,
+    });
+  }
+
+  /**
+   * PATCH /api/branch-manager/staff/:id
+   * Update staff details (partial update).
+   */
+  @Patch('staff/:id')
+  async updateStaff(
+    @CurrentUser() user: any,
+    @Param('id') staffId: string,
+    @Body() dto: UpdateStaffDto,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+    return this.branchManagerService.updateStaff(staffId, user.branchId, dto);
+  }
+
+  /**
+   * PATCH /api/branch-manager/staff/:id/status
+   * Update staff status (active, suspended, inactive).
+   */
+  @Patch('staff/:id/status')
+  async updateStaffStatus(
+    @CurrentUser() user: any,
+    @Param('id') staffId: string,
+    @Body() dto: UpdateStaffStatusDto,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+    return this.branchManagerService.updateStaffStatus(
+      staffId,
+      user.branchId,
+      dto.status,
     );
   }
 }

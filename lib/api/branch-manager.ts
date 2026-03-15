@@ -128,3 +128,113 @@ export async function recordStockDelivery(payload: LogStockPayload): Promise<voi
     body: JSON.stringify(payload),
   });
 }
+
+// ============================================================
+// Staff management types
+// ============================================================
+
+export type StaffRole = 'facility-nurse' | 'chw';
+export type StaffStatus = 'active' | 'suspended' | 'inactive';
+
+export interface RegisterStaffPayload {
+  fullName: string;
+  email: string;
+  phoneNumber: string;
+  nationalId?: string;
+  role: StaffRole;
+  catchmentAreaId?: string; // CHWs only
+  specialization?: string;  // Nurses only
+}
+
+export interface UpdateStaffPayload {
+  fullName?: string;
+  email?: string;
+  phoneNumber?: string;
+  nationalId?: string;
+  catchmentAreaId?: string;
+  specialization?: string;
+}
+
+export interface RegisterStaffResponse {
+  userId: string;
+  email: string;
+  temporaryPassword: string;
+}
+
+export interface StaffListItem {
+  id: string;
+  full_name: string;
+  email: string;
+  phone_number: string;
+  role: StaffRole;
+  status: StaffStatus;
+  last_login_at: string | null;
+  created_at: string;
+}
+
+export interface StaffListFilters {
+  role?: StaffRole;
+  status?: StaffStatus;
+  search?: string;
+}
+
+// ============================================================
+// Staff management API functions
+// ============================================================
+
+/**
+ * Register a new staff member (nurse or CHW) at the branch.
+ * Returns temporary password that must be sent to the staff member.
+ */
+export async function registerStaff(
+  payload: RegisterStaffPayload,
+): Promise<RegisterStaffResponse> {
+  return apiRequest<RegisterStaffResponse>('/branch-manager/staff', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Get list of staff at the branch with optional filters.
+ */
+export async function getStaffList(
+  filters?: StaffListFilters,
+): Promise<StaffListItem[]> {
+  const params = new URLSearchParams();
+  if (filters?.role) params.append('role', filters.role);
+  if (filters?.status) params.append('status', filters.status);
+  if (filters?.search) params.append('search', filters.search);
+
+  const queryString = params.toString();
+  const url = `/branch-manager/staff${queryString ? `?${queryString}` : ''}`;
+  
+  return apiRequest<StaffListItem[]>(url);
+}
+
+/**
+ * Update staff details (partial update).
+ */
+export async function updateStaff(
+  staffId: string,
+  payload: UpdateStaffPayload,
+): Promise<void> {
+  return apiRequest<void>(`/branch-manager/staff/${staffId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Update staff status (activate, suspend, deactivate).
+ */
+export async function updateStaffStatus(
+  staffId: string,
+  status: StaffStatus,
+): Promise<void> {
+  return apiRequest<void>(`/branch-manager/staff/${staffId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+

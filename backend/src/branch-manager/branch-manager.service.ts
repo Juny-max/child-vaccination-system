@@ -631,4 +631,269 @@ export class BranchManagerService {
     }
     return data;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Staff management operations
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Register a new staff member (nurse or CHW) at this branch.
+   * Auto-generates a temporary password and requires password change on first login.
+   */
+  async registerStaff(
+    branchId: string,
+    dto: {
+      fullName: string;
+      email: string;
+      phoneNumber: string;
+      nationalId?: string;
+      role: 'facility-nurse' | 'chw';
+      catchmentAreaId?: string;
+      specialization?: string;
+    },
+  ) {
+    const db = this.databaseService.supabase;
+
+    // Check if email already exists
+    const { data: existingUser } = await db
+      .from('users')
+      .select('id')
+      .eq('email', dto.email)
+      .single();
+
+    if (existingUser) {
+      throw new Error('Email already registered');
+    }
+
+    // Generate temporary password
+    const tempPassword = this.generateTemporaryPassword();
+    const passwordHash = await this.hashPassword(tempPassword);
+
+    // Insert user
+    const { data, error } = await db
+      .from('users')
+      .insert({
+        full_name: dto.fullName,
+        email: dto.email,
+        phone_number: dto.phoneNumber,
+        national_id: dto.nationalId ?? null,
+        role: dto.role,
+        branch_id: branchId,
+        password_hash: passwordHash,
+        status: 'active',
+        must_change_password: true,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      this.logger.error('Failed to register staff', error);
+      throw new Error(`Failed to register staff: ${error.message}`);
+    }
+
+    // If CHW, assign catchment area
+    if (dto.role === 'chw' && dto.catchmentAreaId) {
+      const { error: catchmentError } = await db
+        .from('chw_catchment_areas')
+        .insert({
+          chw_id: data.id,
+          catchment_area_id: dto.catchmentAreaId,
+          assigned_at: new Date().toISOString(),
+        });
+
+      if (catchmentError) {
+        this.logger.warn('Failed to assign catchment area', catchmentError);
+      }
+    }
+
+    // If nurse, store specialization in user metadata (or separate table if exists)
+    if (dto.role === 'facility-nurse' && dto.specialization) {
+      // For now, we'll log this. In production, store in user_profiles or metadata table
+      this.logger.log(`Nurse ${data.id} specialization: ${dto.specialization}`);
+    }
+
+    return {
+      userId: data.id,
+      email: dto.email,
+      temporaryPassword: tempPassword,
+    };
+  }
+
+  /**
+   * Update staff details (partial update).
+   * Verifies the staff belongs to this branch before updating.
+   */
+  async updateStaff(
+    staffId: string,
+    branchId: string,
+    dto: {
+      fullName?: string;
+      email?: string;
+      phoneNumber?: string;
+      nationalId?: string;
+      catchmentAreaId?: string;
+      specialization?: string;
+    },
+  ) {
+    const db = this.databaseService.supabase;
+
+    // Verify staff belongs to this branch
+    const { data: staff, error: fetchError } = await db
+      .from('users')
+      .select('id, role, branch_id')
+      .eq('id', staffId)
+      .eq('branch_id', branchId)
+      .single();
+
+    if (fetchError || !staff) {
+      throw new Error('Staff not found or does not belong to this branch');
+    }
+
+    // Build update object (only include provided fields)
+    const updateData: any = {};
+    if (dto.fullName) updateData.full_name = dto.fullName;
+    if (dto.email) updateData.email = dto.email;
+    if (dto.phoneNumber) updateData.phone_number = dto.phoneNumber;
+    if (dto.nationalId !== undefined) updateData.national_id = dto.nationalId;
+
+    // Update user record
+    const { data, error } = await db
+      .from('users')
+      .update(updateData)
+      .eq('id', staffId)
+      .select()
+      .single();
+
+    if (error) {
+      this.logger.error('Failed to update staff', error);
+      throw new Error(`Failed to update staff: ${error.message}`);
+    }
+
+    // Handle catchment area update for CHWs
+    if (staff.role === 'chw' && dto.catchmentAreaId) {
+      // Delete old assignment
+      await db.from('chw_catchment_areas').delete().eq('chw_id', staffId);
+
+      // Insert new assignment
+      await db.from('chw_catchment_areas').insert({
+        chw_id: staffId,
+        catchment_area_id: dto.catchmentAreaId,
+        assigned_at: new Date().toISOString(),
+      });
+    }
+
+    // Handle specialization for nurses
+    if (staff.role === 'facility-nurse' && dto.specialization) {
+      this.logger.log(`Updated nurse ${staffId} specialization: ${dto.specialization}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Update staff status (active, suspended, inactive).
+   */
+  async updateStaffStatus(
+    staffId: string,
+    branchId: string,
+    status: 'active' | 'suspended' | 'inactive',
+  ) {
+    const db = this.databaseService.supabase;
+
+    // Verify staff belongs to this branch
+    const { data: staff, error: fetchError } = await db
+      .from('users')
+      .select('id')
+      .eq('id', staffId)
+      .eq('branch_id', branchId)
+      .single();
+
+    if (fetchError || !staff) {
+      throw new Error('Staff not found or does not belong to this branch');
+    }
+
+    // Update status
+    const { data, error } = await db
+      .from('users')
+      .update({ status })
+      .eq('id', staffId)
+      .select()
+      .single();
+
+    if (error) {
+      this.logger.error('Failed to update staff status', error);
+      throw new Error(`Failed to update status: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Get list of staff at this branch with optional filters.
+   */
+  async getStaffList(
+    branchId: string,
+    filters?: {
+      role?: 'facility-nurse' | 'chw';
+      status?: 'active' | 'suspended' | 'inactive';
+      search?: string;
+    },
+  ) {
+    const db = this.databaseService.supabase;
+
+    let query = db
+      .from('users')
+      .select('id, full_name, email, phone_number, role, status, last_login_at, created_at')
+      .eq('branch_id', branchId)
+      .in('role', ['facility-nurse', 'chw']);
+
+    // Apply filters
+    if (filters?.role) {
+      query = query.eq('role', filters.role);
+    }
+    if (filters?.status) {
+      query = query.eq('status', filters.status);
+    }
+    if (filters?.search) {
+      query = query.or(
+        `full_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%`,
+      );
+    }
+
+    query = query.order('created_at', { ascending: false });
+
+    const { data, error } = await query;
+
+    if (error) {
+      this.logger.error('Failed to fetch staff list', error);
+      throw new Error(`Failed to fetch staff: ${error.message}`);
+    }
+
+    return data ?? [];
+  }
+
+  /**
+   * Generate a random temporary password (8 characters).
+   */
+  private generateTemporaryPassword(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let password = '';
+    for (let i = 0; i < 8; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  }
+
+  /**
+   * Hash password using SHA-256 (for demo purposes).
+   * In production, use bcrypt with proper salt rounds.
+   */
+  private async hashPassword(password: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
 }

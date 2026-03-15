@@ -47,12 +47,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   getBranchDashboard,
   getVaccineOptions,
   recordStockDelivery,
+  registerStaff,
+  updateStaffStatus,
   type BranchDashboardData,
   type VaccineOption,
+  type RegisterStaffPayload,
+  type StaffRole,
 } from "@/lib/api/branch-manager"
 
 const SECTIONS = [
@@ -104,6 +109,21 @@ export default function BranchDashboardPage() {
 
   // Logout state
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  // Register staff modal state
+  const [registerStaffModalOpen, setRegisterStaffModalOpen] = useState(false)
+  const [staffRole, setStaffRole] = useState<StaffRole>("facility-nurse")
+  const [staffForm, setStaffForm] = useState({
+    fullName: "",
+    email: "",
+    phoneNumber: "",
+    nationalId: "",
+    specialization: "", // for nurses
+    catchmentAreaId: "", // for CHWs
+  })
+  const [staffSubmitting, setStaffSubmitting] = useState(false)
+  const [staffFormError, setStaffFormError] = useState<string | null>(null)
+  const [staffFormSuccess, setStaffFormSuccess] = useState<string | null>(null)
 
   const loadDashboard = useCallback(() => {
     setIsLoading(true)
@@ -223,6 +243,63 @@ export default function BranchDashboardPage() {
 
   const handleExportReports = () => {
     setSystemMessage("Branch analytics export queued. You will receive an email when it is ready to download.")
+  }
+
+  const handleOpenRegisterStaffModal = () => {
+    setRegisterStaffModalOpen(true)
+    setStaffFormError(null)
+    setStaffFormSuccess(null)
+    setStaffForm({
+      fullName: "",
+      email: "",
+      phoneNumber: "",
+      nationalId: "",
+      specialization: "",
+      catchmentAreaId: "",
+    })
+    setStaffRole("facility-nurse")
+  }
+
+  const handleStaffSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!staffForm.fullName || !staffForm.email || !staffForm.phoneNumber) {
+      setStaffFormError("Please fill in all required fields.")
+      return
+    }
+    setStaffSubmitting(true)
+    setStaffFormError(null)
+    setStaffFormSuccess(null)
+    try {
+      const payload: RegisterStaffPayload = {
+        fullName: staffForm.fullName,
+        email: staffForm.email,
+        phoneNumber: staffForm.phoneNumber,
+        nationalId: staffForm.nationalId || undefined,
+        role: staffRole,
+        specialization: staffRole === "facility-nurse" ? staffForm.specialization : undefined,
+        catchmentAreaId: staffRole === "chw" ? staffForm.catchmentAreaId : undefined,
+      }
+      const result = await registerStaff(payload)
+      setStaffFormSuccess(
+        `Staff registered successfully! Temporary password: ${result.temporaryPassword}\n\nPlease save this password and send it to ${result.email} via email or SMS.`
+      )
+      loadDashboard()
+    } catch (err: unknown) {
+      setStaffFormError(err instanceof Error ? err.message : "Failed to register staff. Please try again.")
+    } finally {
+      setStaffSubmitting(false)
+    }
+  }
+
+  const handleSuspendStaff = async (staffId: string, currentStatus: string) => {
+    try {
+      const newStatus = currentStatus === "active" ? "suspended" : "active"
+      await updateStaffStatus(staffId, newStatus)
+      setSystemMessage(`Staff ${newStatus === "suspended" ? "suspended" : "activated"} successfully.`)
+      loadDashboard()
+    } catch (err: unknown) {
+      setSystemMessage(err instanceof Error ? err.message : "Failed to update staff status.")
+    }
   }
 
   const handleOpenModule = (module: "users" | "child-records" | "chw-log") => {
@@ -480,8 +557,16 @@ export default function BranchDashboardPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Staff roster</CardTitle>
-          <CardDescription>Monitor nurse and CHW activity across catchments.</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Staff roster</CardTitle>
+              <CardDescription>Monitor nurse and CHW activity across catchments.</CardDescription>
+            </div>
+            <Button onClick={handleOpenRegisterStaffModal}>
+              <Users className="mr-2 h-4 w-4" />
+              Register Staff
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -489,21 +574,35 @@ export default function BranchDashboardPage() {
               <tr>
                 <th className="py-2 pr-4 font-medium">Name</th>
                 <th className="py-2 pr-4 font-medium">Role</th>
-                <th className="py-2 pr-4 font-medium">Catchment / Unit</th>
+                <th className="py-2 pr-4 font-medium">Status</th>
                 <th className="py-2 pr-4 font-medium">Last activity</th>
+                <th className="py-2 pr-4 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {(dashData?.staffRoster ?? []).length === 0 ? (
-                <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">No staff assigned to this branch.</td></tr>
+                <tr><td colSpan={5} className="py-4 text-center text-muted-foreground">No staff assigned to this branch.</td></tr>
               ) : (dashData?.staffRoster ?? []).map((staff) => (
                 <tr key={staff.id} className="text-foreground">
                   <td className="py-2 pr-4 font-medium">{staff.name}</td>
                   <td className="py-2 pr-4">
                     <Badge variant={staff.role === "Nurse" ? "secondary" : "outline"}>{staff.role}</Badge>
                   </td>
-                  <td className="py-2 pr-4">{staff.role === "CHW" ? "Field" : "Clinic"}</td>
+                  <td className="py-2 pr-4">
+                    <Badge variant={staff.status === "active" ? "default" : staff.status === "suspended" ? "destructive" : "secondary"}>
+                      {staff.status || "active"}
+                    </Badge>
+                  </td>
                   <td className="py-2 pr-4 text-muted-foreground">{staff.lastActive}</td>
+                  <td className="py-2 pr-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSuspendStaff(staff.id, staff.status || "active")}
+                    >
+                      {(staff.status || "active") === "active" ? "Suspend" : "Activate"}
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -970,6 +1069,133 @@ export default function BranchDashboardPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Register Staff Modal ──────────────────────────────────────────── */}
+      <Dialog open={registerStaffModalOpen} onOpenChange={setRegisterStaffModalOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" /> Register Staff Member
+            </DialogTitle>
+          </DialogHeader>
+
+          <Tabs value={staffRole} onValueChange={(val) => setStaffRole(val as StaffRole)} className="pt-1">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="facility-nurse">Nurse</TabsTrigger>
+              <TabsTrigger value="chw">CHW</TabsTrigger>
+            </TabsList>
+
+            <form onSubmit={handleStaffSubmit} className="space-y-4 pt-4">
+              {/* Common fields */}
+              <div className="space-y-1">
+                <Label htmlFor="staff-name">Full name *</Label>
+                <Input
+                  id="staff-name"
+                  placeholder="e.g. Jane Smith"
+                  value={staffForm.fullName}
+                  onChange={(e) => setStaffForm((f) => ({ ...f, fullName: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="staff-email">Email *</Label>
+                  <Input
+                    id="staff-email"
+                    type="email"
+                    placeholder="jane@example.com"
+                    value={staffForm.email}
+                    onChange={(e) => setStaffForm((f) => ({ ...f, email: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="staff-phone">Phone *</Label>
+                  <Input
+                    id="staff-phone"
+                    type="tel"
+                    placeholder="+233 XX XXX XXXX"
+                    value={staffForm.phoneNumber}
+                    onChange={(e) => setStaffForm((f) => ({ ...f, phoneNumber: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="staff-national-id">National ID</Label>
+                <Input
+                  id="staff-national-id"
+                  placeholder="GHA-XXXXXXXXX-X"
+                  value={staffForm.nationalId}
+                  onChange={(e) => setStaffForm((f) => ({ ...f, nationalId: e.target.value }))}
+                />
+              </div>
+
+              {/* Nurse-specific fields */}
+              <TabsContent value="facility-nurse" className="mt-0 space-y-4">
+                <div className="space-y-1">
+                  <Label htmlFor="staff-specialization">Specialization</Label>
+                  <Input
+                    id="staff-specialization"
+                    placeholder="e.g. Pediatric Immunization"
+                    value={staffForm.specialization}
+                    onChange={(e) => setStaffForm((f) => ({ ...f, specialization: e.target.value }))}
+                  />
+                </div>
+              </TabsContent>
+
+              {/* CHW-specific fields */}
+              <TabsContent value="chw" className="mt-0 space-y-4">
+                <div className="space-y-1">
+                  <Label htmlFor="staff-catchment">Catchment area</Label>
+                  <Input
+                    id="staff-catchment"
+                    placeholder="Catchment area ID (optional)"
+                    value={staffForm.catchmentAreaId}
+                    onChange={(e) => setStaffForm((f) => ({ ...f, catchmentAreaId: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave blank to assign later</p>
+                </div>
+              </TabsContent>
+
+              {staffFormError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{staffFormError}</AlertDescription>
+                </Alert>
+              )}
+
+              {staffFormSuccess && (
+                <Alert className="border-green-500 bg-green-50 dark:bg-green-950">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="whitespace-pre-line text-green-800 dark:text-green-100">
+                    {staffFormSuccess}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setRegisterStaffModalOpen(false)}
+                  disabled={staffSubmitting}
+                >
+                  {staffFormSuccess ? "Close" : "Cancel"}
+                </Button>
+                {!staffFormSuccess && (
+                  <Button type="submit" disabled={staffSubmitting} className="gap-2">
+                    {staffSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {staffSubmitting ? "Registering…" : "Register Staff"}
+                  </Button>
+                )}
+              </DialogFooter>
+            </form>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>
