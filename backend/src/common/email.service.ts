@@ -18,11 +18,11 @@ export class EmailService {
 
     if (!apiKey) {
       this.logger.error('BREVO_API_KEY is not set in environment variables');
-      return false;
+      throw new Error('BREVO_API_KEY is not configured');
     }
     if (!senderEmail) {
       this.logger.error('SMTP_FROM is not set in environment variables');
-      return false;
+      throw new Error('SMTP_FROM is not configured');
     }
 
     try {
