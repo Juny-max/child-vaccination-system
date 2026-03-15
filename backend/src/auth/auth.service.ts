@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../common/database/database.service';
+import { EmailService } from '../common/email.service';
 import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto } from './dto';
 
 @Injectable()
@@ -8,6 +9,7 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly databaseService: DatabaseService,
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -381,6 +383,170 @@ export class AuthService {
     // In production, use: return bcrypt.compare(password, storedHash);
     const hashedInput = await this.hashPassword(password);
     return hashedInput === storedHash;
+  }
+
+  /**
+   * Generate secure reset token (32 characters)
+   */
+  private generateResetToken(): string {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  /**
+   * Request password reset with email
+   * Returns success message without revealing if email exists (security best practice)
+   */
+  async forgotPassword(email: string, baseUrl?: string): Promise<{ success: boolean; message: string; emailFound: boolean }> {
+    const GENERIC_MSG = 'If an account exists with this email, you will receive a password reset link.';
+
+    // Look up user — don't reveal whether email exists in the message, but track internally
+    const user = await this.databaseService.getUserByEmail(email);
+    if (!user) {
+      console.log(`[FORGOT-PASSWORD] No account found for: ${email}`);
+      return { success: true, message: GENERIC_MSG, emailFound: false };
+    }
+
+    console.log(`[FORGOT-PASSWORD] Found user: ${user.email} (id: ${user.id})`);
+
+    // Generate token with 1-hour expiration
+    const resetToken = this.generateResetToken();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    // Save token — if this fails the table probably doesn't exist yet
+    const { error: insertError } = await this.databaseService.supabase
+      .from('password_reset_tokens')
+      .insert({ user_id: user.id, token: resetToken, expires_at: expiresAt.toISOString() });
+
+    if (insertError) {
+      console.error('[FORGOT-PASSWORD] ❌ Failed to save reset token (table missing? run the migration!):', insertError.message);
+      throw new BadRequestException('Password reset is not available right now. Please contact your administrator.');
+    }
+
+    console.log(`[FORGOT-PASSWORD] Token saved. Expires at: ${expiresAt.toISOString()}`);
+
+    // Build reset link using the request's actual origin (auto-detects localhost vs production)
+    const frontendUrl = baseUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const resetLink = `${frontendUrl}/auth/reset-password?token=${resetToken}`;
+
+    console.log(`[FORGOT-PASSWORD] Reset link: ${resetLink}`);
+
+    const emailSent = await this.emailService.sendPasswordResetEmail(
+      { email: user.email, name: user.full_name },
+      resetLink,
+    );
+
+    if (emailSent) {
+      console.log(`[FORGOT-PASSWORD] ✅ Email sent to ${user.email}`);
+    } else {
+      console.error(`[FORGOT-PASSWORD] ❌ Email FAILED for ${user.email}. Check SMTP_FROM is a verified Brevo sender.`);
+    }
+
+    try {
+      await this.databaseService.createAuditLog(user.id, 'update', 'users', user.id, {
+        after: { event: 'password_reset_requested', timestamp: new Date().toISOString() },
+      });
+    } catch (auditError) {
+      console.warn('[FORGOT-PASSWORD] Audit log failed (non-critical):', auditError);
+    }
+
+    return { success: true, message: GENERIC_MSG, emailFound: true };
+  }
+
+  /**
+   * Reset password using token
+   * Token must be valid and not expired
+   */
+  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    // Validate token format
+    if (!token || typeof token !== 'string' || token.length !== 48) {
+      throw new BadRequestException('Invalid or malformed reset token');
+    }
+
+    // Get reset token from database
+    const { data: resetTokenData, error: tokenError } = await this.databaseService.supabase
+      .from('password_reset_tokens')
+      .select('*')
+      .eq('token', token)
+      .maybeSingle();
+
+    if (tokenError || !resetTokenData) {
+      throw new UnauthorizedException('Invalid or expired password reset token');
+    }
+
+    // Check if token has expired
+    const now = new Date();
+    const expiresAt = new Date(resetTokenData.expires_at);
+
+    if (now > expiresAt) {
+      // Delete expired token
+      await this.databaseService.supabase
+        .from('password_reset_tokens')
+        .delete()
+        .eq('id', resetTokenData.id);
+
+      throw new UnauthorizedException('Password reset token has expired. Please request a new one.');
+    }
+
+    // Get user
+    const user = await this.databaseService.getUserById(resetTokenData.user_id);
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Hash new password
+    const newPasswordHash = await this.hashPassword(newPassword);
+
+    // Update password in database
+    const { error: updateError } = await this.databaseService.supabase
+      .from('users')
+      .update({
+        password_hash: newPasswordHash,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', user.id);
+
+    if (updateError) {
+      console.error('Error resetting password:', updateError);
+      throw new BadRequestException('Failed to update password');
+    }
+
+    // Delete the used reset token
+    const { error: deleteError } = await this.databaseService.supabase
+      .from('password_reset_tokens')
+      .delete()
+      .eq('id', resetTokenData.id);
+
+    if (deleteError) {
+      console.warn('Failed to delete reset token after successful reset:', deleteError);
+    }
+
+    // Create audit log
+    try {
+      await this.databaseService.createAuditLog(
+        user.id,
+        'update',
+        'users',
+        user.id,
+        {
+          after: {
+            event: 'password_reset_completed',
+            password_reset_time: new Date().toISOString(),
+          },
+        },
+      );
+    } catch (auditError) {
+      console.warn('Audit log failed (non-critical):', auditError);
+    }
+
+    return {
+      success: true,
+      message: 'Password reset successfully. You can now log in with your new password.',
+    };
   }
 
   /**

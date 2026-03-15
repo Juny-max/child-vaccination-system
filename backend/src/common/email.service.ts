@@ -26,7 +26,7 @@ export class EmailService {
     try {
       // Use verified sender email from env, not the SMTP login
       const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-      
+
       await this.transporter.sendMail({
         from: `"Child Vaccination System" <${senderEmail}>`,
         to: to.email,
@@ -42,13 +42,35 @@ export class EmailService {
     }
   }
 
+  async sendPasswordResetEmail(
+    to: { email: string; name: string },
+    resetLink: string,
+  ): Promise<boolean> {
+    try {
+      const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+
+      await this.transporter.sendMail({
+        from: `"Child Vaccination System" <${senderEmail}>`,
+        to: to.email,
+        subject: 'Reset Your Password - Child Vaccination Command Center',
+        html: this.getPasswordResetEmailTemplate(to.name, resetLink),
+      });
+
+      this.logger.log(`Password reset email sent to ${to.email}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to send password reset email to ${to.email}`, error);
+      return false;
+    }
+  }
+
   private getWelcomeEmailTemplate(
     name: string,
     email: string,
     tempPassword: string,
   ): string {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    
+
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -73,18 +95,18 @@ export class EmailService {
               </p>
             </td>
           </tr>
-          
+
           <!-- Body -->
           <tr>
             <td style="padding: 40px;">
               <h2 style="color: #1f2937; margin: 0 0 20px 0; font-size: 24px;">
                 Welcome, ${name}! 👋
               </h2>
-              
+
               <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
                 Your account has been created by the health facility. You can now access the parent portal to view your child's vaccination records, upcoming appointments, and more.
               </p>
-              
+
               <!-- Credentials Box -->
               <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0fdf4; border: 2px solid #16a34a; border-radius: 8px; margin: 30px 0;">
                 <tr>
@@ -92,7 +114,7 @@ export class EmailService {
                     <h3 style="color: #15803d; margin: 0 0 15px 0; font-size: 18px;">
                       🔐 Your Login Credentials
                     </h3>
-                    
+
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td style="padding: 8px 0;">
@@ -114,7 +136,7 @@ export class EmailService {
                   </td>
                 </tr>
               </table>
-              
+
               <!-- Important Notice -->
               <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 0 8px 8px 0; margin: 20px 0;">
                 <tr>
@@ -125,25 +147,25 @@ export class EmailService {
                   </td>
                 </tr>
               </table>
-              
+
               <!-- CTA Button -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin: 30px 0;">
                 <tr>
                   <td align="center">
-                    <a href="${frontendUrl}/auth/login" 
+                    <a href="${frontendUrl}/auth/login"
                        style="background-color: #16a34a; color: #ffffff; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; display: inline-block;">
                       Log In to Your Account →
                     </a>
                   </td>
                 </tr>
               </table>
-              
+
               <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin: 20px 0 0 0;">
                 If you did not request this account, please contact your local health facility immediately.
               </p>
             </td>
           </tr>
-          
+
           <!-- Footer -->
           <tr>
             <td style="background-color: #f9fafb; padding: 25px 40px; border-radius: 0 0 12px 12px; border-top: 1px solid #e5e7eb;">
@@ -160,5 +182,128 @@ export class EmailService {
 </body>
 </html>
     `;
+  }
+
+  private getPasswordResetEmailTemplate(name: string, resetLink: string): string {
+    const logoUrl = `${process.env.FRONTEND_URL || 'https://cvcc-iota.vercel.app'}/images/cvcc-logo.png`;
+    const year = new Date().getFullYear();
+    const requestTime = new Date().toLocaleString('en-GB', {
+      day: '2-digit', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Accra',
+    });
+
+    return `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>Password Reset – CVCC</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;padding:36px 16px;">
+    <tr>
+      <td align="center">
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;">
+
+          <!-- ── HEADER ── -->
+          <tr>
+            <td style="background-color:#0a6640;border-radius:6px 6px 0 0;padding:28px 32px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="52" valign="middle">
+                    <img src="${logoUrl}" alt="CVCC" width="48" height="48"
+                         style="display:block;border-radius:6px;border:2px solid rgba(255,255,255,0.25);" />
+                  </td>
+                  <td width="14"></td>
+                  <td valign="middle">
+                    <p style="margin:0;font-size:16px;font-weight:700;color:#ffffff;line-height:1.2;">
+                      Child Vaccination Command Center
+                    </p>
+                    <p style="margin:3px 0 0 0;font-size:11px;color:rgba(255,255,255,0.65);letter-spacing:0.5px;">
+                      CVCC Digital Health Platform
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── BODY CARD ── -->
+          <tr>
+            <td style="background-color:#ffffff;padding:36px 32px 28px 32px;">
+
+              <!-- Title -->
+              <p style="margin:0 0 4px 0;font-size:11px;font-weight:700;color:#0a6640;text-transform:uppercase;letter-spacing:1.5px;">
+                Password Reset
+              </p>
+              <p style="margin:0 0 6px 0;font-size:22px;font-weight:700;color:#111827;">
+                Hi, ${name}
+              </p>
+              <p style="margin:0 0 4px 0;font-size:11px;color:#9ca3af;">
+                Requested on ${requestTime} (Ghana Time)
+              </p>
+
+              <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
+
+              <p style="margin:0 0 24px 0;font-size:14px;color:#374151;line-height:1.75;">
+                We received a request to reset the password for your CVCC account. If you did not
+                make this request, you can safely ignore this email — your account has not been changed.
+              </p>
+
+              <!-- CTA Button -->
+              <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+                <tr>
+                  <td style="border-radius:5px;background-color:#0a6640;">
+                    <a href="${resetLink}" target="_blank"
+                       style="display:inline-block;padding:13px 30px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:5px;letter-spacing:0.3px;">
+                      Reset My Password &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 4px 0;font-size:12px;color:#6b7280;">
+                This link expires in <strong>1 hour</strong> and can only be used once.
+              </p>
+              <p style="margin:0 0 24px 0;font-size:11px;color:#9ca3af;word-break:break-all;">
+                Or copy this link: <span style="color:#0a6640;">${resetLink}</span>
+              </p>
+
+              <!-- Security note -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                     style="background-color:#fffbeb;border-left:3px solid #f59e0b;border-radius:0 4px 4px 0;margin-bottom:8px;">
+                <tr>
+                  <td style="padding:12px 16px;">
+                    <p style="margin:0;font-size:12px;color:#92400e;line-height:1.6;">
+                      <strong>Security tip:</strong> CVCC will never ask for your password by phone or email.
+                      If you did not request this, contact your facility administrator immediately.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- ── FOOTER ── -->
+          <tr>
+            <td style="background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 6px 6px;padding:18px 32px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.8;">
+                &copy; ${year} Child Vaccination Command Center (CVCC) &nbsp;&middot;&nbsp; Ministry of Health, Ghana<br/>
+                This is an automated message. Please do not reply to this email.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
   }
 }
