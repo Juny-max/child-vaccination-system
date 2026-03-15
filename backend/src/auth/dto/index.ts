@@ -72,6 +72,20 @@ export class ChangePasswordDto {
   newPassword: string;
 }
 
+export class ForgotPasswordDto {
+  @IsEmail()
+  email: string;
+}
+
+export class ResetPasswordDto {
+  @IsString()
+  token: string;
+
+  @IsString()
+  @MinLength(6)
+  newPassword: string;
+}
+
 // ============================================
 // Response DTOs
 // ============================================
@@ -92,6 +106,11 @@ export class AuthResponseDto {
   expiresIn: number;
   user: UserProfileDto;
   mustChangePassword?: boolean;
+}
+
+export class PasswordResetResponseDto {
+  success: boolean;
+  message: string;
 }
 
 // ============================================

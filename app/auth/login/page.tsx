@@ -175,6 +175,11 @@ export default function UnifiedLoginPage() {
                     {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
+                <div className="text-right">
+                  <Link href="/auth/forgot-password" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                    Forgot password?
+                  </Link>
+                </div>
               </div>
 
               <Button type="submit" className="w-full" disabled={isSubmitting} aria-busy={isSubmitting}>

@@ -180,3 +180,23 @@ export async function changePassword(data: ChangePasswordRequest): Promise<{ suc
     body: JSON.stringify(data),
   });
 }
+
+/**
+ * Request password reset with email
+ */
+export async function forgotPassword(email: string): Promise<{ success: boolean; message: string; emailFound: boolean }> {
+  return apiRequest('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  }, true); // Skip auth redirect for password reset endpoint
+}
+
+/**
+ * Reset password using token
+ */
+export async function resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+  return apiRequest('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, newPassword }),
+  }, true); // Skip auth redirect for password reset endpoint
+}

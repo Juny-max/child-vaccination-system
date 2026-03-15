@@ -182,4 +182,35 @@ export class AuthController {
       changePasswordDto.newPassword
     );
   }
+
+  /**
+   * POST /api/auth/forgot-password
+   * Request password reset with email
+   * No authentication required
+   * Uses the request Origin header to build the correct reset link (works for both localhost and production)
+   */
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(
+    @Body() forgotPasswordDto: ForgotPasswordDto,
+    @Request() req: ExpressRequest,
+  ): Promise<{ success: boolean; message: string; emailFound: boolean }> {
+    // Use the actual origin of the request so the reset link points to the right deployment
+    const baseUrl = (req.headers.origin as string) || process.env.FRONTEND_URL || 'http://localhost:3000';
+    return this.authService.forgotPassword(forgotPasswordDto.email, baseUrl);
+  }
+
+  /**
+   * POST /api/auth/reset-password
+   * Reset password using reset token
+   * No authentication required
+   * Token must be valid and not expired (1 hour)
+   */
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(
+    @Body() resetPasswordDto: ResetPasswordDto
+  ): Promise<{ success: boolean; message: string }> {
+    return this.authService.resetPassword(resetPasswordDto.token, resetPasswordDto.newPassword);
+  }
 }
