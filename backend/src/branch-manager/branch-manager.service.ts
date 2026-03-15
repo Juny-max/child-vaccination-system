@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -1023,7 +1024,7 @@ export class BranchManagerService {
     const { data, error } = await db
       .from('users')
       .select('id, full_name, email, role, status, branch_id')
-      .in('role', ['hq-admin', 'branch-manager', 'facility-nurse', 'chw', 'data-officer', 'pha'])
+      .in('role', ['hq-admin', 'branch-manager', 'facility-nurse', 'chw', 'data-officer', 'pha', 'parent'])
       .order('full_name', { ascending: true });
 
     if (error) {
@@ -1069,10 +1070,16 @@ export class BranchManagerService {
     }));
   }
 
-  async createHqUser(dto: CreateHqUserDto) {
+  async createHqUser(dto: CreateHqUserDto, actorUserId?: string) {
     const db = this.databaseService.supabase;
     const normalizedEmail = dto.email.trim().toLowerCase();
     const role = this.toStorageRole(dto.role);
+    await this.assertHqAdminRoleProvisioningAllowed(role, {
+      actorUserId,
+      operation: 'create_hq_user',
+      targetUserId: null,
+      targetEmail: normalizedEmail,
+    });
     const branchId = await this.resolveBranchId(dto.branch);
 
     const { data: existing, error: existingError } = await db
@@ -1136,14 +1143,23 @@ export class BranchManagerService {
     return users.find((item) => item.id === createdUser.id);
   }
 
-  async updateHqUser(userId: string, dto: UpdateHqUserDto) {
+  async updateHqUser(userId: string, dto: UpdateHqUserDto, actorUserId?: string) {
     const db = this.databaseService.supabase;
     const branchId = await this.resolveBranchId(dto.branch);
 
     const payload: Record<string, any> = {};
     if (dto.fullName !== undefined) payload.full_name = dto.fullName.trim();
     if (dto.email !== undefined) payload.email = dto.email.trim().toLowerCase();
-    if (dto.role !== undefined) payload.role = this.toStorageRole(dto.role);
+    if (dto.role !== undefined) {
+      const targetRole = this.toStorageRole(dto.role);
+      await this.assertHqAdminRoleProvisioningAllowed(targetRole, {
+        actorUserId,
+        operation: 'update_hq_user_role',
+        targetUserId: userId,
+        targetEmail: dto.email?.trim().toLowerCase() ?? null,
+      });
+      payload.role = targetRole;
+    }
     if (dto.branch !== undefined) payload.branch_id = branchId;
 
     const { data: updated, error } = await db
@@ -1287,12 +1303,14 @@ export class BranchManagerService {
       'Community Health Worker': 'chw',
       'Data Officer': 'data-officer',
       'Public Health Authority': 'pha',
+      Parent: 'parent',
       'hq-admin': 'hq-admin',
       'branch-manager': 'branch-manager',
       'facility-nurse': 'facility-nurse',
       chw: 'chw',
       'data-officer': 'data-officer',
       pha: 'pha',
+      parent: 'parent',
     };
 
     return roleMap[role] ?? role;
@@ -1310,6 +1328,46 @@ export class BranchManagerService {
     };
 
     return displayMap[role] ?? role;
+  }
+
+  private async assertHqAdminRoleProvisioningAllowed(
+    role: string,
+    context: {
+      actorUserId?: string;
+      operation: 'create_hq_user' | 'update_hq_user_role';
+      targetUserId: string | null;
+      targetEmail: string | null;
+    },
+  ): Promise<void> {
+    if (role !== 'hq-admin') return;
+
+    const detailPayload = {
+      reason: 'hq_admin_role_provision_blocked',
+      attemptedRole: role,
+      operation: context.operation,
+      actorUserId: context.actorUserId ?? null,
+      targetUserId: context.targetUserId,
+      targetEmail: context.targetEmail,
+    };
+
+    this.logger.warn(`Blocked HQ Admin role provisioning attempt: ${JSON.stringify(detailPayload)}`);
+
+    try {
+      await this.databaseService.createAuditLog(
+        context.actorUserId ?? null,
+        'blocked_hq_admin_role_assignment',
+        'users',
+        context.targetUserId,
+        { after: detailPayload },
+      );
+    } catch (auditError) {
+      this.logger.warn(`Failed to write blocked HQ admin assignment audit log: ${String(auditError)}`);
+    }
+
+    throw new ForbiddenException({
+      message: 'HQ Admin role cannot be created or assigned from this console.',
+      code: 'HQ_ADMIN_ROLE_FORBIDDEN',
+    });
   }
 
   private async resolveBranchId(branch?: string): Promise<string | null> {

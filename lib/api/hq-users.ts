@@ -9,10 +9,17 @@ export interface HqUser {
   status: 'active' | 'inactive';
 }
 
-export interface UpsertHqUserPayload {
+export interface CreateHqUserPayload {
   fullName: string;
   email: string;
   role: string;
+  branch?: string;
+}
+
+export interface UpdateHqUserPayload {
+  fullName: string;
+  email: string;
+  role?: string;
   branch?: string;
 }
 
@@ -26,14 +33,14 @@ export async function getHqUsers(): Promise<HqUser[]> {
   return apiRequest<HqUser[]>('/hq-admin/users');
 }
 
-export async function createHqUser(payload: UpsertHqUserPayload): Promise<HqUser> {
+export async function createHqUser(payload: CreateHqUserPayload): Promise<HqUser> {
   return apiRequest<HqUser>('/hq-admin/users', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
 }
 
-export async function updateHqUser(userId: string, payload: UpsertHqUserPayload): Promise<HqUser> {
+export async function updateHqUser(userId: string, payload: UpdateHqUserPayload): Promise<HqUser> {
   return apiRequest<HqUser>(`/hq-admin/users/${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),

@@ -10,6 +10,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { BranchManagerService } from './branch-manager.service';
 import {
   CreateHqUserDto,
@@ -30,13 +31,17 @@ export class HqUsersController {
   }
 
   @Post()
-  async createUser(@Body() dto: CreateHqUserDto) {
-    return this.branchManagerService.createHqUser(dto);
+  async createUser(@CurrentUser('id') actorUserId: string, @Body() dto: CreateHqUserDto) {
+    return this.branchManagerService.createHqUser(dto, actorUserId);
   }
 
   @Patch(':userId')
-  async updateUser(@Param('userId') userId: string, @Body() dto: UpdateHqUserDto) {
-    return this.branchManagerService.updateHqUser(userId, dto);
+  async updateUser(
+    @CurrentUser('id') actorUserId: string,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateHqUserDto,
+  ) {
+    return this.branchManagerService.updateHqUser(userId, dto, actorUserId);
   }
 
   @Patch(':userId/status')

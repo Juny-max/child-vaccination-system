@@ -328,7 +328,7 @@ const { data, error } = await supabase
 #### 1. **HQ Admin Module**
 
 - Branch management (CRUD operations for facilities)
-- User management (create/update/delete users across all roles)
+- User management (create/update/delete users across all non-HQ-admin roles)
 - Vaccine configuration (manage master vaccine catalog)
 - Catchment area management
 - System settings and configurations
@@ -341,7 +341,7 @@ const { data, error } = await supabase
 - `PUT /branches/:id` - Update branch
 - `DELETE /branches/:id` - Delete branch
 - `GET /users` - List all users with filtering
-- `POST /users` - Create new user (any role)
+- `POST /users` - Create new user (all roles except `hq-admin`)
 - `PUT /users/:id` - Update user
 - `DELETE /users/:id` - Deactivate user
 - `GET /vaccines` - List all vaccines
@@ -616,7 +616,7 @@ Content-Type: application/json
 
 - **National Command Console**: Monitor branches, coverage trends, and AEFI alerts across the country.
 - **Branch & Catchment Management**: Create facilities, assign managers, and define service territories.
-- **Role Provisioning**: Onboard and manage Branch Managers, CHWs, Data Officers, and PHAs.
+- **Role Provisioning**: Onboard and manage Branch Managers, Facility Nurses, CHWs, Data Officers, PHAs, and Parents/Guardians (excluding HQ Admin).
 - **Schedule Configuration**: Maintain the master vaccine catalogue and national dosing rules.
 - **System Health & Audits**: Review infrastructure status, audit logs, and trigger backups on demand.
 

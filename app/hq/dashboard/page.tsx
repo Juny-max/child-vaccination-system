@@ -59,6 +59,7 @@ const SECTIONS = [
 ] as const
 
 const HQ_REVIEW_QUEUE_STORAGE_KEY = "hqReviewQueue"
+const HQ_NOTIFICATION_TEMPLATES_STORAGE_KEY = "hqNotificationTemplates"
 
 
 type SectionId = (typeof SECTIONS)[number]["id"]
@@ -97,6 +98,8 @@ type NotificationTemplate = {
   sms: string
   email: string
 }
+
+type PreviewChannel = "sms" | "email"
 
 type SystemStatus = {
   id: string
@@ -320,6 +323,7 @@ const mapUserRoleToApiRole = (role: string): string => {
     "Community Health Worker": "chw",
     "Data Officer": "data-officer",
     "Public Health Authority": "pha",
+    "Parent": "parent",
   }
 
   return roleMap[role] ?? role
@@ -354,6 +358,14 @@ const mapUserManagementError = (error: unknown): { tone: "warning" | "destructiv
       tone: "warning",
       title: "Branch not found",
       detail: "Enter a valid branch code/name or leave branch empty for HQ users.",
+    }
+  }
+
+  if (code === "HQ_ADMIN_ROLE_FORBIDDEN") {
+    return {
+      tone: "warning",
+      title: "Role restricted",
+      detail: "HQ Admin cannot create or assign another HQ Admin from this console.",
     }
   }
 
@@ -404,6 +416,20 @@ const mapUserManagementError = (error: unknown): { tone: "warning" | "destructiv
   }
 }
 
+const previewTemplateValues: Record<string, string> = {
+  guardianName: "Ama Boateng",
+  childName: "Kojo Boateng",
+  vaccineName: "Penta-3",
+  scheduledDate: "2026-03-22",
+  facilityName: "Korle Bu Teaching Hospital",
+}
+
+const compileTemplatePreview = (templateContent: string) =>
+  templateContent.replace(/\{([a-zA-Z0-9_]+)\}/g, (_fullMatch, token: string) => {
+    const replacement = previewTemplateValues[token]
+    return replacement ?? `{${token}}`
+  })
+
 export default function HqDashboardPage() {
   const router = useRouter()
   const [activeSection, setActiveSection] = useState<SectionId>("overview")
@@ -441,9 +467,13 @@ export default function HqDashboardPage() {
   })
   const [analyticsTrendData, setAnalyticsTrendData] = useState(coverageTrendData)
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false)
+  const [isUsingAnalyticsFallback, setIsUsingAnalyticsFallback] = useState(false)
+  const [isUsingUsersFallback, setIsUsingUsersFallback] = useState(false)
 
   const [templates, setTemplates] = useState(initialTemplates)
   const [activeTemplateId, setActiveTemplateId] = useState(initialTemplates[0]?.id ?? "")
+  const [previewChannel, setPreviewChannel] = useState<PreviewChannel>("sms")
+  const [templatePreview, setTemplatePreview] = useState<string>("")
 
   const [systemStatus, setSystemStatus] = useState(initialSystemStatus)
   const [auditLogs, setAuditLogs] = useState(initialAuditLogs)
@@ -479,6 +509,46 @@ export default function HqDashboardPage() {
   )
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem(HQ_NOTIFICATION_TEMPLATES_STORAGE_KEY)
+      if (!stored) return
+
+      const parsed = JSON.parse(stored) as NotificationTemplate[]
+      if (!Array.isArray(parsed) || !parsed.length) return
+
+      const hasValidShape = parsed.every((template) =>
+        template
+        && typeof template.id === "string"
+        && typeof template.label === "string"
+        && typeof template.description === "string"
+        && typeof template.sms === "string"
+        && typeof template.email === "string",
+      )
+
+      if (!hasValidShape) return
+
+      setTemplates(parsed)
+      setActiveTemplateId((previous) => {
+        if (parsed.some((template) => template.id === previous)) return previous
+        return parsed[0]?.id ?? ""
+      })
+    } catch (error) {
+      console.error("Failed to load notification templates from local storage", error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const selectedTemplate = templates.find((template) => template.id === activeTemplateId)
+    if (!selectedTemplate) {
+      setTemplatePreview("")
+      return
+    }
+
+    const source = previewChannel === "sms" ? selectedTemplate.sms : selectedTemplate.email
+    setTemplatePreview(compileTemplatePreview(source))
+  }, [activeTemplateId, previewChannel, templates])
+
+  useEffect(() => {
     const token = localStorage.getItem("accessToken") || localStorage.getItem("authToken")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
@@ -503,6 +573,8 @@ export default function HqDashboardPage() {
   }, [router])
 
   useEffect(() => {
+    if (activeSection !== "analytics") return
+
     let isMounted = true
 
     const loadBranches = async () => {
@@ -541,11 +613,12 @@ export default function HqDashboardPage() {
 
         if (!isMounted) return
         setAnalyticsTrendData(response.trend)
+        setIsUsingAnalyticsFallback(false)
       } catch (error) {
         console.error("Failed to load HQ analytics data", error)
         if (!isMounted) return
         setAnalyticsTrendData(coverageTrendData)
-        setSystemMessage("Could not load filtered analytics. Showing fallback trend data.")
+        setIsUsingAnalyticsFallback(true)
       } finally {
         if (isMounted) {
           setIsAnalyticsLoading(false)
@@ -557,7 +630,7 @@ export default function HqDashboardPage() {
     return () => {
       isMounted = false
     }
-  }, [analyticsFilters.branch, analyticsFilters.region, analyticsFilters.window])
+  }, [activeSection, analyticsFilters.branch, analyticsFilters.region, analyticsFilters.window])
 
   useEffect(() => {
     let isMounted = true
@@ -569,6 +642,7 @@ export default function HqDashboardPage() {
         if (remoteUsers.length > 0) {
           setUsers(remoteUsers)
         }
+        setIsUsingUsersFallback(false)
       } catch (error) {
         console.error("Failed to load HQ users from backend", error)
         if (!isMounted) return
@@ -579,7 +653,7 @@ export default function HqDashboardPage() {
           return
         }
 
-        setSystemMessage("Using local fallback data while user API is unavailable.")
+        setIsUsingUsersFallback(true)
       }
     }
 
@@ -587,7 +661,7 @@ export default function HqDashboardPage() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [activeSection])
 
   // Pull escalations staged by data officers via localStorage until the backend wiring is ready
   const ingestQueuedConflicts = useCallback(() => {
@@ -831,17 +905,30 @@ export default function HqDashboardPage() {
     if (!userForm.name.trim() || !userForm.email.trim()) return
 
     const normalizedEmail = userForm.email.trim().toLowerCase()
+    const role = mapUserRoleToApiRole(userForm.role)
+    const editingUser = editingUserId ? users.find((user) => user.id === editingUserId) ?? null : null
+    const isEditingExistingHqAdmin = editingUser?.role === "HQ Admin"
 
-    const payload = {
-      fullName: userForm.name.trim(),
-      email: normalizedEmail,
-      role: mapUserRoleToApiRole(userForm.role),
-      branch: userForm.branch.trim() || undefined,
+    if (!editingUserId && role === "hq-admin") {
+      setSystemMessage("HQ Admin cannot create another HQ Admin from this console.")
+      setUserActionNotice({
+        tone: "warning",
+        title: "Role restricted",
+        detail: "Choose another role or ask a Super Admin for HQ Admin provisioning.",
+      })
+      return
     }
 
     try {
       if (editingUserId) {
-        const updatedUser = await updateHqUser(editingUserId, payload)
+        const updatePayload = {
+          fullName: userForm.name.trim(),
+          email: normalizedEmail,
+          ...(isEditingExistingHqAdmin ? {} : { role }),
+          branch: userForm.branch.trim() || undefined,
+        }
+
+        const updatedUser = await updateHqUser(editingUserId, updatePayload)
         setUsers((previous) => previous.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
         setSystemMessage(`User "${updatedUser.name}" profile updated.`)
         setUserActionNotice({
@@ -851,7 +938,14 @@ export default function HqDashboardPage() {
         })
         appendAuditLog({ action: `Updated profile for ${updatedUser.name}`, category: "User" })
       } else {
-        const createdUser = await createHqUser(payload)
+        const createPayload = {
+          fullName: userForm.name.trim(),
+          email: normalizedEmail,
+          role,
+          branch: userForm.branch.trim() || undefined,
+        }
+
+        const createdUser = await createHqUser(createPayload)
         setUsers((previous) => [createdUser, ...previous])
         setSystemMessage(`User "${createdUser.name}" created.`)
         setUserActionNotice({
@@ -917,19 +1011,15 @@ export default function HqDashboardPage() {
 
   const handleTemplateUpdate = () => {
     if (!activeTemplate) return
-    setTemplates((previous) =>
-      previous.map((template) =>
-        template.id === activeTemplate.id
-          ? {
-              ...template,
-              sms: activeTemplate.sms,
-              email: activeTemplate.email,
-            }
-          : template,
-      ),
-    )
-    setSystemMessage(`${activeTemplate.label} template saved.`)
-    appendAuditLog({ action: `Updated notification template ${activeTemplate.label}`, category: "Notifications" })
+
+    try {
+      localStorage.setItem(HQ_NOTIFICATION_TEMPLATES_STORAGE_KEY, JSON.stringify(templates))
+      setSystemMessage(`${activeTemplate.label} template saved.`)
+      appendAuditLog({ action: `Updated notification template ${activeTemplate.label}`, category: "Notifications" })
+    } catch (error) {
+      console.error("Failed to persist notification template", error)
+      setSystemMessage("Could not save template locally. Please try again.")
+    }
   }
 
   const handleBackup = () => {
@@ -1070,7 +1160,12 @@ export default function HqDashboardPage() {
 
   const handleTemplatePreview = () => {
     if (!activeTemplate) return
-    setSystemMessage(`Preview for ${activeTemplate.label} will open once the messaging sandbox is connected.`)
+
+    const source = previewChannel === "sms" ? activeTemplate.sms : activeTemplate.email
+    const compiled = compileTemplatePreview(source)
+
+    setTemplatePreview(compiled)
+    setSystemMessage(`Preview generated for ${activeTemplate.label} (${previewChannel.toUpperCase()}).`)
     appendAuditLog({ action: `Previewed notification template ${activeTemplate.label}`, category: "Notifications" })
   }
 
@@ -1582,6 +1677,11 @@ export default function HqDashboardPage() {
 
   const renderUsers = () => (
     <div className="space-y-6">
+      {(() => {
+        const editingUser = editingUserId ? users.find((user) => user.id === editingUserId) ?? null : null
+        const lockRoleSelection = editingUser?.role === "HQ Admin"
+
+        return (
       <Card ref={userFormPanelRef} className="border-primary/40">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -1619,13 +1719,19 @@ export default function HqDashboardPage() {
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                 value={userForm.role}
                 onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))}
+                disabled={lockRoleSelection}
               >
+                {lockRoleSelection ? <option>HQ Admin</option> : null}
                 <option>Branch Manager</option>
+                <option>Facility Nurse</option>
                 <option>Data Officer</option>
                 <option>Community Health Worker</option>
                 <option>Public Health Authority</option>
-                <option>HQ Admin</option>
+                <option>Parent</option>
               </select>
+              {lockRoleSelection ? (
+                <p className="text-xs text-muted-foreground">HQ Admin role assignment is restricted in this console.</p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="userBranch">Branch (optional)</Label>
@@ -1649,11 +1755,18 @@ export default function HqDashboardPage() {
           </form>
         </CardContent>
       </Card>
+        )
+      })()}
 
       <Card>
         <CardHeader>
           <CardTitle>System Users</CardTitle>
           <CardDescription>Search, review and manage nationwide accounts.</CardDescription>
+          {isUsingUsersFallback ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Live user directory is temporarily unavailable. Showing fallback data.
+            </p>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-4">
           {users.map((user) => (
@@ -1835,6 +1948,11 @@ export default function HqDashboardPage() {
         <CardHeader>
           <CardTitle>Coverage Report</CardTitle>
           <CardDescription>Filter by region, branch, and reporting window.</CardDescription>
+          {isUsingAnalyticsFallback ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Live analytics is temporarily unavailable. Showing fallback trend data.
+            </p>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
@@ -1977,6 +2095,21 @@ export default function HqDashboardPage() {
             </div>
             {activeTemplate ? (
               <div className="space-y-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="previewChannel">Preview channel</Label>
+                  <select
+                    id="previewChannel"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm md:w-56"
+                    value={previewChannel}
+                    onChange={(event) => setPreviewChannel(event.target.value as PreviewChannel)}
+                  >
+                    <option value="sms">SMS</option>
+                    <option value="email">Email</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Tokens supported: {"{guardianName}"}, {"{childName}"}, {"{vaccineName}"}, {"{scheduledDate}"}, {"{facilityName}"}
+                  </p>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="smsContent">SMS content</Label>
                   <textarea
@@ -2006,6 +2139,30 @@ export default function HqDashboardPage() {
                       )
                     }
                   />
+                </div>
+                <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-foreground">Live preview ({previewChannel.toUpperCase()})</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(templatePreview)
+                          setSystemMessage("Preview copied to clipboard.")
+                        } catch (error) {
+                          console.error("Failed to copy preview", error)
+                          setSystemMessage("Could not copy preview. Please copy it manually.")
+                        }
+                      }}
+                    >
+                      Copy preview
+                    </Button>
+                  </div>
+                  <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 text-xs text-foreground">
+                    {templatePreview || "Preview will appear here."}
+                  </pre>
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" className="gap-2" onClick={handleTemplatePreview}>

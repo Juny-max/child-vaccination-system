@@ -7,6 +7,7 @@ export const hqUserRoles = [
   'chw',
   'data-officer',
   'pha',
+  'parent',
 ] as const;
 
 export type HqUserRole = (typeof hqUserRoles)[number];
