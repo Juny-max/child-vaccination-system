@@ -1,22 +1,53 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
+import axios from 'axios';
+
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private transporter: nodemailer.Transporter;
 
-  constructor() {
-    // Create SMTP transporter using Brevo
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: false, // Use TLS
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
+  private async sendEmail(payload: {
+    to: { email: string; name: string };
+    subject: string;
+    html: string;
+  }): Promise<boolean> {
+    const apiKey = process.env.BREVO_API_KEY;
+    const senderEmail = process.env.SMTP_FROM;
+    const senderName = 'Child Vaccination Command Center';
+
+    if (!apiKey) {
+      this.logger.error('BREVO_API_KEY is not set in environment variables');
+      return false;
+    }
+    if (!senderEmail) {
+      this.logger.error('SMTP_FROM is not set in environment variables');
+      return false;
+    }
+
+    try {
+      await axios.post(
+        BREVO_API_URL,
+        {
+          sender: { name: senderName, email: senderEmail },
+          to: [{ email: payload.to.email, name: payload.to.name }],
+          subject: payload.subject,
+          htmlContent: payload.html,
+        },
+        {
+          headers: {
+            'api-key': apiKey,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+        },
+      );
+      return true;
+    } catch (error: any) {
+      const detail = error?.response?.data ?? error?.message ?? error;
+      this.logger.error(`Brevo API error:`, detail);
+      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    }
   }
 
   async sendWelcomeEmail(
@@ -24,16 +55,11 @@ export class EmailService {
     tempPassword: string,
   ): Promise<boolean> {
     try {
-      // Use verified sender email from env, not the SMTP login
-      const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-
-      await this.transporter.sendMail({
-        from: `"Child Vaccination System" <${senderEmail}>`,
-        to: to.email,
+      await this.sendEmail({
+        to,
         subject: 'Welcome to Child Vaccination Command Center - Your Login Credentials',
         html: this.getWelcomeEmailTemplate(to.name, to.email, tempPassword),
       });
-
       this.logger.log(`Welcome email sent to ${to.email}`);
       return true;
     } catch (error) {
@@ -47,15 +73,11 @@ export class EmailService {
     resetLink: string,
   ): Promise<boolean> {
     try {
-      const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-
-      await this.transporter.sendMail({
-        from: `"Child Vaccination System" <${senderEmail}>`,
-        to: to.email,
+      await this.sendEmail({
+        to,
         subject: 'Reset Your Password - Child Vaccination Command Center',
         html: this.getPasswordResetEmailTemplate(to.name, resetLink),
       });
-
       this.logger.log(`Password reset email sent to ${to.email}`);
       return true;
     } catch (error) {
