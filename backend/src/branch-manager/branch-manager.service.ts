@@ -16,6 +16,8 @@ import {
   HqUserStatus,
   UpdateHqUserDto,
 } from './hq-users.dto';
+import { RegisterStaffDto } from './register-staff.dto';
+import { UpdateStaffDto } from './update-staff.dto';
 
 @Injectable()
 export class BranchManagerService {
@@ -1492,5 +1494,111 @@ export class BranchManagerService {
         code: 'HQ_BRANCH_CATCHMENT_SAVE_FAILED',
       });
     }
+  }
+
+  // ── Branch Manager Staff Management ────────────────────────────────────────
+
+  async registerStaff(branchId: string, dto: RegisterStaffDto) {
+    const db = this.databaseService.supabase;
+    const normalizedEmail = dto.email.trim().toLowerCase();
+
+    const { data: existing } = await db
+      .from('users')
+      .select('id')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+
+    if (existing) {
+      throw new ConflictException({ message: 'A user with this email already exists.', code: 'EMAIL_EXISTS' });
+    }
+
+    const temporaryPassword = this.generateTemporaryPassword();
+    const passwordHash = this.hashPassword(temporaryPassword);
+
+    const { data: created, error } = await db
+      .from('users')
+      .insert({
+        full_name: dto.fullName.trim(),
+        email: normalizedEmail,
+        phone_number: dto.phoneNumber,
+        national_id: dto.nationalId ?? null,
+        role: dto.role,
+        branch_id: branchId,
+        password_hash: passwordHash,
+        must_change_password: true,
+        status: 'active',
+      })
+      .select('id, email')
+      .single();
+
+    if (error || !created) {
+      throw new InternalServerErrorException({ message: `Failed to register staff: ${error?.message}`, code: 'STAFF_CREATE_FAILED' });
+    }
+
+    await this.emailService.sendStaffInviteEmail(
+      { email: normalizedEmail, name: dto.fullName.trim(), role: dto.role },
+      temporaryPassword,
+    );
+
+    return { id: created.id, email: created.email, temporaryPassword };
+  }
+
+  async getStaffList(branchId: string, filters: { role?: string; status?: string; search?: string }) {
+    const db = this.databaseService.supabase;
+    let query = db
+      .from('users')
+      .select('id, full_name, email, phone_number, role, status, created_at')
+      .eq('branch_id', branchId)
+      .in('role', ['facility-nurse', 'chw']);
+
+    if (filters.role) query = query.eq('role', filters.role);
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.search) query = query.ilike('full_name', `%${filters.search}%`);
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw new InternalServerErrorException('Failed to fetch staff list');
+    return data ?? [];
+  }
+
+  async updateStaff(staffId: string, branchId: string, dto: UpdateStaffDto) {
+    const db = this.databaseService.supabase;
+
+    const { data: existing } = await db
+      .from('users')
+      .select('id')
+      .eq('id', staffId)
+      .eq('branch_id', branchId)
+      .maybeSingle();
+
+    if (!existing) throw new NotFoundException('Staff member not found in your branch.');
+
+    const payload: Record<string, any> = {};
+    if (dto.fullName) payload.full_name = dto.fullName.trim();
+    if (dto.email) payload.email = dto.email.trim().toLowerCase();
+    if (dto.phoneNumber) payload.phone_number = dto.phoneNumber;
+    if (dto.nationalId !== undefined) payload.national_id = dto.nationalId;
+    if (dto.catchmentAreaId !== undefined) payload.catchment_area_id = dto.catchmentAreaId;
+    if (dto.specialization !== undefined) payload.specialization = dto.specialization;
+
+    const { error } = await db.from('users').update(payload).eq('id', staffId);
+    if (error) throw new InternalServerErrorException('Failed to update staff member.');
+    return { success: true };
+  }
+
+  async updateStaffStatus(staffId: string, branchId: string, status: string) {
+    const db = this.databaseService.supabase;
+
+    const { data: existing } = await db
+      .from('users')
+      .select('id')
+      .eq('id', staffId)
+      .eq('branch_id', branchId)
+      .maybeSingle();
+
+    if (!existing) throw new NotFoundException('Staff member not found in your branch.');
+
+    const { error } = await db.from('users').update({ status }).eq('id', staffId);
+    if (error) throw new InternalServerErrorException('Failed to update staff status.');
+    return { success: true, status };
   }
 }

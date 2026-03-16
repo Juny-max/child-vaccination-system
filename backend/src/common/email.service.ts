@@ -73,6 +73,7 @@ export class EmailService {
     }
   }
 
+  // Self-service password reset — sends a reset link
   async sendPasswordResetEmail(
     to: { email: string; name: string },
     tempPassword: string,
@@ -154,6 +155,73 @@ export class EmailService {
         `,
       });
 
+      this.logger.log(`Staff invite email sent to ${to.email}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to send staff invite email to ${to.email}`, error);
+      return false;
+    }
+  }
+
+  // Admin-initiated password reset — sends a temporary password
+  async sendPasswordResetEmailWithStatus(
+    to: { email: string; name: string },
+    tempPassword: string,
+  ): Promise<EmailDispatchResult> {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    try {
+      await this.sendEmail({
+        to,
+        subject: 'Password Reset - Child Vaccination Command Center',
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">
+            <h2>Password Reset Request</h2>
+            <p>Hello ${to.name},</p>
+            <p>Your password has been reset by an administrator. Use the temporary password below to sign in:</p>
+            <p style="font-size: 20px; font-weight: 700; letter-spacing: 1px; color: #15803d;">${tempPassword}</p>
+            <p>For security, you will be required to change this password immediately after login.</p>
+            <p>
+              <a href="${frontendUrl}/auth/login" style="display: inline-block; background: #16a34a; color: #ffffff; text-decoration: none; padding: 10px 18px; border-radius: 6px;">
+                Login Now
+              </a>
+            </p>
+          </div>
+        `,
+      });
+      this.logger.log(`Admin password reset email sent to ${to.email}`);
+      return { success: true };
+    } catch (error: any) {
+      const reason = error?.message || 'Email delivery failed';
+      this.logger.error(`Failed to send admin password reset email to ${to.email}`, error);
+      return { success: false, errorMessage: String(reason) };
+    }
+  }
+
+  async sendStaffInviteEmail(
+    to: { email: string; name: string; role: string },
+    tempPassword: string,
+  ): Promise<boolean> {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    try {
+      await this.sendEmail({
+        to: { email: to.email, name: to.name },
+        subject: 'Your Staff Account - Child Vaccination Command Center',
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">
+            <h2>Staff Account Created</h2>
+            <p>Hello ${to.name},</p>
+            <p>Your ${to.role} account has been created.</p>
+            <p><strong>Email:</strong> ${to.email}</p>
+            <p><strong>Temporary Password:</strong> <span style="font-size: 18px; color: #15803d; font-weight: 700;">${tempPassword}</span></p>
+            <p>You will be required to change this password when you sign in.</p>
+            <p>
+              <a href="${frontendUrl}/auth/login" style="display: inline-block; background: #16a34a; color: #ffffff; text-decoration: none; padding: 10px 18px; border-radius: 6px;">
+                Login
+              </a>
+            </p>
+          </div>
+        `,
+      });
       this.logger.log(`Staff invite email sent to ${to.email}`);
       return true;
     } catch (error) {
