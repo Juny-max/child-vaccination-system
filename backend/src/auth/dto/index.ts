@@ -26,8 +26,18 @@ export class LoginDto {
   @MinLength(6)
   password: string;
 
+  @IsOptional()
   @IsEnum(UserRole)
-  userType: UserRole;
+  userType?: UserRole;
+}
+
+export class AdminLoginDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(6)
+  password: string;
 }
 
 export class RegisterDto {

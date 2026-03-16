@@ -1,11 +1,30 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { createHash, randomBytes } from 'crypto';
 import { DatabaseService } from '../common/database/database.service';
+import { EmailService } from '../common/email.service';
+import { CreateHqBranchDto, UpdateHqBranchDto } from './hq-branches.dto';
+import {
+  CreateHqUserDto,
+  HqUserStatus,
+  UpdateHqUserDto,
+} from './hq-users.dto';
 
 @Injectable()
 export class BranchManagerService {
   private readonly logger = new Logger(BranchManagerService.name);
 
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly emailService: EmailService,
+  ) {}
 
   /**
    * Returns all data for the Branch Manager dashboard in a single request.
@@ -632,268 +651,846 @@ export class BranchManagerService {
     return data;
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Staff management operations
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /**
-   * Register a new staff member (nurse or CHW) at this branch.
-   * Auto-generates a temporary password and requires password change on first login.
-   */
-  async registerStaff(
-    branchId: string,
-    dto: {
-      fullName: string;
-      email: string;
-      phoneNumber: string;
-      nationalId?: string;
-      role: 'facility-nurse' | 'chw';
-      catchmentAreaId?: string;
-      specialization?: string;
-    },
-  ) {
+  async getHqBranches() {
     const db = this.databaseService.supabase;
 
-    // Check if email already exists
-    const { data: existingUser } = await db
-      .from('users')
-      .select('id')
-      .eq('email', dto.email)
-      .single();
+    const { data: branches, error: branchError } = await db
+      .from('branches')
+      .select('id, name, code, region, status, metadata')
+      .order('code', { ascending: true });
 
-    if (existingUser) {
-      throw new Error('Email already registered');
-    }
-
-    // Generate temporary password
-    const tempPassword = this.generateTemporaryPassword();
-    const passwordHash = await this.hashPassword(tempPassword);
-
-    // Insert user
-    const { data, error } = await db
-      .from('users')
-      .insert({
-        full_name: dto.fullName,
-        email: dto.email,
-        phone_number: dto.phoneNumber,
-        national_id: dto.nationalId ?? null,
-        role: dto.role,
-        branch_id: branchId,
-        password_hash: passwordHash,
-        status: 'active',
-        must_change_password: true,
-        created_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      this.logger.error('Failed to register staff', error);
-      throw new Error(`Failed to register staff: ${error.message}`);
-    }
-
-    // If CHW, assign catchment area
-    if (dto.role === 'chw' && dto.catchmentAreaId) {
-      const { error: catchmentError } = await db
-        .from('chw_catchment_areas')
-        .insert({
-          chw_id: data.id,
-          catchment_area_id: dto.catchmentAreaId,
-          assigned_at: new Date().toISOString(),
-        });
-
-      if (catchmentError) {
-        this.logger.warn('Failed to assign catchment area', catchmentError);
-      }
-    }
-
-    // If nurse, store specialization in user metadata (or separate table if exists)
-    if (dto.role === 'facility-nurse' && dto.specialization) {
-      // For now, we'll log this. In production, store in user_profiles or metadata table
-      this.logger.log(`Nurse ${data.id} specialization: ${dto.specialization}`);
-    }
-
-    return {
-      userId: data.id,
-      email: dto.email,
-      temporaryPassword: tempPassword,
-    };
-  }
-
-  /**
-   * Update staff details (partial update).
-   * Verifies the staff belongs to this branch before updating.
-   */
-  async updateStaff(
-    staffId: string,
-    branchId: string,
-    dto: {
-      fullName?: string;
-      email?: string;
-      phoneNumber?: string;
-      nationalId?: string;
-      catchmentAreaId?: string;
-      specialization?: string;
-    },
-  ) {
-    const db = this.databaseService.supabase;
-
-    // Verify staff belongs to this branch
-    const { data: staff, error: fetchError } = await db
-      .from('users')
-      .select('id, role, branch_id')
-      .eq('id', staffId)
-      .eq('branch_id', branchId)
-      .single();
-
-    if (fetchError || !staff) {
-      throw new Error('Staff not found or does not belong to this branch');
-    }
-
-    // Build update object (only include provided fields)
-    const updateData: any = {};
-    if (dto.fullName) updateData.full_name = dto.fullName;
-    if (dto.email) updateData.email = dto.email;
-    if (dto.phoneNumber) updateData.phone_number = dto.phoneNumber;
-    if (dto.nationalId !== undefined) updateData.national_id = dto.nationalId;
-
-    // Update user record
-    const { data, error } = await db
-      .from('users')
-      .update(updateData)
-      .eq('id', staffId)
-      .select()
-      .single();
-
-    if (error) {
-      this.logger.error('Failed to update staff', error);
-      throw new Error(`Failed to update staff: ${error.message}`);
-    }
-
-    // Handle catchment area update for CHWs
-    if (staff.role === 'chw' && dto.catchmentAreaId) {
-      // Delete old assignment
-      await db.from('chw_catchment_areas').delete().eq('chw_id', staffId);
-
-      // Insert new assignment
-      await db.from('chw_catchment_areas').insert({
-        chw_id: staffId,
-        catchment_area_id: dto.catchmentAreaId,
-        assigned_at: new Date().toISOString(),
+    if (branchError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load branches: ${branchError.message}`,
+        code: 'HQ_BRANCHES_FETCH_FAILED',
       });
     }
 
-    // Handle specialization for nurses
-    if (staff.role === 'facility-nurse' && dto.specialization) {
-      this.logger.log(`Updated nurse ${staffId} specialization: ${dto.specialization}`);
+    const branchIds = (branches ?? []).map((branch: any) => branch.id);
+    const { data: catchments, error: catchmentError } = branchIds.length
+      ? await db
+          .from('catchment_areas')
+          .select('branch_id, name')
+          .in('branch_id', branchIds)
+      : { data: [], error: null as any };
+
+    if (catchmentError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load catchment areas: ${catchmentError.message}`,
+        code: 'HQ_BRANCHES_CATCHMENT_FETCH_FAILED',
+      });
     }
 
-    return data;
+    const catchmentMap = new Map<string, string[]>();
+    (catchments ?? []).forEach((catchment: any) => {
+      const existing = catchmentMap.get(catchment.branch_id) ?? [];
+      existing.push(catchment.name);
+      catchmentMap.set(catchment.branch_id, existing);
+    });
+
+    return (branches ?? []).map((branch: any) => {
+      const metadata = (branch.metadata ?? {}) as {
+        managerName?: string;
+        assignedChwNames?: string[];
+      };
+
+      return {
+        id: branch.code,
+        dbId: branch.id,
+        name: branch.name,
+        region: branch.region,
+        manager: metadata.managerName ?? 'Unassigned',
+        status: branch.status,
+        catchmentAreas: catchmentMap.get(branch.id) ?? [],
+        assignedChws: metadata.assignedChwNames ?? [],
+      };
+    });
   }
 
-  /**
-   * Update staff status (active, suspended, inactive).
-   */
-  async updateStaffStatus(
-    staffId: string,
-    branchId: string,
-    status: 'active' | 'suspended' | 'inactive',
-  ) {
+  async getHqAnalytics(filters: { region?: string; branch?: string; window?: string }) {
     const db = this.databaseService.supabase;
+    const regionFilter = (filters.region ?? '').trim();
+    const branchFilter = (filters.branch ?? '').trim();
+    const windowFilter = (filters.window ?? '').trim();
+    const windowMonths = this.resolveAnalyticsWindowMonths(windowFilter);
 
-    // Verify staff belongs to this branch
-    const { data: staff, error: fetchError } = await db
-      .from('users')
-      .select('id')
-      .eq('id', staffId)
-      .eq('branch_id', branchId)
-      .single();
+    const endDate = new Date();
+    const startDate = new Date(endDate.getFullYear(), endDate.getMonth() - (windowMonths - 1), 1);
+    const startDateStr = startDate.toISOString().split('T')[0];
 
-    if (fetchError || !staff) {
-      throw new Error('Staff not found or does not belong to this branch');
+    let branchQuery = db
+      .from('branches')
+      .select('id, name, code, region');
+
+    if (regionFilter && regionFilter !== 'All regions') {
+      branchQuery = branchQuery.eq('region', regionFilter);
     }
 
-    // Update status
+    const { data: branchRows, error: branchError } = await branchQuery;
+
+    if (branchError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load analytics branches: ${branchError.message}`,
+        code: 'HQ_ANALYTICS_BRANCH_FETCH_FAILED',
+      });
+    }
+
+    const filteredBranches = (branchRows ?? []).filter((branch: any) => {
+      if (!branchFilter || branchFilter === 'All branches') return true;
+      const normalizedFilter = branchFilter.toLowerCase();
+      return (
+        String(branch.name ?? '').toLowerCase() === normalizedFilter
+        || String(branch.code ?? '').toLowerCase() === normalizedFilter
+      );
+    });
+
+    const branchIds = filteredBranches.map((branch: any) => branch.id);
+    const trendSkeleton = this.buildMonthlyTrendSkeleton(startDate, windowMonths);
+
+    if (!branchIds.length) {
+      return {
+        filters: {
+          region: regionFilter || 'All regions',
+          branch: branchFilter || 'All branches',
+          window: windowFilter || `Last ${windowMonths} months`,
+        },
+        trend: trendSkeleton,
+      };
+    }
+
+    const { data: vaccineRows, error: vaccineError } = await db
+      .from('vaccines')
+      .select('id, name, code');
+
+    if (vaccineError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load vaccines for analytics: ${vaccineError.message}`,
+        code: 'HQ_ANALYTICS_VACCINE_FETCH_FAILED',
+      });
+    }
+
+    const measlesVaccineIds = (vaccineRows ?? [])
+      .filter((vaccine: any) => {
+        const name = String(vaccine.name ?? '').toLowerCase();
+        const code = String(vaccine.code ?? '').toLowerCase();
+        return name.includes('measles') || code.includes('measles') || code.includes('mmr');
+      })
+      .map((vaccine: any) => vaccine.id);
+
+    const dpt3VaccineIds = (vaccineRows ?? [])
+      .filter((vaccine: any) => {
+        const name = String(vaccine.name ?? '').toLowerCase();
+        const code = String(vaccine.code ?? '').toLowerCase();
+        return (
+          name.includes('dpt')
+          || code.includes('dpt')
+          || name.includes('penta')
+          || code.includes('penta')
+        );
+      })
+      .map((vaccine: any) => vaccine.id);
+
+    const [measlesEventsResult, dpt3EventsResult] = await Promise.all([
+      measlesVaccineIds.length
+        ? db
+            .from('vaccination_events')
+            .select('administered_date')
+            .in('facility_id', branchIds)
+            .in('vaccine_id', measlesVaccineIds)
+            .eq('status', 'completed')
+            .gte('administered_date', startDateStr)
+        : Promise.resolve({ data: [], error: null as any }),
+      dpt3VaccineIds.length
+        ? db
+            .from('vaccination_events')
+            .select('administered_date')
+            .in('facility_id', branchIds)
+            .in('vaccine_id', dpt3VaccineIds)
+            .eq('status', 'completed')
+            .gte('administered_date', startDateStr)
+        : Promise.resolve({ data: [], error: null as any }),
+    ]);
+
+    if (measlesEventsResult.error) {
+      throw new InternalServerErrorException({
+        message: `Failed to load measles analytics: ${measlesEventsResult.error.message}`,
+        code: 'HQ_ANALYTICS_MEASLES_FETCH_FAILED',
+      });
+    }
+
+    if (dpt3EventsResult.error) {
+      throw new InternalServerErrorException({
+        message: `Failed to load DPT analytics: ${dpt3EventsResult.error.message}`,
+        code: 'HQ_ANALYTICS_DPT_FETCH_FAILED',
+      });
+    }
+
+    const measlesByMonth = new Map<string, number>();
+    (measlesEventsResult.data ?? []).forEach((event: any) => {
+      if (!event.administered_date) return;
+      const monthKey = String(event.administered_date).slice(0, 7);
+      measlesByMonth.set(monthKey, (measlesByMonth.get(monthKey) ?? 0) + 1);
+    });
+
+    const dptByMonth = new Map<string, number>();
+    (dpt3EventsResult.data ?? []).forEach((event: any) => {
+      if (!event.administered_date) return;
+      const monthKey = String(event.administered_date).slice(0, 7);
+      dptByMonth.set(monthKey, (dptByMonth.get(monthKey) ?? 0) + 1);
+    });
+
+    const trend = trendSkeleton.map((row) => ({
+      period: row.period,
+      measles: measlesByMonth.get(row.monthKey) ?? 0,
+      dpt3: dptByMonth.get(row.monthKey) ?? 0,
+    }));
+
+    return {
+      filters: {
+        region: regionFilter || 'All regions',
+        branch: branchFilter || 'All branches',
+        window: windowFilter || `Last ${windowMonths} months`,
+      },
+      trend,
+    };
+  }
+
+  async createHqBranch(dto: CreateHqBranchDto) {
+    const db = this.databaseService.supabase;
+    const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
+
+    if (!normalizedCatchments.length) {
+      throw new BadRequestException({
+        message: 'At least one catchment area is required',
+        code: 'CATCHMENT_REQUIRED',
+      });
+    }
+
+    const code = await this.generateNextBranchCode();
+    const { data: createdBranch, error: createError } = await db
+      .from('branches')
+      .insert({
+        name: dto.name.trim(),
+        code,
+        region: dto.region.trim(),
+        status: 'active',
+        metadata: {
+          managerName: dto.manager?.trim() || 'Unassigned',
+          assignedChwNames: [],
+        },
+      })
+      .select('id, name, code, region, status, metadata')
+      .single();
+
+    if (createError || !createdBranch) {
+      throw new BadRequestException({
+        message: `Failed to create branch: ${createError?.message ?? 'unknown error'}`,
+        code: 'HQ_BRANCH_CREATE_FAILED',
+      });
+    }
+
+    await this.replaceCatchmentsForBranch(createdBranch.id, createdBranch.code, normalizedCatchments);
+    const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === createdBranch.id));
+    return fullBranch;
+  }
+
+  async updateHqBranch(code: string, dto: UpdateHqBranchDto) {
+    const db = this.databaseService.supabase;
+    const normalizedCode = code.trim();
+    const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
+
+    if (!normalizedCatchments.length) {
+      throw new BadRequestException({
+        message: 'At least one catchment area is required',
+        code: 'CATCHMENT_REQUIRED',
+      });
+    }
+
+    const { data: currentBranch, error: currentError } = await db
+      .from('branches')
+      .select('id, metadata')
+      .eq('code', normalizedCode)
+      .single();
+
+    if (currentError || !currentBranch) {
+      throw new NotFoundException({
+        message: `Branch not found: ${normalizedCode}`,
+        code: 'BRANCH_NOT_FOUND',
+      });
+    }
+
+    const currentMetadata = (currentBranch.metadata ?? {}) as {
+      assignedChwNames?: string[];
+      managerName?: string;
+    };
+
+    const { error: updateError } = await db
+      .from('branches')
+      .update({
+        name: dto.name.trim(),
+        region: dto.region.trim(),
+        metadata: {
+          ...currentMetadata,
+          managerName: dto.manager?.trim() || 'Unassigned',
+          assignedChwNames: currentMetadata.assignedChwNames ?? [],
+        },
+      })
+      .eq('id', currentBranch.id);
+
+    if (updateError) {
+      throw new BadRequestException({
+        message: `Failed to update branch: ${updateError.message}`,
+        code: 'HQ_BRANCH_UPDATE_FAILED',
+      });
+    }
+
+    await this.replaceCatchmentsForBranch(currentBranch.id, normalizedCode, normalizedCatchments);
+
+    const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === currentBranch.id));
+    return fullBranch;
+  }
+
+  async updateHqBranchStatus(code: string, status: 'active' | 'inactive') {
+    const db = this.databaseService.supabase;
+    const { data: branch, error: branchError } = await db
+      .from('branches')
+      .update({ status })
+      .eq('code', code.trim())
+      .select('id')
+      .single();
+    const branchErrorMessage = (branchError as { message?: string } | null)?.message;
+
+    if (branchError || !branch) {
+      if ((branchError as any)?.code === 'PGRST116' || !branch) {
+        throw new NotFoundException({
+          message: `Branch not found: ${code.trim()}`,
+          code: 'BRANCH_NOT_FOUND',
+        });
+      }
+
+      throw new BadRequestException({
+        message: `Failed to update branch status: ${branchErrorMessage ?? 'unknown error'}`,
+        code: 'HQ_BRANCH_STATUS_UPDATE_FAILED',
+      });
+    }
+
+    const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === branch.id));
+    return fullBranch;
+  }
+
+  async updateHqBranchChws(code: string, assignedChws: string[]) {
+    const db = this.databaseService.supabase;
+    const normalizedChws = this.normalizeUniqueValues(assignedChws);
+
+    const { data: branch, error: branchError } = await db
+      .from('branches')
+      .select('id, metadata')
+      .eq('code', code.trim())
+      .single();
+
+    if (branchError || !branch) {
+      throw new NotFoundException({
+        message: `Branch not found: ${code}`,
+        code: 'BRANCH_NOT_FOUND',
+      });
+    }
+
+    const metadata = (branch.metadata ?? {}) as Record<string, any>;
+    const { error: updateError } = await db
+      .from('branches')
+      .update({
+        metadata: {
+          ...metadata,
+          assignedChwNames: normalizedChws,
+          managerName: metadata.managerName ?? 'Unassigned',
+        },
+      })
+      .eq('id', branch.id);
+
+    if (updateError) {
+      throw new BadRequestException({
+        message: `Failed to update CHW assignment: ${updateError.message}`,
+        code: 'HQ_BRANCH_CHW_UPDATE_FAILED',
+      });
+    }
+
+    const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === branch.id));
+    return fullBranch;
+  }
+
+  async getHqUsers() {
+    const db = this.databaseService.supabase;
+
     const { data, error } = await db
       .from('users')
-      .update({ status })
-      .eq('id', staffId)
-      .select()
-      .single();
+      .select('id, full_name, email, role, status, branch_id')
+      .in('role', ['hq-admin', 'branch-manager', 'facility-nurse', 'chw', 'data-officer', 'pha', 'parent'])
+      .order('full_name', { ascending: true });
 
     if (error) {
-      this.logger.error('Failed to update staff status', error);
-      throw new Error(`Failed to update status: ${error.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to load users: ${error.message}`,
+        code: 'HQ_USERS_FETCH_FAILED',
+      });
     }
 
-    return data;
+    const branchIds = Array.from(
+      new Set((data ?? []).map((user: any) => user.branch_id).filter(Boolean)),
+    );
+
+    const { data: branches, error: branchesError } = branchIds.length
+      ? await db
+          .from('branches')
+          .select('id, name, code')
+          .in('id', branchIds)
+      : { data: [], error: null as any };
+
+    if (branchesError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load branch lookup: ${branchesError.message}`,
+        code: 'HQ_USERS_BRANCH_LOOKUP_FAILED',
+      });
+    }
+
+    const branchMap = new Map<string, { name: string; code: string }>();
+    (branches ?? []).forEach((branch: any) => {
+      branchMap.set(branch.id, {
+        name: branch.name,
+        code: branch.code,
+      });
+    });
+
+    return (data ?? []).map((user: any) => ({
+      id: user.id,
+      name: user.full_name,
+      email: user.email,
+      role: this.toDisplayRole(user.role),
+      branch: user.branch_id ? branchMap.get(user.branch_id)?.name : undefined,
+      status: user.status === 'inactive' ? 'inactive' : 'active',
+    }));
   }
 
-  /**
-   * Get list of staff at this branch with optional filters.
-   */
-  async getStaffList(
-    branchId: string,
-    filters?: {
-      role?: 'facility-nurse' | 'chw';
-      status?: 'active' | 'suspended' | 'inactive';
-      search?: string;
-    },
-  ) {
+  async createHqUser(dto: CreateHqUserDto, actorUserId?: string) {
     const db = this.databaseService.supabase;
+    const normalizedEmail = dto.email.trim().toLowerCase();
+    const role = this.toStorageRole(dto.role);
+    await this.assertHqAdminRoleProvisioningAllowed(role, {
+      actorUserId,
+      operation: 'create_hq_user',
+      targetUserId: null,
+      targetEmail: normalizedEmail,
+    });
+    const branchId = await this.resolveBranchId(dto.branch);
 
-    let query = db
+    const { data: existing, error: existingError } = await db
       .from('users')
-      .select('id, full_name, email, phone_number, role, status, last_login_at, created_at')
-      .eq('branch_id', branchId)
-      .in('role', ['facility-nurse', 'chw']);
+      .select('id')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
 
-    // Apply filters
-    if (filters?.role) {
-      query = query.eq('role', filters.role);
-    }
-    if (filters?.status) {
-      query = query.eq('status', filters.status);
-    }
-    if (filters?.search) {
-      query = query.or(
-        `full_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%`,
+    if (existingError) {
+      throw new InternalServerErrorException(
+        {
+          message: `Failed to validate user email: ${existingError.message}`,
+          code: 'HQ_USER_EMAIL_VALIDATION_FAILED',
+        },
       );
     }
 
-    query = query.order('created_at', { ascending: false });
+    if (existing) {
+      throw new ConflictException({
+        message: `User with email ${normalizedEmail} already exists`,
+        code: 'EMAIL_EXISTS',
+      });
+    }
 
-    const { data, error } = await query;
+    const temporaryPassword = this.generateTemporaryPassword();
+    const passwordHash = this.hashPassword(temporaryPassword);
+
+    const { data: createdUser, error: createError } = await db
+      .from('users')
+      .insert({
+        full_name: dto.fullName.trim(),
+        email: normalizedEmail,
+        role,
+        status: 'active',
+        branch_id: branchId,
+        password_hash: passwordHash,
+        must_change_password: true,
+      })
+      .select('id')
+      .single();
+
+    if (createError || !createdUser) {
+      throw new BadRequestException(
+        {
+          message: `Failed to create user: ${createError?.message ?? 'unknown error'}`,
+          code: 'HQ_USER_CREATE_FAILED',
+        },
+      );
+    }
+
+    await this.emailService.sendStaffInviteEmail(
+      {
+        email: normalizedEmail,
+        name: dto.fullName.trim(),
+        role: this.toDisplayRole(role),
+      },
+      temporaryPassword,
+    );
+
+    const users = await this.getHqUsers();
+    return users.find((item) => item.id === createdUser.id);
+  }
+
+  async updateHqUser(userId: string, dto: UpdateHqUserDto, actorUserId?: string) {
+    const db = this.databaseService.supabase;
+    const branchId = await this.resolveBranchId(dto.branch);
+
+    const payload: Record<string, any> = {};
+    if (dto.fullName !== undefined) payload.full_name = dto.fullName.trim();
+    if (dto.email !== undefined) payload.email = dto.email.trim().toLowerCase();
+    if (dto.role !== undefined) {
+      const targetRole = this.toStorageRole(dto.role);
+      await this.assertHqAdminRoleProvisioningAllowed(targetRole, {
+        actorUserId,
+        operation: 'update_hq_user_role',
+        targetUserId: userId,
+        targetEmail: dto.email?.trim().toLowerCase() ?? null,
+      });
+      payload.role = targetRole;
+    }
+    if (dto.branch !== undefined) payload.branch_id = branchId;
+
+    const { data: updated, error } = await db
+      .from('users')
+      .update(payload)
+      .eq('id', userId)
+      .select('id')
+      .single();
+
+    if (error || !updated) {
+      if (error?.code === 'PGRST116' || !updated) {
+        throw new NotFoundException({
+          message: 'User not found',
+          code: 'USER_NOT_FOUND',
+        });
+      }
+      const message = (error as any)?.message ?? 'unknown error';
+      throw new BadRequestException({
+        message: `Failed to update user: ${message}`,
+        code: 'HQ_USER_UPDATE_FAILED',
+      });
+    }
+
+    const users = await this.getHqUsers();
+    return users.find((item) => item.id === updated.id);
+  }
+
+  async updateHqUserStatus(userId: string, status: HqUserStatus) {
+    const db = this.databaseService.supabase;
+    const { data: updated, error } = await db
+      .from('users')
+      .update({ status })
+      .eq('id', userId)
+      .select('id')
+      .single();
+
+    if (error || !updated) {
+      if (error?.code === 'PGRST116' || !updated) {
+        throw new NotFoundException({
+          message: 'User not found',
+          code: 'USER_NOT_FOUND',
+        });
+      }
+      const message = (error as any)?.message ?? 'unknown error';
+      throw new BadRequestException(
+        {
+          message: `Failed to update user status: ${message}`,
+          code: 'HQ_USER_STATUS_UPDATE_FAILED',
+        },
+      );
+    }
+
+    const users = await this.getHqUsers();
+    return users.find((item) => item.id === updated.id);
+  }
+
+  async resetHqUserPassword(email: string) {
+    const db = this.databaseService.supabase;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const { data: user, error: userError } = await db
+      .from('users')
+      .select('id, email, full_name')
+      .eq('email', normalizedEmail)
+      .single();
+
+    if (userError || !user) {
+      throw new NotFoundException({
+        message: `User not found for email ${normalizedEmail}`,
+        code: 'USER_NOT_FOUND',
+      });
+    }
+
+    const temporaryPassword = this.generateTemporaryPassword();
+    const passwordHash = this.hashPassword(temporaryPassword);
+
+    const { error: updateError } = await db
+      .from('users')
+      .update({
+        password_hash: passwordHash,
+        must_change_password: true,
+      })
+      .eq('id', user.id);
+
+    if (updateError) {
+      throw new BadRequestException({
+        message: `Failed to reset password: ${updateError.message}`,
+        code: 'PASSWORD_RESET_UPDATE_FAILED',
+      });
+    }
+
+    const emailDispatch = await this.emailService.sendPasswordResetEmailWithStatus(
+      {
+        email: user.email,
+        name: user.full_name ?? 'User',
+      },
+      temporaryPassword,
+    );
+
+    if (emailDispatch.success) {
+      return {
+        emailSent: true,
+        message: `Password reset email sent to ${user.email}.`,
+        reason: null,
+      };
+    }
+
+    return {
+      emailSent: false,
+      message: `Password was reset for ${user.email}, but email delivery failed.`,
+      reason: emailDispatch.errorMessage ?? 'SMTP delivery failed',
+    };
+  }
+
+  private normalizeUniqueValues(values: string[] | string): string[] {
+    const list = Array.isArray(values) ? values : values.split(',');
+    const deduped = new Set(
+      list
+        .map((value) => value.trim())
+        .filter(Boolean),
+    );
+    return Array.from(deduped);
+  }
+
+  private generateTemporaryPassword(length = 10): string {
+    return randomBytes(length)
+      .toString('base64')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, length);
+  }
+
+  private hashPassword(password: string): string {
+    return createHash('sha256').update(password).digest('hex');
+  }
+
+  private toStorageRole(role: string): string {
+    const roleMap: Record<string, string> = {
+      'HQ Admin': 'hq-admin',
+      'Branch Manager': 'branch-manager',
+      'Facility Nurse': 'facility-nurse',
+      'Community Health Worker': 'chw',
+      'Data Officer': 'data-officer',
+      'Public Health Authority': 'pha',
+      Parent: 'parent',
+      'hq-admin': 'hq-admin',
+      'branch-manager': 'branch-manager',
+      'facility-nurse': 'facility-nurse',
+      chw: 'chw',
+      'data-officer': 'data-officer',
+      pha: 'pha',
+      parent: 'parent',
+    };
+
+    return roleMap[role] ?? role;
+  }
+
+  private toDisplayRole(role: string): string {
+    const displayMap: Record<string, string> = {
+      'hq-admin': 'HQ Admin',
+      'branch-manager': 'Branch Manager',
+      'facility-nurse': 'Facility Nurse',
+      chw: 'Community Health Worker',
+      'data-officer': 'Data Officer',
+      pha: 'Public Health Authority',
+      parent: 'Parent',
+    };
+
+    return displayMap[role] ?? role;
+  }
+
+  private async assertHqAdminRoleProvisioningAllowed(
+    role: string,
+    context: {
+      actorUserId?: string;
+      operation: 'create_hq_user' | 'update_hq_user_role';
+      targetUserId: string | null;
+      targetEmail: string | null;
+    },
+  ): Promise<void> {
+    if (role !== 'hq-admin') return;
+
+    const detailPayload = {
+      reason: 'hq_admin_role_provision_blocked',
+      attemptedRole: role,
+      operation: context.operation,
+      actorUserId: context.actorUserId ?? null,
+      targetUserId: context.targetUserId,
+      targetEmail: context.targetEmail,
+    };
+
+    this.logger.warn(`Blocked HQ Admin role provisioning attempt: ${JSON.stringify(detailPayload)}`);
+
+    try {
+      await this.databaseService.createAuditLog(
+        context.actorUserId ?? null,
+        'blocked_hq_admin_role_assignment',
+        'users',
+        context.targetUserId,
+        { after: detailPayload },
+      );
+    } catch (auditError) {
+      this.logger.warn(`Failed to write blocked HQ admin assignment audit log: ${String(auditError)}`);
+    }
+
+    throw new ForbiddenException({
+      message: 'HQ Admin role cannot be created or assigned from this console.',
+      code: 'HQ_ADMIN_ROLE_FORBIDDEN',
+    });
+  }
+
+  private async resolveBranchId(branch?: string): Promise<string | null> {
+    if (branch === undefined) return null;
+    const normalized = branch.trim();
+    if (!normalized) return null;
+
+    const db = this.databaseService.supabase;
+
+    const { data: branchByCode, error: codeError } = await db
+      .from('branches')
+      .select('id')
+      .eq('code', normalized)
+      .maybeSingle();
+
+    if (codeError) {
+      throw new InternalServerErrorException({
+        message: `Failed to resolve branch: ${codeError.message}`,
+        code: 'BRANCH_RESOLVE_FAILED',
+      });
+    }
+
+    if (branchByCode) return branchByCode.id;
+
+    const { data: branchByName, error: nameError } = await db
+      .from('branches')
+      .select('id')
+      .eq('name', normalized)
+      .maybeSingle();
+
+    if (nameError) {
+      throw new InternalServerErrorException({
+        message: `Failed to resolve branch: ${nameError.message}`,
+        code: 'BRANCH_RESOLVE_FAILED',
+      });
+    }
+
+    if (!branchByName) {
+      throw new NotFoundException({
+        message: `Branch "${normalized}" not found`,
+        code: 'BRANCH_NOT_FOUND',
+      });
+    }
+
+    return branchByName.id;
+  }
+
+  private async generateNextBranchCode(): Promise<string> {
+    const db = this.databaseService.supabase;
+    const { data: rows, error } = await db
+      .from('branches')
+      .select('code');
 
     if (error) {
-      this.logger.error('Failed to fetch staff list', error);
-      throw new Error(`Failed to fetch staff: ${error.message}`);
+      throw new InternalServerErrorException({
+        message: `Failed to generate branch code: ${error.message}`,
+        code: 'HQ_BRANCH_CODE_GENERATION_FAILED',
+      });
     }
 
-    return data ?? [];
+    const maxCode = (rows ?? []).reduce((highest: number, row: any) => {
+      const parsed = Number.parseInt(String(row.code ?? '').replace('BR-', ''), 10);
+      return Number.isNaN(parsed) ? highest : Math.max(highest, parsed);
+    }, 0);
+
+    return `BR-${String(maxCode + 1).padStart(3, '0')}`;
   }
 
-  /**
-   * Generate a random temporary password (8 characters).
-   */
-  private generateTemporaryPassword(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-    let password = '';
-    for (let i = 0; i < 8; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
+  private resolveAnalyticsWindowMonths(windowValue?: string): number {
+    const normalized = String(windowValue ?? '').toLowerCase();
+    if (normalized.includes('12')) return 12;
+    if (normalized.includes('6')) return 6;
+    return 6;
+  }
+
+  private buildMonthlyTrendSkeleton(startDate: Date, months: number): Array<{ monthKey: string; period: string }> {
+    return Array.from({ length: months }).map((_, index) => {
+      const monthDate = new Date(startDate.getFullYear(), startDate.getMonth() + index, 1);
+      const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+      const period = monthDate.toLocaleDateString('en-GH', {
+        month: 'short',
+        year: 'numeric',
+      });
+
+      return { monthKey, period };
+    });
+  }
+
+  private async replaceCatchmentsForBranch(
+    branchId: string,
+    branchCode: string,
+    catchmentAreas: string[],
+  ) {
+    const db = this.databaseService.supabase;
+
+    const { error: deleteError } = await db
+      .from('catchment_areas')
+      .delete()
+      .eq('branch_id', branchId);
+
+    if (deleteError) {
+      throw new InternalServerErrorException({
+        message: `Failed to clear catchment areas: ${deleteError.message}`,
+        code: 'HQ_BRANCH_CATCHMENT_CLEAR_FAILED',
+      });
     }
-    return password;
-  }
 
-  /**
-   * Hash password using SHA-256 (for demo purposes).
-   * In production, use bcrypt with proper salt rounds.
-   */
-  private async hashPassword(password: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const payload = catchmentAreas.map((name, index) => ({
+      branch_id: branchId,
+      name,
+      community: name,
+      code: `CA-${branchCode.replace('BR-', '')}-${String(index + 1).padStart(2, '0')}`,
+    }));
+
+    const { error: insertError } = await db
+      .from('catchment_areas')
+      .insert(payload);
+
+    if (insertError) {
+      throw new InternalServerErrorException({
+        message: `Failed to save catchment areas: ${insertError.message}`,
+        code: 'HQ_BRANCH_CATCHMENT_SAVE_FAILED',
+      });
+    }
   }
 }

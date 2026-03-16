@@ -4,17 +4,43 @@
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  details?: unknown;
+
+  constructor(message: string, status: number, code?: string, details?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+function getPreferredAccessToken(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  const accessToken = localStorage.getItem('accessToken');
+  if (accessToken) return accessToken;
+
+  const legacyToken = localStorage.getItem('authToken');
+  if (!legacyToken) return null;
+
+  localStorage.setItem('accessToken', legacyToken);
+  localStorage.removeItem('authToken');
+  return legacyToken;
+}
+
 /**
  * Get authorization headers (cookies sent automatically)
  */
 export function getAuthHeaders(): HeadersInit {
   let authorizationHeader: string | undefined;
 
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      authorizationHeader = `Bearer ${token}`;
-    }
+  const token = getPreferredAccessToken();
+  if (token) {
+    authorizationHeader = `Bearer ${token}`;
   }
 
   return {
@@ -28,6 +54,16 @@ export function getAuthHeaders(): HeadersInit {
  */
 export async function handleResponse<T>(response: Response, skipAuthRedirect = false): Promise<T> {
   if (!response.ok) {
+    const errorPayload = await response
+      .json()
+      .catch(() => ({ message: 'An error occurred', code: undefined, details: undefined }));
+
+    const payloadMessage = Array.isArray(errorPayload?.message)
+      ? errorPayload.message.join(', ')
+      : errorPayload?.message;
+    const message = payloadMessage || `HTTP error! status: ${response.status}`;
+    const code = errorPayload?.code;
+
     if (response.status === 401 && !skipAuthRedirect) {
       // Token expired or invalid - redirect to login
       if (typeof window !== 'undefined') {
@@ -36,11 +72,10 @@ export async function handleResponse<T>(response: Response, skipAuthRedirect = f
         sessionStorage.clear();
         window.location.href = '/auth/login';
       }
-      throw new Error('Session expired. Please login again.');
+      throw new ApiError('Session expired. Please login again.', 401, code || 'SESSION_EXPIRED', errorPayload);
     }
-    
-    const error = await response.json().catch(() => ({ message: 'An error occurred' }));
-    throw new Error(error.message || `HTTP error! status: ${response.status}`);
+
+    throw new ApiError(message, response.status, code, errorPayload);
   }
   
   // Check if response has content before trying to parse JSON

@@ -1,3 +1,5 @@
+<!-- markdownlint-disable -->
+
 # Ghana Child Vaccination System
 
 **Production-Ready Multi-Branch Vaccination Tracking System for Ghana Government**
@@ -15,12 +17,14 @@
 ### Work Division
 
 **Developer 1 (Juny):**
+
 - Parent Portal Backend
 - Facility Nurse Backend  
 - Community Health Worker (CHW) Backend
 - Public Health Authority (PHA) Backend
 
 **Developer 2 (Julius):**
+
 - HQ Admin Backend
 - Branch Manager Backend
 - Data Officer Backend
@@ -32,18 +36,22 @@
 Julius, all your backend development happens on the `backend` branch:
 
 \`\`\`bash
+
 # Clone the repository
+
 git clone <repository-url>
 cd child-vaccination-system
 
 # Switch to the backend branch
+
 git checkout backend
 
-
 # Install dependencies
+
 pnpm install
 
 # Make your changes, then commit and push
+
 git add .
 git commit -m "feat: implemented HQ admin endpoints"
 git push -u origin backend
@@ -56,6 +64,7 @@ git push -u origin backend
 ## 🛠️ Quick Start
 
 ### Prerequisites
+
 - **Node.js 18+** (with pnpm package manager)
 - **Supabase Account** (Julius has been invited as team member)
 - **Git** for version control
@@ -63,13 +72,17 @@ git push -u origin backend
 ### Installation
 
 \`\`\`bash
+
 # Install pnpm globally (if not installed)
+
 npm install -g pnpm
 
 # Install dependencies
+
 pnpm install
 
 # Start development server (frontend only)
+
 pnpm dev
 \`\`\`
 
@@ -83,14 +96,15 @@ Visit `http://localhost:3000`
 
 1. `cd backend`
 2. Copy `.env.example` to `.env` (or keep using the existing `.env`) and populate the following keys:
-  - `SUPABASE_URL=https://pvzatstzlvtaequsqhec.supabase.co`
-  - `SUPABASE_SERVICE_ROLE_KEY=<service role key from Supabase → Settings → API>`
-  - `JWT_SECRET=<any strong string>`
-  - `PORT=3001`
-  - `CORS_ORIGIN=http://localhost:3000`
-3. Install dependencies once: `pnpm install`
-4. Start the watcher: `pnpm run start:dev`
-5. The API boots on `http://localhost:3001` (all routes are under `/api`).
+
+- `SUPABASE_URL=https://pvzatstzlvtaequsqhec.supabase.co`
+- `SUPABASE_SERVICE_ROLE_KEY=<service role key from Supabase → Settings → API>`
+- `JWT_SECRET=<any strong string>`
+- `PORT=3001`
+- `CORS_ORIGIN=http://localhost:3000`
+1. Install dependencies once: `pnpm install`
+2. Start the watcher: `pnpm run start:dev`
+3. The API boots on `http://localhost:3001` (all routes are under `/api`).
 
 ### Quick verification (demo login)
 
@@ -176,9 +190,10 @@ pnpm run start:prod # runs node dist/src/main
 1. Push code to GitHub (already done for this repo).
 2. In Render, create a **Web Service** and point it to the `main` branch.
 3. Set **Root Directory** to `backend` and use these commands:
-  - Build: `pnpm install && pnpm run build`
-  - Start: `pnpm run start:prod`
-4. Add environment variables in Render → Settings → Environment:
+
+- Build: `pnpm install && pnpm run build`
+- Start: `pnpm run start:prod`
+1. Add environment variables in Render → Settings → Environment:
 
 | Key | Value |
 |-----|-------|
@@ -189,7 +204,7 @@ pnpm run start:prod # runs node dist/src/main
 | `CORS_ORIGIN` | Production frontend URL (e.g., `https://cvcc-iota.vercel.app`) |
 | `NODE_ENV` | `production` |
 
-5. After deploy completes, the API will be live (currently `https://child-vaccination-system-e18o.onrender.com/api`). Update the frontend `NEXT_PUBLIC_API_URL` to match.
+1. After deploy completes, the API will be live (currently `https://child-vaccination-system-e18o.onrender.com/api`). Update the frontend `NEXT_PUBLIC_API_URL` to match.
 
 > ℹ️ The root route (`/`) returns 404 on purpose; test endpoints such as `/api/auth/login` or `/api/parent/dashboard` instead.
 
@@ -206,11 +221,12 @@ We're using **Supabase** (managed PostgreSQL) as our database. You've been invit
 The Supabase connection details are already configured in `.env.local`:
 
 \`\`\`env
-NEXT_PUBLIC_SUPABASE_URL=https://pvzatstzlvtaequsqhec.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=<https://pvzatstzlvtaequsqhec.supabase.co>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...truncated (see .env.local file)
 \`\`\`
 
 **🔒 Security Note:**
+
 - The `.env.local` file contains the full anon key
 - **DO NOT commit `.env.local` to Git!** (It's already in `.gitignore`)
 - The anon key is safe for client-side use (protected by Row Level Security)
@@ -219,6 +235,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...truncated (see .env.local file)
 ### Database Schema
 
 The complete database schema is located in:
+
 - **Schema:** `supabase/schema.sql` (21 tables, 15 enums)
 - **Seed Data:** `supabase/seed.sql` (sample data for all tables)
 - **Parent Demo Data:** `supabase/seed-parent-demo.sql` (Akosua Asante test account)
@@ -247,7 +264,9 @@ The complete database schema is located in:
 The Supabase JavaScript client is already installed:
 
 \`\`\`bash
-# Already done, but for reference:
+
+# Already done, but for reference
+
 pnpm add @supabase/supabase-js
 \`\`\`
 
@@ -276,7 +295,7 @@ const { data: branches, error } = await supabase
 const { data: user } = await supabase
   .from('users')
   .select('*')
-  .eq('email', 'admin@health.gov.gh')
+  .eq('email', '<admin@health.gov.gh>')
   .single()
 
 // Example: Insert new vaccination event
@@ -306,22 +325,23 @@ const { data, error } = await supabase
 
 ### Julius's Assigned Modules
 
-
 #### 1. **HQ Admin Module**
+
 - Branch management (CRUD operations for facilities)
-- User management (create/update/delete users across all roles)
+- User management (create/update/delete users across all non-HQ-admin roles)
 - Vaccine configuration (manage master vaccine catalog)
 - Catchment area management
 - System settings and configurations
 - Audit log viewing
 
 **Key Endpoints:**
+
 - `GET /branches` - List all branches
 - `POST /branches` - Create new branch
 - `PUT /branches/:id` - Update branch
 - `DELETE /branches/:id` - Delete branch
 - `GET /users` - List all users with filtering
-- `POST /users` - Create new user (any role)
+- `POST /users` - Create new user (all roles except `hq-admin`)
 - `PUT /users/:id` - Update user
 - `DELETE /users/:id` - Deactivate user
 - `GET /vaccines` - List all vaccines
@@ -331,6 +351,7 @@ const { data, error } = await supabase
 - `PUT /system-settings` - Update system settings
 
 #### 2. **Branch Manager Module**
+
 - View branch-level analytics and KPIs
 - Manage branch staff (nurses, CHWs assigned to their branch)
 - View and approve CHW visit logs
@@ -338,6 +359,7 @@ const { data, error } = await supabase
 - Manage branch-specific appointments
 
 **Key Endpoints:**
+
 - `GET /branch/:branchId/analytics` - Branch dashboard metrics
 - `GET /branch/:branchId/staff` - List staff at branch
 - `PUT /branch/:branchId/staff/:userId` - Update staff assignment
@@ -347,6 +369,7 @@ const { data, error } = await supabase
 - `GET /branch/:branchId/appointments` - Branch appointments
 
 #### 3. **Data Officer Module**
+
 - View and resolve duplicate child records
 - Handle sync conflicts from offline CHW devices
 - Monitor data quality metrics
@@ -354,6 +377,7 @@ const { data, error } = await supabase
 - Export data for reporting
 
 **Key Endpoints:**
+
 - `GET /duplicates` - List duplicate candidate pairs
 - `POST /duplicates/merge` - Merge two duplicate records
 - `POST /duplicates/dismiss` - Mark as not duplicate
@@ -367,7 +391,9 @@ const { data, error } = await supabase
 ### NestJS Project Setup
 
 \`\`\`bash
+
 # Create NestJS backend (inside project root)
+
 npx @nestjs/cli new backend
 
 # Choose pnpm as package manager when prompted
@@ -375,6 +401,7 @@ npx @nestjs/cli new backend
 cd backend
 
 # Install required dependencies
+
 pnpm add @supabase/supabase-js
 pnpm add @nestjs/config
 pnpm add @nestjs/jwt
@@ -382,6 +409,7 @@ pnpm add @nestjs/passport passport passport-jwt
 pnpm add class-validator class-transformer
 
 # Install dev dependencies
+
 pnpm add -D @types/passport-jwt
 \`\`\`
 
@@ -422,7 +450,7 @@ backend/
 **Julius, create `backend/.env` for your 3 modules:**
 
 \`\`\`env
-SUPABASE_URL=https://pvzatstzlvtaequsqhec.supabase.co
+SUPABASE_URL=<https://pvzatstzlvtaequsqhec.supabase.co>
 SUPABASE_ANON_KEY=<copy from .env.local in project root>
 SUPABASE_SERVICE_KEY=<ask Juny if needed>
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
@@ -437,6 +465,7 @@ PORT=3001
 cd backend
 
 # Generate HQ Admin module
+
 nest g module hq-admin
 nest g controller hq-admin
 nest g service hq-admin
@@ -497,7 +526,7 @@ export class HqAdminService {
       .from('branches')
       .select('*')
       .order('name')
-    
+
     if (error) throw error
     return data
   }
@@ -508,7 +537,7 @@ export class HqAdminService {
       .insert(branchData)
       .select()
       .single()
-    
+
     if (error) throw error
     return data
   }
@@ -518,7 +547,7 @@ export class HqAdminService {
       .from('users')
       .select('id, email, full_name, role, status, created_at')
       .order('created_at', { ascending: false })
-    
+
     if (error) throw error
     return data
   }
@@ -531,9 +560,11 @@ export class HqAdminService {
 cd backend
 
 # Development mode
+
 pnpm run start:dev
 
-# Backend will run on http://localhost:3001
+# Backend will run on <http://localhost:3001>
+
 \`\`\`
 
 ### Testing Your Endpoints
@@ -541,11 +572,14 @@ pnpm run start:dev
 Use **Postman** or **Thunder Client** (VS Code extension):
 
 \`\`\`bash
+
 # Example: Get all branches
-GET http://localhost:3001/hq-admin/branches
+
+GET <http://localhost:3001/hq-admin/branches>
 
 # Example: Create branch
-POST http://localhost:3001/hq-admin/branches
+
+POST <http://localhost:3001/hq-admin/branches>
 Content-Type: application/json
 
 {
@@ -564,6 +598,7 @@ Content-Type: application/json
 ## 📋 System Features
 
 ### For Health Teams (Portal Login)
+
 - **Child Registration**: Register children with UUID and QR codes
 - **Vaccination Recording**: Record vaccine doses with batch tracking
 - **Dashboard Analytics**: Real-time coverage, dropout rate, and performance metrics
@@ -571,15 +606,17 @@ Content-Type: application/json
 - **Report Generation**: Export coverage data and performance metrics
 
 ### For Parents (Portal Login)
+
 - **View Records**: See a child&apos;s complete vaccination history
 - **Digital Certificates**: Download official vaccination certificates with QR codes
 - **Appointment Reminders**: Receive SMS/Email notifications for upcoming doses
 - **Certificate Verification**: Share QR code for verification
 
 ### For HQ Admin (Portal Login)
+
 - **National Command Console**: Monitor branches, coverage trends, and AEFI alerts across the country.
 - **Branch & Catchment Management**: Create facilities, assign managers, and define service territories.
-- **Role Provisioning**: Onboard and manage Branch Managers, CHWs, Data Officers, and PHAs.
+- **Role Provisioning**: Onboard and manage Branch Managers, Facility Nurses, CHWs, Data Officers, PHAs, and Parents/Guardians (excluding HQ Admin).
 - **Schedule Configuration**: Maintain the master vaccine catalogue and national dosing rules.
 - **System Health & Audits**: Review infrastructure status, audit logs, and trigger backups on demand.
 
@@ -600,17 +637,18 @@ Content-Type: application/json
 
 All roles authenticate through `/auth/login` using the shared demo password `password1234` (reset anytime via `backend/scripts/reset-password.ts`).
 
-- **Parent**: parent@example.com (password `password1234`)
-- **HQ Admin**: admin@health.gov.gh (password `password1234`)
-- **Branch Manager**: branch.manager@health.gov.gh (password `password1234`)
-- **Facility Nurse**: nurse@health.gov.gh (password `password1234`)
-- **Community Health Worker**: chw@health.gov.gh (password `password1234`)
-- **Data Officer**: data.officer@health.gov.gh (password `password1234`)
-- **Public Health Authority**: pha@health.gov.gh (password `password1234`)
+- **Parent**: <parent@example.com> (password `password1234`)
+- **HQ Admin**: <admin@health.gov.gh> (password `password1234`)
+- **Branch Manager**: <branch.manager@health.gov.gh> (password `password1234`)
+- **Facility Nurse**: <nurse@health.gov.gh> (password `password1234`)
+- **Community Health Worker**: <chw@health.gov.gh> (password `password1234`)
+- **Data Officer**: <data.officer@health.gov.gh> (password `password1234`)
+- **Public Health Authority**: <pha@health.gov.gh> (password `password1234`)
 
 **Test Parent Account (Seeded in Database):**
-- **Email**: akosua.asante@example.com (password `password1234`)
-- **Children**: 
+
+- **Email**: <akosua.asante@example.com> (password `password1234`)
+- **Children**:
   - Esi Boadu (CHILD-001) - Complete vaccinations
   - Kojo Asante (CHILD-002) - Incomplete vaccinations
   - Zara Asante (CHILD-003) - Complete vaccinations
@@ -661,7 +699,8 @@ supabase/                     # Database files
 **Current Status:** Frontend uses mock authentication  
 **Backend Task:** Implement real JWT authentication
 
-### Your Implementation Checklist:
+### Your Implementation Checklist
+
 - [ ] Create `auth` module in NestJS
 - [ ] Implement `/auth/login` endpoint (email + password)
 - [ ] Generate JWT tokens with role information
@@ -675,16 +714,19 @@ supabase/                     # Database files
 ## 📡 API Contracts (What Frontend Expects)
 
 ### Authentication
+
 - `POST /auth/login` - Login with email/password, returns JWT + user object
 - `POST /auth/logout` - Invalidate token
 - `GET /auth/me` - Get current user profile
 
 ### QR Code & Child Lookup
+
 - `GET /facility/:facilityId/children?query=<search>` - Search children by name, CVCC ID, or guardian phone
 - `POST /children` - Create new child, return child ID + QR payload
 - `GET /children/:id/qr` - Generate QR code for child record
 
 ### Appointments
+
 - `POST /appointments` - Parent books appointment
 - `GET /appointments/:facilityId` - Facility views appointments
 - `PUT /appointments/:id` - Update appointment status
@@ -694,16 +736,20 @@ supabase/                     # Database files
 ## 🚀 Deployment
 
 ### Frontend (Vercel)
+
 \`\`\`bash
 git push origin main
 vercel
 \`\`\`
 
 ### Backend (Railway / Render / DigitalOcean)
+
 \`\`\`bash
 cd backend
 git push origin backend
+
 # Deploy using your chosen platform
+
 \`\`\`
 
 ---
@@ -733,16 +779,19 @@ git push origin backend
 ## 📚 Additional Resources
 
 ### Supabase Documentation
+
 - [Supabase JavaScript Client](https://supabase.com/docs/reference/javascript/introduction)
 - [Row Level Security (RLS)](https://supabase.com/docs/guides/auth/row-level-security)
 - [Realtime subscriptions](https://supabase.com/docs/guides/realtime)
 
 ### NestJS Documentation
+
 - [NestJS Fundamentals](https://docs.nestjs.com/first-steps)
 - [JWT Authentication](https://docs.nestjs.com/security/authentication)
 - [Guards & Role-based access](https://docs.nestjs.com/guards)
 
 ### Testing Tools
+
 - **Postman** - API testing
 - **Thunder Client** (VS Code extension) - Quick API requests
 - **Supabase Studio** - Database management UI
@@ -779,48 +828,59 @@ Government of Ghana Ministry of Health © 2025
 ## 🎯 Quick Reference for Team Member
 
 ### First Time Setup
+
 \`\`\`bash
+
 # 1. Clone and switch to backend branch
+
 git clone <repo-url>
 cd child-vaccination-system
 git checkout backend
 
 # 2. Install frontend dependencies
+
 pnpm install
 
 # 3. Create backend
+
 npx @nestjs/cli new backend
 cd backend
 pnpm add @supabase/supabase-js @nestjs/config @nestjs/jwt @nestjs/passport passport passport-jwt class-validator class-transformer
 
 # 4. Copy .env.local to backend/.env and update for backend use
 
-# 5. Start coding!
+# 5. Start coding
+
 \`\`\`
 
 ### Daily Workflow
+
 \`\`\`bash
+
 # Pull latest changes
+
 git pull origin backend
 
-# Make changes...
+# Make changes
 
 # Commit and push
+
 git add .
 git commit -m "feat: added HQ admin branch management endpoints"
 git push origin backend
 \`\`\`
 
 ### Julius's 3 Modules (Your Responsibility)
+
 1. **HQ Admin** (`backend/src/hq-admin/`)
 2. **Branch Manager** (`backend/src/branch-manager/`)
 3. **Data Officer** (`backend/src/data-officer/`)
 
 ### Juny's 4 Modules (Juny will handle)
+
 1. **Parent Portal** (`backend/src/parent/`)
 2. **Facility Nurse** (`backend/src/facility-nurse/`)
 3. **Community Health Worker** (`backend/src/chw/`)
 4. **Public Health Authority** (`backend/src/pha/`)
 
 Good luck! 🚀
-
