@@ -48,6 +48,7 @@ import {
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
 import { getHqAnalytics } from "@/lib/api/hq-analytics"
+import { API_BASE_URL, getAuthHeaders } from "@/lib/api/config"
 
 const SECTIONS = [
   { id: "overview", label: "National Dashboard", icon: Activity },
@@ -1039,82 +1040,79 @@ export default function HqDashboardPage() {
     }
   }
 
-  const handleBackup = () => {
-  setSystemMessage("Backup job queued. You'll receive an email when complete.")
-    appendAuditLog({ action: "Triggered manual system backup", category: "System" })
+  const handleBackup = async () => {
+    try {
+      setSystemMessage("Triggering backup...")
+      const response = await fetch(`${API_BASE_URL}/common/backup/trigger`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setSystemMessage(`✓ ${data.message}`)
+      } else {
+        setSystemMessage(data.message || "Failed to trigger backup")
+      }
+      appendAuditLog({ action: "Triggered manual system backup", category: "System" })
+    } catch (error: any) {
+      console.error("Backup trigger error:", error)
+      if (error.message.includes("Failed to fetch") || error.name === "TypeError") {
+        setSystemMessage("Backend server is not running. Start backend to trigger backups.")
+      } else {
+        setSystemMessage("Failed to trigger backup. Please try again.")
+      }
+    }
   }
 
   const handleBackupDownload = () => {
     try {
-      setSystemMessage("🔄 Fetching latest encrypted backup...")
-      
-      // Call backend endpoint to get latest backup
-      fetch("/api/common/backup/download-latest", {
+      setSystemMessage("Fetching latest encrypted backup...")
+
+      fetch(`${API_BASE_URL}/common/backup/download-latest`, {
         method: "GET",
-        headers: {
-          "Authorization": `Bearer ${localStorage.getItem("accessToken") || ""}`,
-        },
+        headers: getAuthHeaders(),
+        credentials: "include",
       })
         .then(async (response) => {
           if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
+            const err = await response.json().catch(() => ({}))
+            throw new Error(err.message || `HTTP error! status: ${response.status}`)
           }
-          const cloned = response.clone()
-          return response.json().catch(() => cloned.blob())
+          return response.blob()
         })
-        .then((data) => {
-          // Check if backend returned JSON (not ready) or blob (actual file)
-          if (typeof data === 'object' && data.status === 'pending-storage-config') {
-            // Backend endpoint is ready but storage not configured
-            setSystemMessage(
-              "✓ Encrypted backup endpoint is wired and ready. Storage configuration pending - backups will be available once configured."
-            )
-            appendAuditLog({
-              action: "Checked backup endpoint status (storage pending configuration)",
-              category: "System",
-            })
-            return
-          }
+        .then((blob) => {
+          const url = window.URL.createObjectURL(blob)
+          const link = document.createElement("a")
+          link.href = url
 
-          // Handle actual blob file download
-          if (data instanceof Blob) {
-            const url = window.URL.createObjectURL(data)
-            const link = document.createElement("a")
-            link.href = url
-            
-            // Generate filename with timestamp
-            const timestamp = new Date().toISOString().split("T")[0]
-            link.download = `cvcc-backup-encrypted-${timestamp}.bin`
-            
-            // Trigger download
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
-            window.URL.revokeObjectURL(url)
-            
-            setSystemMessage("✓ Encrypted backup downloaded successfully")
-            appendAuditLog({
-              action: "Downloaded latest encrypted backup",
-              category: "System",
-            })
-          }
+          const timestamp = new Date().toISOString().split("T")[0]
+          link.download = `cvcc-backup-encrypted-${timestamp}.bin`
+
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          window.URL.revokeObjectURL(url)
+
+          setSystemMessage("✓ Encrypted backup downloaded successfully")
+          appendAuditLog({
+            action: "Downloaded latest encrypted backup",
+            category: "System",
+          })
         })
         .catch((error) => {
           console.error("Backup download failed:", error)
-          
-          // Check if it's a network error (backend not running)
+
           if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
             setSystemMessage(
-              "⏳ Backend server is not running. Encrypted backup endpoint wired and ready - start backend to enable downloads."
+              "Backend server is not running. Start backend to enable backup downloads."
             )
           } else {
-            setSystemMessage(
-              "Encrypted backup endpoint structure ready. Waiting for backend storage configuration..."
-            )
+            setSystemMessage(error.message || "Failed to download backup.")
           }
-          
+
           appendAuditLog({
-            action: "Attempted backup download (backend configuration in progress)",
+            action: "Backup download failed",
             category: "System",
           })
         })
