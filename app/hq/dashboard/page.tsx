@@ -474,6 +474,7 @@ export default function HqDashboardPage() {
   const [activeTemplateId, setActiveTemplateId] = useState(initialTemplates[0]?.id ?? "")
   const [previewChannel, setPreviewChannel] = useState<PreviewChannel>("sms")
   const [templatePreview, setTemplatePreview] = useState<string>("")
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false)
 
   const [systemStatus, setSystemStatus] = useState(initialSystemStatus)
   const [auditLogs, setAuditLogs] = useState(initialAuditLogs)
@@ -1012,6 +1013,17 @@ export default function HqDashboardPage() {
   const handleTemplateUpdate = () => {
     if (!activeTemplate) return
 
+    // Get the last saved version from localStorage
+    const stored = localStorage.getItem(HQ_NOTIFICATION_TEMPLATES_STORAGE_KEY)
+    const savedTemplates = stored ? JSON.parse(stored) : initialTemplates
+    const savedTemplate = savedTemplates.find((t: NotificationTemplate) => t.id === activeTemplate.id)
+
+    // Check if content has actually changed
+    if (savedTemplate && savedTemplate.sms === activeTemplate.sms && savedTemplate.email === activeTemplate.email) {
+      setSystemMessage("No changes to save.")
+      return
+    }
+
     try {
       localStorage.setItem(HQ_NOTIFICATION_TEMPLATES_STORAGE_KEY, JSON.stringify(templates))
       setSystemMessage(`${activeTemplate.label} template saved.`)
@@ -1165,7 +1177,7 @@ export default function HqDashboardPage() {
     const compiled = compileTemplatePreview(source)
 
     setTemplatePreview(compiled)
-    setSystemMessage(`Preview generated for ${activeTemplate.label} (${previewChannel.toUpperCase()}).`)
+    setIsPreviewModalOpen(true)
     appendAuditLog({ action: `Previewed notification template ${activeTemplate.label}`, category: "Notifications" })
   }
 
@@ -2140,30 +2152,6 @@ export default function HqDashboardPage() {
                     }
                   />
                 </div>
-                <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground">Live preview ({previewChannel.toUpperCase()})</p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(templatePreview)
-                          setSystemMessage("Preview copied to clipboard.")
-                        } catch (error) {
-                          console.error("Failed to copy preview", error)
-                          setSystemMessage("Could not copy preview. Please copy it manually.")
-                        }
-                      }}
-                    >
-                      Copy preview
-                    </Button>
-                  </div>
-                  <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 text-xs text-foreground">
-                    {templatePreview || "Preview will appear here."}
-                  </pre>
-                </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" className="gap-2" onClick={handleTemplatePreview}>
                     <ListChecks className="h-4 w-4" /> Preview delivery
@@ -2181,6 +2169,59 @@ export default function HqDashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      {isPreviewModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-2xl">
+            <CardHeader className="flex flex-row items-center justify-between border-b">
+              <div>
+                <CardTitle>Preview: {activeTemplate?.label}</CardTitle>
+                <CardDescription>Channel: {previewChannel.toUpperCase()}</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setIsPreviewModalOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4 p-6">
+              {previewChannel === "sms" ? (
+                <div className="rounded-lg border border-border bg-muted/30 p-4">
+                  <p className="text-sm font-medium text-foreground mb-2">SMS Preview</p>
+                  <div className="bg-background p-4 rounded border border-border">
+                    <p className="text-sm whitespace-pre-wrap">{templatePreview}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border bg-muted/30 p-4">
+                  <p className="text-sm font-medium text-foreground mb-2">Email Preview</p>
+                  <div className="bg-background p-4 rounded border border-border max-h-96 overflow-auto">
+                    <div dangerouslySetInnerHTML={{ __html: templatePreview }} />
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsPreviewModalOpen(false)}>
+                  Close
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(templatePreview)
+                      setSystemMessage("Preview copied to clipboard.")
+                    } catch (error) {
+                      console.error("Failed to copy preview", error)
+                      setSystemMessage("Could not copy preview.")
+                    }
+                  }}
+                >
+                  Copy preview
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 
