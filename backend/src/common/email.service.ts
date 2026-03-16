@@ -73,25 +73,34 @@ export class EmailService {
     }
   }
 
+  // Self-service password reset — sends a reset link
   async sendPasswordResetEmail(
     to: { email: string; name: string },
-    tempPassword: string,
+    resetLink: string,
   ): Promise<boolean> {
-    const result = await this.sendPasswordResetEmailWithStatus(to, tempPassword);
-    return result.success;
+    try {
+      await this.sendEmail({
+        to,
+        subject: 'Reset Your Password - Child Vaccination Command Center',
+        html: this.getPasswordResetEmailTemplate(to.name, resetLink),
+      });
+      this.logger.log(`Password reset email sent to ${to.email}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to send password reset email to ${to.email}`, error);
+      return false;
+    }
   }
 
+  // Admin-initiated password reset — sends a temporary password
   async sendPasswordResetEmailWithStatus(
     to: { email: string; name: string },
     tempPassword: string,
   ): Promise<EmailDispatchResult> {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     try {
-      const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-      await this.transporter.sendMail({
-        from: `"Child Vaccination System" <${senderEmail}>`,
-        to: to.email,
+      await this.sendEmail({
+        to,
         subject: 'Password Reset - Child Vaccination Command Center',
         html: `
           <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">
@@ -108,20 +117,12 @@ export class EmailService {
           </div>
         `,
       });
-
-      this.logger.log(`Password reset email sent to ${to.email}`);
+      this.logger.log(`Admin password reset email sent to ${to.email}`);
       return { success: true };
     } catch (error: any) {
-      const reason =
-        error?.response ||
-        error?.message ||
-        'SMTP delivery failed';
-
-      this.logger.error(`Failed to send password reset email to ${to.email}`, error);
-      return {
-        success: false,
-        errorMessage: String(reason),
-      };
+      const reason = error?.message || 'Email delivery failed';
+      this.logger.error(`Failed to send admin password reset email to ${to.email}`, error);
+      return { success: false, errorMessage: String(reason) };
     }
   }
 
@@ -129,13 +130,10 @@ export class EmailService {
     to: { email: string; name: string; role: string },
     tempPassword: string,
   ): Promise<boolean> {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     try {
-      const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-      await this.transporter.sendMail({
-        from: `"Child Vaccination System" <${senderEmail}>`,
-        to: to.email,
+      await this.sendEmail({
+        to: { email: to.email, name: to.name },
         subject: 'Your Staff Account - Child Vaccination Command Center',
         html: `
           <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">
@@ -153,7 +151,6 @@ export class EmailService {
           </div>
         `,
       });
-
       this.logger.log(`Staff invite email sent to ${to.email}`);
       return true;
     } catch (error) {
