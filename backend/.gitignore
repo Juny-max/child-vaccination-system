@@ -32,3 +32,9 @@ coverage/
 # Temp files
 tmp/
 temp/
+
+# Backup files
+backups/
+
+# Test reports
+test-report-*.txt

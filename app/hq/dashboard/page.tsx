@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import DOMPurify from "dompurify"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import {
@@ -423,6 +424,10 @@ const previewTemplateValues: Record<string, string> = {
   scheduledDate: "2026-03-22",
   facilityName: "Korle Bu Teaching Hospital",
 }
+
+const sanitizeHtml = (html: string): string =>
+  DOMPurify.sanitize(html)
+    .replace(/javascript\s*:/gi, "")
 
 const compileTemplatePreview = (templateContent: string) =>
   templateContent.replace(/\{([a-zA-Z0-9_]+)\}/g, (_fullMatch, token: string) => {
@@ -1050,11 +1055,12 @@ export default function HqDashboardPage() {
           "Authorization": `Bearer ${localStorage.getItem("accessToken") || ""}`,
         },
       })
-        .then((response) => {
+        .then(async (response) => {
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`)
           }
-          return response.json().catch(() => response.blob())
+          const cloned = response.clone()
+          return response.json().catch(() => cloned.blob())
         })
         .then((data) => {
           // Check if backend returned JSON (not ready) or blob (actual file)
@@ -1255,7 +1261,7 @@ export default function HqDashboardPage() {
       // Create CSV content
       const csvContent = [
         headers.join(","),
-        ...rows.map((row) => row.map((cell) => `"${cell}"`).join(",")),
+        ...rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")),
       ].join("\n")
 
       // Create blob and download
@@ -1359,19 +1365,6 @@ export default function HqDashboardPage() {
     } catch (error) {
       console.error("Failed to export audit log as PDF", error)
       setSystemMessage("Could not export audit log as PDF. Please try again.")
-    }
-  }
-
-  const handleAuditExport = () => {
-    // Show export options
-    const option = prompt("Export audit log as:\n1. CSV\n2. PDF\n\nEnter 1 or 2:")
-    
-    if (option === "1") {
-      exportAuditLogCSV()
-    } else if (option === "2") {
-      exportAuditLogPDF()
-    } else if (option !== null) {
-      setSystemMessage("Invalid option. Please select 1 for CSV or 2 for PDF.")
     }
   }
 
@@ -2399,7 +2392,7 @@ export default function HqDashboardPage() {
                 <div className="rounded-lg border border-border bg-muted/30 p-4">
                   <p className="text-sm font-medium text-foreground mb-2">Email Preview</p>
                   <div className="bg-background p-4 rounded border border-border max-h-96 overflow-auto">
-                    <div dangerouslySetInnerHTML={{ __html: templatePreview }} />
+                    <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(templatePreview) }} />
                   </div>
                 </div>
               )}
