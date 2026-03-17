@@ -1601,4 +1601,332 @@ export class BranchManagerService {
     if (error) throw new InternalServerErrorException('Failed to update staff status.');
     return { success: true, status };
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HQ ADMIN — VACCINE CONFIGURATION (master catalogue)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getHqVaccines() {
+    const db = this.databaseService.supabase;
+    const { data, error } = await db
+      .from('vaccines')
+      .select('id, code, name, description, manufacturer, status, created_at, updated_at')
+      .order('name', { ascending: true });
+    if (error) {
+      this.logger.error('Failed to fetch vaccine catalogue', error);
+      throw new InternalServerErrorException('Failed to fetch vaccine catalogue');
+    }
+
+    // Attach schedule rows for each vaccine
+    const vaccineIds = (data ?? []).map((v: any) => v.id);
+    const { data: schedules } = await db
+      .from('vaccination_schedules')
+      .select('id, vaccine_id, dose_number, schedule_name, due_days_from_birth, min_age_days, max_age_days, is_mandatory, sort_order')
+      .in('vaccine_id', vaccineIds.length ? vaccineIds : ['__none__'])
+      .order('sort_order', { ascending: true });
+
+    const scheduleMap = new Map<string, any[]>();
+    for (const s of schedules ?? []) {
+      const list = scheduleMap.get(s.vaccine_id) ?? [];
+      list.push(s);
+      scheduleMap.set(s.vaccine_id, list);
+    }
+
+    return (data ?? []).map((v: any) => ({
+      ...v,
+      schedules: scheduleMap.get(v.id) ?? [],
+    }));
+  }
+
+  async createHqVaccine(dto: {
+    code: string;
+    name: string;
+    description?: string;
+    manufacturer?: string;
+  }) {
+    const db = this.databaseService.supabase;
+    const { data, error } = await db
+      .from('vaccines')
+      .insert({
+        code: dto.code.trim().toUpperCase(),
+        name: dto.name.trim(),
+        description: dto.description?.trim() || null,
+        manufacturer: dto.manufacturer?.trim() || null,
+        status: 'active',
+      })
+      .select()
+      .single();
+    if (error) {
+      if (error.code === '23505') throw new ConflictException(`Vaccine code "${dto.code}" already exists`);
+      this.logger.error('Failed to create vaccine', error);
+      throw new InternalServerErrorException('Failed to create vaccine');
+    }
+    return data;
+  }
+
+  async updateHqVaccine(
+    vaccineId: string,
+    dto: { name?: string; description?: string; manufacturer?: string; status?: string },
+  ) {
+    const db = this.databaseService.supabase;
+    const payload: Record<string, any> = {};
+    if (dto.name !== undefined) payload.name = dto.name.trim();
+    if (dto.description !== undefined) payload.description = dto.description.trim() || null;
+    if (dto.manufacturer !== undefined) payload.manufacturer = dto.manufacturer.trim() || null;
+    if (dto.status !== undefined) payload.status = dto.status;
+
+    if (Object.keys(payload).length === 0) throw new BadRequestException('No fields to update');
+
+    const { data, error } = await db
+      .from('vaccines')
+      .update(payload)
+      .eq('id', vaccineId)
+      .select()
+      .single();
+    if (error) {
+      this.logger.error('Failed to update vaccine', error);
+      throw new InternalServerErrorException('Failed to update vaccine');
+    }
+    if (!data) throw new NotFoundException('Vaccine not found');
+    return data;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HQ ADMIN — CATCHMENT AREA MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getHqCatchmentAreas() {
+    const db = this.databaseService.supabase;
+    const { data, error } = await db
+      .from('catchment_areas')
+      .select('id, name, code, branch_id, community, population_estimate, assigned_chw_id, created_at, updated_at')
+      .order('name', { ascending: true });
+    if (error) {
+      this.logger.error('Failed to fetch catchment areas', error);
+      throw new InternalServerErrorException('Failed to fetch catchment areas');
+    }
+
+    // Enrich with branch name and CHW name
+    const branchIds = [...new Set((data ?? []).map((c: any) => c.branch_id).filter(Boolean))];
+    const chwIds = [...new Set((data ?? []).map((c: any) => c.assigned_chw_id).filter(Boolean))];
+
+    const [branchResult, chwResult] = await Promise.all([
+      branchIds.length
+        ? db.from('branches').select('id, name').in('id', branchIds)
+        : { data: [] },
+      chwIds.length
+        ? db.from('users').select('id, full_name').in('id', chwIds)
+        : { data: [] },
+    ]);
+
+    const branchMap = new Map((branchResult.data ?? []).map((b: any) => [b.id, b.name]));
+    const chwMap = new Map((chwResult.data ?? []).map((c: any) => [c.id, c.full_name]));
+
+    return (data ?? []).map((c: any) => ({
+      ...c,
+      branch_name: branchMap.get(c.branch_id) || null,
+      assigned_chw_name: chwMap.get(c.assigned_chw_id) || null,
+    }));
+  }
+
+  async createHqCatchmentArea(dto: {
+    name: string;
+    code: string;
+    branchId: string;
+    community?: string;
+    populationEstimate?: number;
+    assignedChwId?: string;
+  }) {
+    const db = this.databaseService.supabase;
+    const { data, error } = await db
+      .from('catchment_areas')
+      .insert({
+        name: dto.name.trim(),
+        code: dto.code.trim().toUpperCase(),
+        branch_id: dto.branchId,
+        community: dto.community?.trim() || null,
+        population_estimate: dto.populationEstimate ?? null,
+        assigned_chw_id: dto.assignedChwId || null,
+      })
+      .select()
+      .single();
+    if (error) {
+      if (error.code === '23505') throw new ConflictException(`Catchment area code "${dto.code}" already exists`);
+      this.logger.error('Failed to create catchment area', error);
+      throw new InternalServerErrorException('Failed to create catchment area');
+    }
+    return data;
+  }
+
+  async updateHqCatchmentArea(
+    catchmentId: string,
+    dto: {
+      name?: string;
+      community?: string;
+      populationEstimate?: number;
+      assignedChwId?: string;
+      branchId?: string;
+    },
+  ) {
+    const db = this.databaseService.supabase;
+    const payload: Record<string, any> = {};
+    if (dto.name !== undefined) payload.name = dto.name.trim();
+    if (dto.community !== undefined) payload.community = dto.community.trim() || null;
+    if (dto.populationEstimate !== undefined) payload.population_estimate = dto.populationEstimate;
+    if (dto.assignedChwId !== undefined) payload.assigned_chw_id = dto.assignedChwId || null;
+    if (dto.branchId !== undefined) payload.branch_id = dto.branchId;
+
+    if (Object.keys(payload).length === 0) throw new BadRequestException('No fields to update');
+
+    const { data, error } = await db
+      .from('catchment_areas')
+      .update(payload)
+      .eq('id', catchmentId)
+      .select()
+      .single();
+    if (error) {
+      this.logger.error('Failed to update catchment area', error);
+      throw new InternalServerErrorException('Failed to update catchment area');
+    }
+    if (!data) throw new NotFoundException('Catchment area not found');
+    return data;
+  }
+
+  async deleteHqCatchmentArea(catchmentId: string) {
+    const db = this.databaseService.supabase;
+    const { error } = await db
+      .from('catchment_areas')
+      .delete()
+      .eq('id', catchmentId);
+    if (error) {
+      this.logger.error('Failed to delete catchment area', error);
+      throw new InternalServerErrorException('Failed to delete catchment area');
+    }
+    return { success: true };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HQ ADMIN — SYSTEM SETTINGS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getHqSystemSettings() {
+    const db = this.databaseService.supabase;
+    const { data, error } = await db
+      .from('system_settings')
+      .select('id, category, value, description, is_public, updated_by_user_id, created_at, updated_at')
+      .order('category', { ascending: true });
+    if (error) {
+      this.logger.error('Failed to fetch system settings', error);
+      throw new InternalServerErrorException('Failed to fetch system settings');
+    }
+    return data ?? [];
+  }
+
+  async updateHqSystemSetting(
+    settingId: string,
+    dto: { value: any; description?: string },
+    actorUserId?: string,
+  ) {
+    const db = this.databaseService.supabase;
+    const payload: Record<string, any> = {
+      value: dto.value,
+      updated_by_user_id: actorUserId || null,
+    };
+    if (dto.description !== undefined) payload.description = dto.description;
+
+    const { data, error } = await db
+      .from('system_settings')
+      .update(payload)
+      .eq('id', settingId)
+      .select()
+      .single();
+    if (error) {
+      this.logger.error('Failed to update system setting', error);
+      throw new InternalServerErrorException('Failed to update system setting');
+    }
+    if (!data) throw new NotFoundException('Setting not found');
+    return data;
+  }
+
+  async createHqSystemSetting(dto: {
+    id: string;
+    category: string;
+    value: any;
+    description?: string;
+    isPublic?: boolean;
+  }, actorUserId?: string) {
+    const db = this.databaseService.supabase;
+    const { data, error } = await db
+      .from('system_settings')
+      .insert({
+        id: dto.id,
+        category: dto.category,
+        value: dto.value,
+        description: dto.description || null,
+        is_public: dto.isPublic ?? false,
+        updated_by_user_id: actorUserId || null,
+      })
+      .select()
+      .single();
+    if (error) {
+      if (error.code === '23505') throw new ConflictException(`Setting "${dto.id}" already exists`);
+      this.logger.error('Failed to create system setting', error);
+      throw new InternalServerErrorException('Failed to create system setting');
+    }
+    return data;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HQ ADMIN — AUDIT LOGS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getHqAuditLogs(filters: {
+    action?: string;
+    entityType?: string;
+    category?: string;
+    userId?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const db = this.databaseService.supabase;
+    let query = db
+      .from('audit_logs')
+      .select('id, user_id, action, entity_type, entity_id, before_data, after_data, ip_address, user_agent, category, created_at');
+
+    if (filters.action) query = query.eq('action', filters.action);
+    if (filters.entityType) query = query.eq('entity_type', filters.entityType);
+    if (filters.category) query = query.eq('category', filters.category);
+    if (filters.userId) query = query.eq('user_id', filters.userId);
+
+    const limit = filters.limit && filters.limit > 0 ? Math.min(filters.limit, 500) : 100;
+    const offset = filters.offset && filters.offset > 0 ? filters.offset : 0;
+
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      this.logger.error('Failed to fetch audit logs', error);
+      throw new InternalServerErrorException('Failed to fetch audit logs');
+    }
+
+    // Enrich with user names
+    const userIds = [...new Set((data ?? []).map((l: any) => l.user_id).filter(Boolean))];
+    let userMap = new Map<string, string>();
+    if (userIds.length) {
+      const { data: users } = await db
+        .from('users')
+        .select('id, full_name')
+        .in('id', userIds);
+      userMap = new Map((users ?? []).map((u: any) => [u.id, u.full_name]));
+    }
+
+    return {
+      data: (data ?? []).map((l: any) => ({
+        ...l,
+        user_name: userMap.get(l.user_id) || null,
+      })),
+      pagination: { limit, offset, returned: (data ?? []).length },
+    };
+  }
 }
