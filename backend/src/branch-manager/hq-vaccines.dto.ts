@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateHqVaccineDto {
   @IsString()
@@ -34,4 +34,65 @@ export class UpdateHqVaccineDto {
   @IsOptional()
   @IsString()
   status?: string;
+}
+
+export class CreateHqScheduleDto {
+  @IsUUID()
+  vaccineId: string;
+
+  @IsNumber()
+  doseNumber: number;
+
+  @IsString()
+  @IsNotEmpty()
+  scheduleName: string;
+
+  @IsNumber()
+  dueDaysFromBirth: number;
+
+  @IsOptional()
+  @IsNumber()
+  minAgeDays?: number;
+
+  @IsOptional()
+  @IsNumber()
+  maxAgeDays?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isMandatory?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  sortOrder?: number;
+}
+
+export class UpdateHqScheduleDto {
+  @IsOptional()
+  @IsNumber()
+  doseNumber?: number;
+
+  @IsOptional()
+  @IsString()
+  scheduleName?: string;
+
+  @IsOptional()
+  @IsNumber()
+  dueDaysFromBirth?: number;
+
+  @IsOptional()
+  @IsNumber()
+  minAgeDays?: number;
+
+  @IsOptional()
+  @IsNumber()
+  maxAgeDays?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isMandatory?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  sortOrder?: number;
 }

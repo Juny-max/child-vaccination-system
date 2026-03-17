@@ -1020,6 +1020,31 @@ export class BranchManagerService {
     return fullBranch;
   }
 
+  async deleteHqBranch(code: string) {
+    const db = this.databaseService.supabase;
+
+    // Look up branch by code
+    const { data: branch, error: lookupError } = await db
+      .from('branches')
+      .select('id, name')
+      .eq('code', code)
+      .maybeSingle();
+
+    if (lookupError) {
+      throw new InternalServerErrorException('Failed to look up branch');
+    }
+    if (!branch) throw new NotFoundException(`Branch with code "${code}" not found`);
+
+    const { error } = await db.from('branches').delete().eq('id', branch.id);
+    if (error) {
+      this.logger.error('Failed to delete branch', error);
+      throw new InternalServerErrorException(
+        `Failed to delete branch: ${error.message}. It may have dependent records (staff, children, etc.).`,
+      );
+    }
+    return { success: true, deleted: branch.name };
+  }
+
   async getHqUsers() {
     const db = this.databaseService.supabase;
 
@@ -1689,6 +1714,89 @@ export class BranchManagerService {
     }
     if (!data) throw new NotFoundException('Vaccine not found');
     return data;
+  }
+
+  async createHqSchedule(dto: {
+    vaccineId: string;
+    doseNumber: number;
+    scheduleName: string;
+    dueDaysFromBirth: number;
+    minAgeDays?: number;
+    maxAgeDays?: number;
+    isMandatory?: boolean;
+    sortOrder?: number;
+  }) {
+    const db = this.databaseService.supabase;
+    const { data, error } = await db
+      .from('vaccination_schedules')
+      .insert({
+        vaccine_id: dto.vaccineId,
+        dose_number: dto.doseNumber,
+        schedule_name: dto.scheduleName.trim(),
+        due_days_from_birth: dto.dueDaysFromBirth,
+        min_age_days: dto.minAgeDays ?? null,
+        max_age_days: dto.maxAgeDays ?? null,
+        is_mandatory: dto.isMandatory ?? true,
+        sort_order: dto.sortOrder ?? 0,
+      })
+      .select()
+      .single();
+    if (error) {
+      this.logger.error('Failed to create vaccination schedule', error);
+      throw new InternalServerErrorException('Failed to create vaccination schedule');
+    }
+    return data;
+  }
+
+  async updateHqSchedule(
+    scheduleId: string,
+    dto: {
+      doseNumber?: number;
+      scheduleName?: string;
+      dueDaysFromBirth?: number;
+      minAgeDays?: number;
+      maxAgeDays?: number;
+      isMandatory?: boolean;
+      sortOrder?: number;
+    },
+  ) {
+    const db = this.databaseService.supabase;
+    const payload: Record<string, any> = {};
+    if (dto.doseNumber !== undefined) payload.dose_number = dto.doseNumber;
+    if (dto.scheduleName !== undefined) payload.schedule_name = dto.scheduleName.trim();
+    if (dto.dueDaysFromBirth !== undefined) payload.due_days_from_birth = dto.dueDaysFromBirth;
+    if (dto.minAgeDays !== undefined) payload.min_age_days = dto.minAgeDays;
+    if (dto.maxAgeDays !== undefined) payload.max_age_days = dto.maxAgeDays;
+    if (dto.isMandatory !== undefined) payload.is_mandatory = dto.isMandatory;
+    if (dto.sortOrder !== undefined) payload.sort_order = dto.sortOrder;
+
+    if (Object.keys(payload).length === 0) throw new BadRequestException('No fields to update');
+
+    const { data, error } = await db
+      .from('vaccination_schedules')
+      .update(payload)
+      .eq('id', scheduleId)
+      .select()
+      .single();
+    if (error) {
+      this.logger.error('Failed to update vaccination schedule', error);
+      throw new InternalServerErrorException('Failed to update vaccination schedule');
+    }
+    if (!data) throw new NotFoundException('Schedule entry not found');
+    return data;
+  }
+
+  async deleteHqSchedule(scheduleId: string) {
+    const db = this.databaseService.supabase;
+    const { error } = await db
+      .from('vaccination_schedules')
+      .delete()
+      .eq('id', scheduleId);
+    if (error) {
+      this.logger.error('Failed to delete vaccination schedule', error);
+      throw new InternalServerErrorException('Failed to delete vaccination schedule');
+    }
+    return { success: true };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
