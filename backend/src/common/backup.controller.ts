@@ -58,7 +58,7 @@ export class BackupController {
   @Post('trigger')
   async triggerBackup(@Res() res: Response) {
     try {
-      const filepath = await this.backupService.createTestBackup();
+      const filepath = await this.backupService.createBackup();
       res.status(201).json({
         success: true,
         message: 'Backup created successfully',
