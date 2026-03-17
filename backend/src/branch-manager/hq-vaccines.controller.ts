@@ -35,15 +35,9 @@ export class HqVaccinesController {
     return this.branchManagerService.createHqVaccine(dto);
   }
 
-  @Patch(':vaccineId')
-  async updateVaccine(
-    @Param('vaccineId') vaccineId: string,
-    @Body() dto: UpdateHqVaccineDto,
-  ) {
-    return this.branchManagerService.updateHqVaccine(vaccineId, dto);
-  }
-
   // ── Vaccination schedule (dosing rules) ──
+  // These must be defined BEFORE the :vaccineId wildcard route below,
+  // otherwise "schedules" would be captured as a vaccineId param.
 
   @Post('schedules')
   async createSchedule(@Body() dto: CreateHqScheduleDto) {
@@ -61,5 +55,15 @@ export class HqVaccinesController {
   @Delete('schedules/:scheduleId')
   async deleteSchedule(@Param('scheduleId') scheduleId: string) {
     return this.branchManagerService.deleteHqSchedule(scheduleId);
+  }
+
+  // ── Vaccine wildcard (must be last) ──
+
+  @Patch(':vaccineId')
+  async updateVaccine(
+    @Param('vaccineId') vaccineId: string,
+    @Body() dto: UpdateHqVaccineDto,
+  ) {
+    return this.branchManagerService.updateHqVaccine(vaccineId, dto);
   }
 }
