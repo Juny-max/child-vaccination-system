@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 import LRUCache from 'lru-cache';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto, UserRole } from './dto';
@@ -112,8 +113,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Verify password
-    const isPasswordValid = await this.verifyPassword(password, user.password_hash);
+    // Verify password (auto-upgrades SHA-256 to bcrypt on success)
+    const isPasswordValid = await this.verifyPassword(password, user.password_hash, user.id);
     
     if (!isPasswordValid) {
       // Log failed login attempt - invalid password
@@ -704,8 +705,8 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    // Verify current password
-    const isPasswordValid = await this.verifyPassword(currentPassword, user.password_hash);
+    // Verify current password (auto-upgrades SHA-256 to bcrypt on success)
+    const isPasswordValid = await this.verifyPassword(currentPassword, user.password_hash, userId);
     
     if (!isPasswordValid) {
       // Log failed password change attempt
