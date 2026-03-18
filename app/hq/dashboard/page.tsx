@@ -798,7 +798,7 @@ export default function HqDashboardPage() {
           // Transform system settings into system status format
           const statusMap = new Map<string, any>()
           settingsData.forEach((setting) => {
-            statusMap.set(setting.key, setting)
+            statusMap.set(setting.id, setting)
           })
 
           const transformedStatus = [
