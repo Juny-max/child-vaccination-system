@@ -212,63 +212,65 @@ export class DataOfficerService {
         );
       }
 
-      // Enrich with vaccination counts
-      return await Promise.all(
-        (data || []).map(async (dup) => {
-          const childA = Array.isArray(dup.child_a) ? dup.child_a[0] : dup.child_a;
-          const childB = Array.isArray(dup.child_b) ? dup.child_b[0] : dup.child_b;
+      // Collect all child IDs for a single batch count query
+      const allChildIds = (data || []).flatMap((dup) => [dup.child_a_id, dup.child_b_id]);
 
-          const [childAVaccCount, childBVaccCount] = await Promise.all([
-            this.getVaccinationCount(dup.child_a_id),
-            this.getVaccinationCount(dup.child_b_id),
-          ]);
+      // Fetch all vaccination counts in one grouped query to avoid N+1
+      const vaccinationCountMap = new Map<string, number>();
+      if (allChildIds.length > 0) {
+        const { data: vaccData, error: vaccError } = await this.db.supabase
+          .from('vaccination_events')
+          .select('child_id')
+          .in('child_id', allChildIds)
+          .eq('status', 'completed');
 
-          return {
-            id: dup.id,
-            pair_id: dup.pair_id,
-            child_a_id: dup.child_a_id,
-            child_b_id: dup.child_b_id,
-            similarity_score: dup.similarity_score,
-            matching_fields: dup.matching_fields,
-            status: dup.status,
-            created_at: dup.created_at,
-            child_a: {
-              id: childA.id,
-              name: childA.name,
-              date_of_birth: childA.date_of_birth,
-              mother_name: childA.mother_name,
-              last_vaccination_date: null,
-              vaccination_count: childAVaccCount,
-            },
-            child_b: {
-              id: childB.id,
-              name: childB.name,
-              date_of_birth: childB.date_of_birth,
-              mother_name: childB.mother_name,
-              last_vaccination_date: null,
-              vaccination_count: childBVaccCount,
-            },
-          };
-        }),
-      );
+        if (vaccError) {
+          this.logger.warn('Failed to fetch vaccination counts', vaccError);
+        }
+
+        for (const row of vaccData || []) {
+          vaccinationCountMap.set(
+            row.child_id,
+            (vaccinationCountMap.get(row.child_id) ?? 0) + 1,
+          );
+        }
+      }
+
+      return (data || []).map((dup) => {
+        const childA = Array.isArray(dup.child_a) ? dup.child_a[0] : dup.child_a;
+        const childB = Array.isArray(dup.child_b) ? dup.child_b[0] : dup.child_b;
+
+        return {
+          id: dup.id,
+          pair_id: dup.pair_id,
+          child_a_id: dup.child_a_id,
+          child_b_id: dup.child_b_id,
+          similarity_score: dup.similarity_score,
+          matching_fields: dup.matching_fields,
+          status: dup.status,
+          created_at: dup.created_at,
+          child_a: {
+            id: childA.id,
+            name: childA.name,
+            date_of_birth: childA.date_of_birth,
+            mother_name: childA.mother_name,
+            last_vaccination_date: null,
+            vaccination_count: vaccinationCountMap.get(dup.child_a_id) ?? 0,
+          },
+          child_b: {
+            id: childB.id,
+            name: childB.name,
+            date_of_birth: childB.date_of_birth,
+            mother_name: childB.mother_name,
+            last_vaccination_date: null,
+            vaccination_count: vaccinationCountMap.get(dup.child_b_id) ?? 0,
+          },
+        };
+      });
     } catch (error) {
       this.logger.error('Error fetching duplicates', error);
       throw error;
     }
-  }
-
-  /**
-   * Get vaccination count for a child
-   */
-  private async getVaccinationCount(childId: string): Promise<number> {
-    const db = this.db.supabase;
-    const { count } = await db
-      .from('vaccination_events')
-      .select('*', { count: 'exact', head: true })
-      .eq('child_id', childId)
-      .eq('status', 'completed');
-
-    return count ?? 0;
   }
 
   /**
@@ -302,6 +304,11 @@ export class DataOfficerService {
       }
 
       const survivorId = dto.survivor_id;
+      if (survivorId !== duplicate.child_a_id && survivorId !== duplicate.child_b_id) {
+        throw new BadRequestException(
+          'survivor_id must match one of the duplicate pair child IDs',
+        );
+      }
       const loserChildId =
         survivorId === duplicate.child_a_id
           ? duplicate.child_b_id
@@ -325,7 +332,7 @@ export class DataOfficerService {
       }
 
       // Redirect all vaccination events from loser to survivor
-      await db
+      const { error: vaccError } = await db
         .from('vaccination_events')
         .update({
           child_id: survivorId,
@@ -333,8 +340,12 @@ export class DataOfficerService {
         })
         .eq('child_id', loserChildId);
 
+      if (vaccError) {
+        throw new InternalServerErrorException('Failed to reassign vaccination events');
+      }
+
       // Redirect all appointments from loser to survivor
-      await db
+      const { error: apptError } = await db
         .from('appointments')
         .update({
           child_id: survivorId,
@@ -342,8 +353,12 @@ export class DataOfficerService {
         })
         .eq('child_id', loserChildId);
 
+      if (apptError) {
+        throw new InternalServerErrorException('Failed to reassign appointments');
+      }
+
       // Mark the loser child as deleted/merged
-      await db
+      const { error: childError } = await db
         .from('children')
         .update({
           status: 'inactive',
@@ -352,8 +367,12 @@ export class DataOfficerService {
         })
         .eq('id', loserChildId);
 
+      if (childError) {
+        throw new InternalServerErrorException('Failed to update merged child record');
+      }
+
       // Log merge action to audit
-      await db.from('audit_logs').insert({
+      const { error: auditError } = await db.from('audit_logs').insert({
         user_id: userId,
         action: 'merge',
         entity_type: 'child',
@@ -362,6 +381,10 @@ export class DataOfficerService {
         after_data: { survivor_child_id: survivorId },
         category: 'data-quality',
       });
+
+      if (auditError) {
+        this.logger.warn('Failed to write audit log for merge', auditError);
+      }
 
       this.logger.log(
         `Successfully merged duplicate ${duplicateId}: ${loserChildId} -> ${survivorId}`,
@@ -508,6 +531,13 @@ export class DataOfficerService {
 
       if (fetchError || !conflict) {
         throw new NotFoundException('Sync conflict not found');
+      }
+
+      // Enforce related_child_id for relink resolution
+      if (dto.resolution_type === 'relink' && !dto.related_child_id) {
+        throw new BadRequestException(
+          'related_child_id is required when resolution_type is "relink"',
+        );
       }
 
       // Update conflict status

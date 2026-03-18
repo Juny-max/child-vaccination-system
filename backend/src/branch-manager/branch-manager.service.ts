@@ -1225,9 +1225,6 @@ export class BranchManagerService {
 
     const { error } = await db.from('branches').delete().eq('id', branch.id);
     if (error) {
-      this.logger.error('Failed to delete branch', error);
-      throw new InternalServerErrorException(
-        `Failed to delete branch: ${error.message}`,
       this.logger.error(`Failed to delete branch: ${error.message}`, error);
       throw new InternalServerErrorException(
         'Failed to delete branch. Please try again.',

@@ -19,8 +19,6 @@ export interface CreateHqVaccinePayload {
 
 export interface UpdateHqVaccinePayload {
   name?: string;
-  schedule?: string;
-  dueDays?: number;
   description?: string;
   manufacturer?: string;
   status?: string;
@@ -30,23 +28,18 @@ export interface HqSchedule {
   id: string;
   vaccineId: string;
   vaccineName: string;
-  dosage: string;
-  ageMonths: number;
-  route: string;
+  doseNumber: number;
+  scheduleName: string;
+  dueDaysFromBirth: number;
+  minAgeDays: number | null;
+  maxAgeDays: number | null;
+  isMandatory: boolean;
+  sortOrder: number;
   status: 'active' | 'archived';
 }
 
 export interface CreateHqSchedulePayload {
   vaccineId: string;
-  dosage: string;
-  ageMonths: number;
-  route: string;
-}
-
-export interface UpdateHqSchedulePayload {
-  dosage?: string;
-  ageMonths?: number;
-  route?: string;
   doseNumber: number;
   scheduleName: string;
   dueDaysFromBirth: number;

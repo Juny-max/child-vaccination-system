@@ -1,19 +1,3 @@
-import { Controller, Get, Post, UseGuards, Res } from '@nestjs/common';
-import { Response } from 'express';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { BackupService } from './backup.service';
-import * as fs from 'fs';
-
-@Controller('common/backup')
-@UseGuards(JwtAuthGuard)
-export class BackupController {
-  constructor(private readonly backupService: BackupService) {}
-
-  /**
-   * Download the latest encrypted backup file
-   */
-  @Get('download-latest')
-  async downloadLatestBackup(@Res() res: Response) {
 import { Controller, Get, Post, UseGuards, Res, Req } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -25,7 +9,7 @@ import * as fs from 'fs';
 
 @Controller('common/backup')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('hq-admin')  // Only HQ admins can access backups
+@Roles('hq-admin')
 export class BackupController {
   constructor(
     private readonly backupService: BackupService,
@@ -72,8 +56,6 @@ export class BackupController {
         if (!res.headersSent) {
           res.status(500).json({
             success: false,
-            message: 'Failed to stream backup file',
-            error: error.message,
             message: 'Failed to retrieve backup. Please try again.',
           });
         }
@@ -82,8 +64,6 @@ export class BackupController {
       console.error('Backup download error:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve backup',
-        error: error.message,
         message: 'Failed to retrieve backup. Please try again.',
       });
     }
@@ -91,15 +71,6 @@ export class BackupController {
 
   /**
    * Trigger a new backup operation
-   */
-  @Post('trigger')
-  async triggerBackup(@Res() res: Response) {
-    try {
-      const filepath = await this.backupService.createBackup();
-      res.status(201).json({
-        success: true,
-        message: 'Backup created successfully',
-        filepath,
    * Restricted to HQ Admin only
    */
   @Post('trigger')
@@ -126,8 +97,6 @@ export class BackupController {
       console.error('Backup trigger error:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to trigger backup',
-        error: error.message,
         message: 'Failed to create backup. Please try again.',
       });
     }

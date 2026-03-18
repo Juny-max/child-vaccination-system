@@ -1,8 +1,3 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
-import { createHash } from 'crypto';
-import LRUCache from 'lru-cache';
-import { JwtService } from '@nestjs/jwt';
 import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
@@ -13,30 +8,16 @@ import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto, U
 
 @Injectable()
 export class AuthService {
-  private readonly jwtService: JwtService;
-  private readonly databaseService: DatabaseService;
-  private readonly emailService: EmailService;
-  private readonly loginAttempts: LRUCache<string, { count: number; lastAttempt: number }>;
   private readonly logger = new Logger(AuthService.name);
-  private readonly jwtService: JwtService;
-  private readonly databaseService: DatabaseService;
-  private readonly emailService: EmailService;
   private readonly loginAttempts: Map<string, { count: number; lastAttempt: number }>;
   private readonly MAX_LOGIN_ATTEMPTS = 5;
   private readonly LOCKOUT_TIME_MS = 15 * 60 * 1000; // 15 minutes
 
   constructor(
-    jwtService: JwtService,
-    databaseService: DatabaseService,
-    emailService: EmailService,
+    private readonly jwtService: JwtService,
+    private readonly databaseService: DatabaseService,
+    private readonly emailService: EmailService,
   ) {
-    this.jwtService = jwtService;
-    this.databaseService = databaseService;
-    this.emailService = emailService;
-    this.loginAttempts = new LRUCache<string, { count: number; lastAttempt: number }>({
-      max: 10000,
-      ttl: this.LOCKOUT_TIME_MS,
-    });
     this.loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
   }
 
@@ -494,8 +475,6 @@ export class AuthService {
   /**
    * Verify password against stored hash
    * Supports both bcrypt (new) and SHA-256 (legacy seed data)
-   */
-  private async verifyPassword(password: string, storedHash: string): Promise<boolean> {
    * Optionally auto-upgrades SHA-256 passwords to bcrypt on successful login
    */
   private async verifyPassword(password: string, storedHash: string, userId?: string): Promise<boolean> {
@@ -505,11 +484,6 @@ export class AuthService {
       if (isBcryptValid) return true;
     } catch (error) {
       // Not a bcrypt hash, continue to SHA-256
-    }
-
-    // Fall back to SHA-256 for legacy passwords (seed data)
-    const sha256Hash = createHash('sha256').update(password).digest('hex');
-    return sha256Hash === storedHash;
     }
 
     // Fall back to SHA-256 for legacy passwords (seed data)
