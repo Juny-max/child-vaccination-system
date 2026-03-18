@@ -47,16 +47,6 @@ export interface UpdateHqSchedulePayload {
   dosage?: string;
   ageMonths?: number;
   route?: string;
-  doseNumber: number;
-  scheduleName: string;
-  dueDaysFromBirth: number;
-  minAgeDays?: number;
-  maxAgeDays?: number;
-  isMandatory?: boolean;
-  sortOrder?: number;
-}
-
-export interface UpdateHqSchedulePayload {
   doseNumber?: number;
   scheduleName?: string;
   dueDaysFromBirth?: number;
