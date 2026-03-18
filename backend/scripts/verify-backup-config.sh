@@ -8,7 +8,7 @@ echo ""
 
 # Check environment variables
 echo "✓ Environment Variables:"
-echo "  BACKUP_DIR: ${BACKUP_DIR:./backups}"
+echo "  BACKUP_DIR: ${BACKUP_DIR:-./backups}"
 if [ -n "$BACKUP_ENCRYPTION_KEY" ]; then
   KEY_LENGTH=${#BACKUP_ENCRYPTION_KEY}
   echo "  BACKUP_ENCRYPTION_KEY: ****** (${KEY_LENGTH} characters)"
