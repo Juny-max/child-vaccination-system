@@ -1,19 +1,18 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
-import LRUCache from 'lru-cache';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto, UserRole } from './dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly jwtService: JwtService;
   private readonly databaseService: DatabaseService;
   private readonly emailService: EmailService;
-  private readonly loginAttempts: LRUCache<string, { count: number; lastAttempt: number }>;
+  private readonly loginAttempts: Map<string, { count: number; lastAttempt: number }>;
   private readonly MAX_LOGIN_ATTEMPTS = 5;
   private readonly LOCKOUT_TIME_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -25,10 +24,7 @@ export class AuthService {
     this.jwtService = jwtService;
     this.databaseService = databaseService;
     this.emailService = emailService;
-    this.loginAttempts = new LRUCache<string, { count: number; lastAttempt: number }>({
-      max: 10000,
-      ttl: this.LOCKOUT_TIME_MS,
-    });
+    this.loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
   }
 
   /**
@@ -485,8 +481,9 @@ export class AuthService {
   /**
    * Verify password against stored hash
    * Supports both bcrypt (new) and SHA-256 (legacy seed data)
+   * Optionally auto-upgrades SHA-256 passwords to bcrypt on successful login
    */
-  private async verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  private async verifyPassword(password: string, storedHash: string, userId?: string): Promise<boolean> {
     // Try bcrypt first (for new user passwords)
     try {
       const isBcryptValid = await bcrypt.compare(password, storedHash);
@@ -497,7 +494,25 @@ export class AuthService {
 
     // Fall back to SHA-256 for legacy passwords (seed data)
     const sha256Hash = createHash('sha256').update(password).digest('hex');
-    return sha256Hash === storedHash;
+    if (sha256Hash === storedHash) {
+      // Auto-upgrade to bcrypt if userId is provided
+      if (userId) {
+        try {
+          const bcryptHash = await bcrypt.hash(password, 10);
+          await this.databaseService.supabase
+            .from('users')
+            .update({ password_hash: bcryptHash })
+            .eq('id', userId);
+          this.logger.log(`[AUTH] Auto-upgraded password hash to bcrypt for user: ${userId.substring(0, 8)}...`);
+        } catch (upgradeError) {
+          // Non-critical - just log and continue
+          this.logger.warn(`[AUTH] Failed to auto-upgrade password hash for user: ${userId.substring(0, 8)}...`);
+        }
+      }
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -515,17 +530,20 @@ export class AuthService {
    * Request password reset with email
    * Returns success message without revealing if email exists (security best practice)
    */
-  async forgotPassword(email: string, baseUrl?: string): Promise<{ success: boolean; message: string; emailFound: boolean }> {
+  async forgotPassword(email: string, baseUrl?: string): Promise<{ success: boolean; message: string }> {
     const GENERIC_MSG = 'If an account exists with this email, you will receive a password reset link.';
 
-    // Look up user — don't reveal whether email exists in the message, but track internally
+    // Sanitize email for logging (show first 3 chars + domain)
+    const sanitizedEmail = email.replace(/^(.{3}).*@/, '$1***@');
+
+    // Look up user — don't reveal whether email exists
     const user = await this.databaseService.getUserByEmail(email);
     if (!user) {
-      console.log(`[FORGOT-PASSWORD] No account found for: ${email}`);
-      return { success: true, message: GENERIC_MSG, emailFound: false };
+      this.logger.log(`[FORGOT-PASSWORD] Request processed for: ${sanitizedEmail}`);
+      return { success: true, message: GENERIC_MSG };
     }
 
-    console.log(`[FORGOT-PASSWORD] Found user: ${user.email} (id: ${user.id})`);
+    this.logger.log(`[FORGOT-PASSWORD] Processing reset request`);
 
     // Generate token with 1-hour expiration
     const resetToken = this.generateResetToken();
@@ -537,17 +555,18 @@ export class AuthService {
       .insert({ user_id: user.id, token: resetToken, expires_at: expiresAt.toISOString() });
 
     if (insertError) {
-      console.error('[FORGOT-PASSWORD] ❌ Failed to save reset token (table missing? run the migration!):', insertError.message);
+      this.logger.error('[FORGOT-PASSWORD] Failed to save reset token:', insertError.message);
       throw new BadRequestException('Password reset is not available right now. Please contact your administrator.');
     }
 
-    console.log(`[FORGOT-PASSWORD] Token saved. Expires at: ${expiresAt.toISOString()}`);
+    this.logger.log(`[FORGOT-PASSWORD] Token saved. Expires: ${expiresAt.toISOString()}`);
 
     // Build reset link using the request's actual origin (auto-detects localhost vs production)
     const frontendUrl = baseUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetLink = `${frontendUrl}/auth/reset-password?token=${resetToken}`;
 
-    console.log(`[FORGOT-PASSWORD] Reset link: ${resetLink}`);
+    // Don't log the full reset link in production (contains sensitive token)
+    this.logger.log(`[FORGOT-PASSWORD] Reset link generated`);
 
     const emailSent = await this.emailService.sendPasswordResetEmail(
       { email: user.email, name: user.full_name },
@@ -555,9 +574,9 @@ export class AuthService {
     );
 
     if (emailSent) {
-      console.log(`[FORGOT-PASSWORD] ✅ Email sent to ${user.email}`);
+      this.logger.log(`[FORGOT-PASSWORD] Email sent successfully`);
     } else {
-      console.error(`[FORGOT-PASSWORD] ❌ Email FAILED for ${user.email}. Check SMTP_FROM is a verified Brevo sender.`);
+      this.logger.error(`[FORGOT-PASSWORD] Email delivery failed`);
     }
 
     try {
@@ -565,10 +584,10 @@ export class AuthService {
         after: { event: 'password_reset_requested', timestamp: new Date().toISOString() },
       });
     } catch (auditError) {
-      console.warn('[FORGOT-PASSWORD] Audit log failed (non-critical):', auditError);
+      this.logger.warn('[FORGOT-PASSWORD] Audit log failed (non-critical)');
     }
 
-    return { success: true, message: GENERIC_MSG, emailFound: true };
+    return { success: true, message: GENERIC_MSG };
   }
 
   /**

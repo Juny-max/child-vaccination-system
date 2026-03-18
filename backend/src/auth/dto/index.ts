@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum } from 'class-validator';
+import { IsEmail, IsString, MinLength, MaxLength, IsOptional, IsEnum } from 'class-validator';
 
 // ============================================
 // Enums
@@ -20,10 +20,12 @@ export enum UserRole {
 
 export class LoginDto {
   @IsEmail()
+  @MaxLength(254) // RFC 5321 max email length
   email: string;
 
   @IsString()
   @MinLength(6)
+  @MaxLength(128)
   password: string;
 
   @IsOptional()
@@ -33,56 +35,68 @@ export class LoginDto {
 
 export class AdminLoginDto {
   @IsEmail()
+  @MaxLength(254)
   email: string;
 
   @IsString()
   @MinLength(6)
+  @MaxLength(128)
   password: string;
 }
 
 export class RegisterDto {
   @IsEmail()
+  @MaxLength(254)
   email: string;
 
   @IsString()
   @MinLength(6)
+  @MaxLength(128)
   password: string;
 
   @IsString()
   @MinLength(2)
+  @MaxLength(100)
   fullName: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(20)
   phoneNumber?: string;
 }
 
 export class RefreshTokenDto {
   @IsString()
+  @MaxLength(500)
   refreshToken: string;
 }
 
 export class ChangePasswordDto {
   @IsString()
   @MinLength(6)
+  @MaxLength(128)
   currentPassword: string;
 
   @IsString()
   @MinLength(8, { message: 'New password must be at least 8 characters long' })
+  @MaxLength(128)
   newPassword: string;
 }
 
 export class ForgotPasswordDto {
   @IsEmail()
+  @MaxLength(254)
   email: string;
 }
 
 export class ResetPasswordDto {
   @IsString()
+  @MaxLength(100)
   token: string;
 
   @IsString()
   @MinLength(6)
+  @MaxLength(128)
   newPassword: string;
 }
 

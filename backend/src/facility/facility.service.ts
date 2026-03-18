@@ -253,7 +253,7 @@ export class FacilityService {
 
     if (error || !child) {
       console.error('Error fetching child profile:', error);
-      throw new NotFoundException(`Child not found: ${error?.message || 'Unknown error'}`);
+      throw new NotFoundException('Child not found');
     }
 
     const age = this.calculateAge(child.date_of_birth);
@@ -414,7 +414,8 @@ export class FacilityService {
       .single();
 
     if (error) {
-      throw new Error(`Failed to record vaccination: ${error.message}`);
+      console.error(`Failed to record vaccination: ${error.message}`);
+      throw new Error('Failed to record vaccination. Please try again.');
     }
 
     // If AEFI flag is set, create an AEFI report
@@ -552,7 +553,8 @@ export class FacilityService {
       .single();
 
     if (error) {
-      throw new Error(`Failed to record measurement: ${error.message}`);
+      console.error(`Failed to record measurement: ${error.message}`);
+      throw new Error('Failed to record measurement. Please try again.');
     }
 
     return {
@@ -626,7 +628,8 @@ export class FacilityService {
       .single();
 
     if (error) {
-      throw new Error(`Failed to record session note: ${error.message}`);
+      console.error(`Failed to record session note: ${error.message}`);
+      throw new Error('Failed to record session note. Please try again.');
     }
 
     return {
@@ -650,7 +653,8 @@ export class FacilityService {
       .order('visit_date', { ascending: false });
 
     if (error) {
-      throw new Error(`Failed to fetch session notes: ${error.message}`);
+      console.error(`Failed to fetch session notes: ${error.message}`);
+      throw new Error('Failed to fetch session notes. Please try again.');
     }
 
     return notes.map((n) => ({
@@ -746,7 +750,8 @@ export class FacilityService {
       .single();
 
     if (error) {
-      throw new Error(`Failed to update guardian: ${error.message}`);
+      console.error(`Failed to update guardian: ${error.message}`);
+      throw new Error('Failed to update guardian. Please try again.');
     }
 
     return {

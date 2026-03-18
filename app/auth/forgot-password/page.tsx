@@ -4,10 +4,9 @@ import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertCircle, ArrowLeft, CheckCircle2, X } from "lucide-react"
+import { AlertCircle, ArrowLeft, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import Lottie from "lottie-react"
-import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -23,7 +22,6 @@ export default function ForgotPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSuccessful, setIsSuccessful] = useState(false)
-  const [showNoAccountModal, setShowNoAccountModal] = useState(false)
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -48,15 +46,9 @@ export default function ForgotPasswordPage() {
     setIsSubmitting(true)
 
     try {
-      const response = await forgotPassword(email)
+      await forgotPassword(email)
 
-      // Check if email was found
-      if (!response.emailFound) {
-        // Show error modal instead of success
-        setShowNoAccountModal(true)
-        return
-      }
-
+      // Always show success message (security: don't reveal if email exists)
       toast.success("Check your email for password reset instructions!")
       setIsSuccessful(true)
 
@@ -172,49 +164,6 @@ export default function ForgotPasswordPage() {
           </CardContent>
         </Card>
       </main>
-
-      {/* Error Modal - No Account Found */}
-      {showNoAccountModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur">
-          <Card className="relative w-full max-w-sm border-border bg-background shadow-lg">
-            <CardHeader className="space-y-3 text-center">
-              <button
-                onClick={() => setShowNoAccountModal(false)}
-                className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
-                aria-label="Close modal"
-              >
-                <X className="size-5" />
-              </button>
-
-              <div className="mx-auto flex h-24 w-24 items-center justify-center">
-                <DotLottieReact
-                  src="/Sign for error _ Flat style.lottie"
-                  loop={false}
-                  autoplay
-                  className="h-full w-full"
-                  aria-hidden
-                />
-              </div>
-
-              <CardTitle className="text-2xl">Oops</CardTitle>
-            </CardHeader>
-
-            <CardContent className="space-y-4">
-              <p className="text-center text-sm text-muted-foreground">
-                We couldn't process your password reset request at this time. Please try again or contact your facility administrator if you continue to have issues.
-              </p>
-
-              <div className="pt-2">
-                <Link href="/auth/login" className="block">
-                  <Button className="w-full">
-                    Back to Login
-                  </Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {isSubmitting ? (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur">

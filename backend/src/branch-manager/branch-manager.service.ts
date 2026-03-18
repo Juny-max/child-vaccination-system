@@ -7,7 +7,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { CreateHqBranchDto, UpdateHqBranchDto } from './hq-branches.dto';
@@ -1124,9 +1125,9 @@ export class BranchManagerService {
     }
 
     const issues: string[] = [];
-    if (staffCount.count > 0) issues.push(`${staffCount.count} staff member(s)`);
-    if (childrenCount.count > 0) issues.push(`${childrenCount.count} registered child(ren)`);
-    if (catchmentCount.count > 0) issues.push(`${catchmentCount.count} catchment area(s)`);
+    if ((staffCount.count ?? 0) > 0) issues.push(`${staffCount.count} staff member(s)`);
+    if ((childrenCount.count ?? 0) > 0) issues.push(`${childrenCount.count} registered child(ren)`);
+    if ((catchmentCount.count ?? 0) > 0) issues.push(`${catchmentCount.count} catchment area(s)`);
 
     if (issues.length > 0) {
       throw new BadRequestException({
@@ -1137,9 +1138,9 @@ export class BranchManagerService {
 
     const { error } = await db.from('branches').delete().eq('id', branch.id);
     if (error) {
-      this.logger.error('Failed to delete branch', error);
+      this.logger.error(`Failed to delete branch: ${error.message}`, error);
       throw new InternalServerErrorException(
-        `Failed to delete branch: ${error.message}`,
+        'Failed to delete branch. Please try again.',
       );
     }
     return { success: true, deleted: branch.name };
@@ -1232,7 +1233,7 @@ export class BranchManagerService {
     }
 
     const temporaryPassword = this.generateTemporaryPassword();
-    const passwordHash = this.hashPassword(temporaryPassword);
+    const passwordHash = await this.hashPassword(temporaryPassword);
 
     const { data: createdUser, error: createError } = await db
       .from('users')
@@ -1385,7 +1386,7 @@ export class BranchManagerService {
     }
 
     const temporaryPassword = this.generateTemporaryPassword();
-    const passwordHash = this.hashPassword(temporaryPassword);
+    const passwordHash = await this.hashPassword(temporaryPassword);
 
     const { error: updateError } = await db
       .from('users')
@@ -1442,8 +1443,8 @@ export class BranchManagerService {
       .slice(0, length);
   }
 
-  private hashPassword(password: string): string {
-    return createHash('sha256').update(password).digest('hex');
+  private async hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, 10);
   }
 
   private toStorageRole(role: string): string {
@@ -1662,7 +1663,7 @@ export class BranchManagerService {
     }
 
     const temporaryPassword = this.generateTemporaryPassword();
-    const passwordHash = this.hashPassword(temporaryPassword);
+    const passwordHash = await this.hashPassword(temporaryPassword);
 
     const { data: created, error } = await db
       .from('users')
@@ -1681,7 +1682,8 @@ export class BranchManagerService {
       .single();
 
     if (error || !created) {
-      throw new InternalServerErrorException({ message: `Failed to register staff: ${error?.message}`, code: 'STAFF_CREATE_FAILED' });
+      this.logger.error(`Staff registration failed: ${error?.message}`, error?.stack);
+      throw new InternalServerErrorException({ message: 'Failed to register staff. Please try again.', code: 'STAFF_CREATE_FAILED' });
     }
 
     await this.emailService.sendStaffInviteEmail(
@@ -1689,7 +1691,9 @@ export class BranchManagerService {
       temporaryPassword,
     );
 
-    return { id: created.id, email: created.email, temporaryPassword };
+    // Don't return temporaryPassword in API response (security: could be logged by proxies)
+    // The password is sent via email to the user
+    return { id: created.id, email: created.email, emailSent: true };
   }
 
   async getStaffList(branchId: string, filters: { role?: string; status?: string; search?: string }) {

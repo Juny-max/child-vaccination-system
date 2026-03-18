@@ -184,7 +184,7 @@ export async function changePassword(data: ChangePasswordRequest): Promise<{ suc
 /**
  * Request password reset with email
  */
-export async function forgotPassword(email: string): Promise<{ success: boolean; message: string; emailFound: boolean }> {
+export async function forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
   return apiRequest('/auth/forgot-password', {
     method: 'POST',
     body: JSON.stringify({ email }),
