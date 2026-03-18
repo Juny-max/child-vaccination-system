@@ -8,6 +8,7 @@ import { FacilityModule } from './facility/facility.module';
 import { ChwModule } from './chw/chw.module';
 import { PhaModule } from './pha/pha.module';
 import { BranchManagerModule } from './branch-manager/branch-manager.module';
+import { DataOfficerModule } from './data-officer/data-officer.module';
 import { ChatbotController } from './common/chatbot.controller';
 import { ChatbotService } from './common/chatbot.service';
 import { HealthController } from './common/health.controller';
@@ -42,8 +43,8 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
 
     // Julius's Modules (Juny taking over Branch Manager)
     BranchManagerModule,
+    DataOfficerModule,
     // HqAdminModule,       // Julius will implement
-    // DataOfficerModule,   // Julius will implement
   ],
   controllers: [ChatbotController, HealthController, BackupController],
   providers: [ChatbotService, BackupService, EmailService, SmsService, VaccinationSchedulerService],

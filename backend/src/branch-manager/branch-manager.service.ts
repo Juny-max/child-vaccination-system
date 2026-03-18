@@ -1124,9 +1124,9 @@ export class BranchManagerService {
     }
 
     const issues: string[] = [];
-    if (staffCount.count > 0) issues.push(`${staffCount.count} staff member(s)`);
-    if (childrenCount.count > 0) issues.push(`${childrenCount.count} registered child(ren)`);
-    if (catchmentCount.count > 0) issues.push(`${catchmentCount.count} catchment area(s)`);
+    if ((staffCount.count ?? 0) > 0) issues.push(`${staffCount.count} staff member(s)`);
+    if ((childrenCount.count ?? 0) > 0) issues.push(`${childrenCount.count} registered child(ren)`);
+    if ((catchmentCount.count ?? 0) > 0) issues.push(`${catchmentCount.count} catchment area(s)`);
 
     if (issues.length > 0) {
       throw new BadRequestException({
