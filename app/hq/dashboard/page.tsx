@@ -48,6 +48,27 @@ import {
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
 import { getHqAnalytics } from "@/lib/api/hq-analytics"
+import {
+  getHqVaccines,
+  createHqVaccine,
+  updateHqVaccine,
+  getHqSchedules,
+  createHqSchedule,
+  updateHqSchedule,
+  deleteHqSchedule,
+} from "@/lib/api/hq-vaccines"
+import {
+  getHqCatchmentAreas,
+  createHqCatchmentArea,
+  updateHqCatchmentArea,
+  deleteHqCatchmentArea,
+} from "@/lib/api/hq-catchment-areas"
+import {
+  getHqSystemSettings,
+  createHqSystemSetting,
+  updateHqSystemSetting,
+} from "@/lib/api/hq-system-settings"
+import { getHqAuditLogs } from "@/lib/api/hq-audit-logs"
 import { API_BASE_URL, getAuthHeaders } from "@/lib/api/config"
 
 const SECTIONS = [
@@ -736,6 +757,96 @@ export default function HqDashboardPage() {
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
 
+  // Load vaccines on mount
+  useEffect(() => {
+    let isMounted = true
+
+    const loadVaccines = async () => {
+      try {
+        const remoteVaccines = await getHqVaccines()
+        if (!isMounted) return
+        if (remoteVaccines && remoteVaccines.length > 0) {
+          setVaccines(remoteVaccines as any)
+        }
+      } catch (error) {
+        console.error("Failed to load HQ vaccines from backend", error)
+        if (!isMounted) return
+        setSystemMessage("Using local fallback data for vaccines while API is unavailable.")
+      }
+    }
+
+    loadVaccines()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  // Load system settings and audit logs on mount
+  useEffect(() => {
+    let isMounted = true
+
+    const loadSystemData = async () => {
+      try {
+        const [settingsData, auditLogsData] = await Promise.all([
+          getHqSystemSettings(),
+          getHqAuditLogs({ limit: 50 }),
+        ])
+
+        if (!isMounted) return
+
+        if (settingsData && settingsData.length > 0) {
+          // Transform system settings into system status format
+          const statusMap = new Map<string, any>()
+          settingsData.forEach((setting) => {
+            statusMap.set(setting.key, setting)
+          })
+
+          const transformedStatus = [
+            {
+              id: "api-service",
+              name: "API Service",
+              status: statusMap.get("api_status")?.value === "operational" ? "operational" : "degraded",
+              detail: statusMap.get("api_detail")?.value || "System online",
+            },
+            {
+              id: "database",
+              name: "Database",
+              status: statusMap.get("db_status")?.value === "operational" ? "operational" : "degraded",
+              detail: statusMap.get("db_detail")?.value || "Connected",
+            },
+            {
+              id: "notifications",
+              name: "Notifications",
+              status: statusMap.get("notification_status")?.value === "operational" ? "operational" : "degraded",
+              detail: statusMap.get("notification_detail")?.value || "Q-linked",
+            },
+          ]
+          setSystemStatus(transformedStatus as any)
+        }
+
+        if (auditLogsData && auditLogsData.length > 0) {
+          const transformedLogs = auditLogsData.map((log: any) => ({
+            id: log.id,
+            actor: log.userId,
+            action: log.action,
+            category: log.category,
+            timestamp: new Date(log.timestamp).toISOString().slice(0, 16).replace("T", " "),
+          }))
+          setAuditLogs(transformedLogs as any)
+        }
+      } catch (error) {
+        console.error("Failed to load system data from backend", error)
+        if (!isMounted) return
+        setSystemMessage("Using local fallback data for system health while API is unavailable.")
+      }
+    }
+
+    loadSystemData()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   const activeTemplate = useMemo(() => templates.find((template) => template.id === activeTemplateId) ?? null, [activeTemplateId, templates])
   const messageTone = useMemo(() => {
     if (!systemMessage) return "neutral"
@@ -974,46 +1085,55 @@ export default function HqDashboardPage() {
     setUserForm({ name: "", email: "", role: "Branch Manager", branch: "" })
   }
 
-  const handleAddVaccine = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleAddVaccine = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const parsedDays = Number.parseInt(vaccineForm.dueDays, 10)
     if (!vaccineForm.name.trim() || Number.isNaN(parsedDays)) return
 
-    if (editingVaccineId) {
-      let updatedName = ""
+    try {
+      if (editingVaccineId) {
+        // Update existing vaccine via API
+        await updateHqVaccine(editingVaccineId, {
+          name: vaccineForm.name.trim(),
+          schedule: vaccineForm.schedule.trim() || "Custom schedule",
+          dueDays: parsedDays,
+        })
 
-      setVaccines((previous) =>
-        previous.map((vaccine) => {
-          if (vaccine.id !== editingVaccineId) return vaccine
-          updatedName = vaccineForm.name.trim()
-          return {
-            ...vaccine,
-            name: vaccineForm.name.trim(),
-            schedule: vaccineForm.schedule.trim() || "Custom schedule",
-            dueDays: parsedDays,
-          }
-        }),
-      )
+        const updatedName = vaccineForm.name.trim()
+        setVaccines((previous) =>
+          previous.map((vaccine) => {
+            if (vaccine.id !== editingVaccineId) return vaccine
+            return {
+              ...vaccine,
+              name: vaccineForm.name.trim(),
+              schedule: vaccineForm.schedule.trim() || "Custom schedule",
+              dueDays: parsedDays,
+            }
+          }),
+        )
 
-      setSystemMessage(`Schedule for "${updatedName}" updated.`)
-      appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
-      setEditingVaccineId(null)
+        setSystemMessage(`Schedule for "${updatedName}" updated.`)
+        appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
+        setEditingVaccineId(null)
+        setVaccineForm({ name: "", schedule: "", dueDays: "" })
+        return
+      }
+
+      // Create new vaccine via API
+      const newVaccine = await createHqVaccine({
+        name: vaccineForm.name.trim(),
+        schedule: vaccineForm.schedule.trim() || "Custom schedule",
+        dueDays: parsedDays,
+      })
+
+      setVaccines((previous) => [newVaccine as any, ...previous])
       setVaccineForm({ name: "", schedule: "", dueDays: "" })
-      return
+      setSystemMessage(`Vaccine "${newVaccine.name}" added to master list.`)
+      appendAuditLog({ action: `Added vaccine ${newVaccine.name} to master registry`, category: "Schedule" })
+    } catch (error) {
+      console.error("Failed to save vaccine", error)
+      setSystemMessage("Failed to save vaccine. Please try again.")
     }
-
-    const nextVaccine: VaccineConfig = {
-      id: `VAC-${Math.floor(Math.random() * 900 + 100)}`,
-      name: vaccineForm.name.trim(),
-      schedule: vaccineForm.schedule.trim() || "Custom schedule",
-      dueDays: parsedDays,
-      status: "active",
-    }
-
-    setVaccines((previous) => [nextVaccine, ...previous])
-    setVaccineForm({ name: "", schedule: "", dueDays: "" })
-    setSystemMessage(`Vaccine "${nextVaccine.name}" added to master list.`)
-    appendAuditLog({ action: `Added vaccine ${nextVaccine.name} to master registry`, category: "Schedule" })
   }
 
   const handleTemplateUpdate = () => {

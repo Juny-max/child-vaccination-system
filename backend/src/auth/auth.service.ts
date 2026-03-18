@@ -1,4 +1,6 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
@@ -6,11 +8,55 @@ import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto, U
 
 @Injectable()
 export class AuthService {
+  private readonly jwtService: JwtService;
+  private readonly databaseService: DatabaseService;
+  private readonly emailService: EmailService;
+  private readonly loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+  private readonly MAX_LOGIN_ATTEMPTS = 5;
+  private readonly LOCKOUT_TIME_MS = 15 * 60 * 1000; // 15 minutes
+
   constructor(
-    private readonly jwtService: JwtService,
-    private readonly databaseService: DatabaseService,
-    private readonly emailService: EmailService,
-  ) {}
+    jwtService: JwtService,
+    databaseService: DatabaseService,
+    emailService: EmailService,
+  ) {
+    this.jwtService = jwtService;
+    this.databaseService = databaseService;
+    this.emailService = emailService;
+  }
+
+  /**
+   * Check if an email is rate limited
+   */
+  private isRateLimited(email: string): boolean {
+    const attempt = this.loginAttempts.get(email);
+    if (!attempt) return false;
+
+    const timeSinceLastAttempt = Date.now() - attempt.lastAttempt;
+    if (timeSinceLastAttempt > this.LOCKOUT_TIME_MS) {
+      this.loginAttempts.delete(email);
+      return false;
+    }
+
+    return attempt.count >= this.MAX_LOGIN_ATTEMPTS;
+  }
+
+  /**
+   * Record a failed login attempt
+   */
+  private recordFailedAttempt(email: string): void {
+    const attempt = this.loginAttempts.get(email) || { count: 0, lastAttempt: Date.now() };
+    attempt.count += 1;
+    attempt.lastAttempt = Date.now();
+    this.loginAttempts.set(email, attempt);
+  }
+
+  /**
+   * Clear login attempts after successful login
+   */
+  private clearLoginAttempts(email: string): void {
+    this.loginAttempts.delete(email);
+  }
 
   /**
    * Validate user credentials and generate JWT token
@@ -18,6 +64,11 @@ export class AuthService {
    */
   async login(loginDto: LoginDto): Promise<AuthResponseDto> {
     const { email, password, userType } = loginDto;
+
+    // Rate limiting check
+    if (this.isRateLimited(email)) {
+      throw new UnauthorizedException('Too many login attempts. Please try again later.');
+    }
 
     // Get user from database
     const user = await this.databaseService.getUserByEmail(email);
@@ -42,6 +93,7 @@ export class AuthService {
       } catch (auditError) {
         console.warn('Audit log failed (non-critical):', auditError);
       }
+      this.recordFailedAttempt(email);
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -68,6 +120,7 @@ export class AuthService {
       } catch (auditError) {
         console.warn('Audit log failed (non-critical):', auditError);
       }
+      this.recordFailedAttempt(email);
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -137,6 +190,9 @@ export class AuthService {
     } catch (auditError) {
       console.warn('Audit log failed (non-critical):', auditError);
     }
+
+    // Clear login attempts after successful login
+    this.clearLoginAttempts(email);
 
     return {
       accessToken,
@@ -404,27 +460,28 @@ export class AuthService {
   }
 
   /**
-   * Hash password using bcrypt-like algorithm
-   * In production, use proper bcrypt with salt rounds
+   * Hash password using bcrypt
    */
   private async hashPassword(password: string): Promise<string> {
-    // For demo purposes, we'll use a simple hash
-    // In production, use: return bcrypt.hash(password, 10);
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return bcrypt.hash(password, 10);
   }
 
   /**
    * Verify password against stored hash
+   * Supports both bcrypt (new) and SHA-256 (legacy seed data)
    */
   private async verifyPassword(password: string, storedHash: string): Promise<boolean> {
-    // For demo purposes, hash the input and compare
-    // In production, use: return bcrypt.compare(password, storedHash);
-    const hashedInput = await this.hashPassword(password);
-    return hashedInput === storedHash;
+    // Try bcrypt first (for new user passwords)
+    try {
+      const isBcryptValid = await bcrypt.compare(password, storedHash);
+      if (isBcryptValid) return true;
+    } catch (error) {
+      // Not a bcrypt hash, continue to SHA-256
+    }
+
+    // Fall back to SHA-256 for legacy passwords (seed data)
+    const sha256Hash = createHash('sha256').update(password).digest('hex');
+    return sha256Hash === storedHash;
   }
 
   /**

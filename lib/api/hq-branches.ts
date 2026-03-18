@@ -49,3 +49,9 @@ export async function updateHqBranchChws(code: string, assignedChws: string[]): 
     body: JSON.stringify({ assignedChws }),
   });
 }
+
+export async function deleteHqBranch(code: string): Promise<{ success: boolean; deleted: string }> {
+  return apiRequest<{ success: boolean; deleted: string }>(`/hq-admin/branches/${encodeURIComponent(code)}`, {
+    method: 'DELETE',
+  });
+}

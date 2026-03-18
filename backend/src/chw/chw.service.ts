@@ -226,16 +226,8 @@ export class ChwService {
 
     const assignedChildren = await this.getAssignedChildren(chwUserId);
 
-    console.log(`[CHW Search] User ID: ${chwUserId}`);
-    console.log(`[CHW Search] Query: "${query}"`);
-    console.log(`[CHW Search] Total assigned children: ${assignedChildren.length}`);
-    console.log(`[CHW Search] Assigned children:`, assignedChildren.map(c => ({
-      name: c.fullName,
-      cvccId: c.cvccId,
-      guardianName: c.guardianName,
-      guardianPhone: c.guardianPhone,
-      catchmentAreaId: c.catchmentAreaId
-    })));
+    // Debug logging disabled for security (no PII logging)
+    // const log = { user: chwUserId, query, count: assignedChildren.length };
 
     const matches = assignedChildren.filter((child) => {
       return (
@@ -343,10 +335,8 @@ export class ChwService {
     if (phoneError) {
       console.error('[CHW Search All] Phone search error:', phoneError);
     } else {
-      console.log(`[CHW Search All] Guardians found by phone: ${(guardiansByPhone || []).length}`);
-      if ((guardiansByPhone || []).length > 0) {
-        console.log('[CHW Search All] Sample guardian phone:', (guardiansByPhone || [])[0]?.phone_primary);
-      }
+      // Debug logging disabled for security (no phone number logging)
+      // const guardianCount = (guardiansByPhone || []).length;
     }
 
     // Combine results and deduplicate by child ID

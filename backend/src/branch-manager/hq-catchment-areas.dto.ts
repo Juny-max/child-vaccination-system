@@ -10,6 +10,7 @@ export class CreateHqCatchmentAreaDto {
   code: string;
 
   @IsUUID()
+  @IsNotEmpty()
   branchId: string;
 
   @IsOptional()

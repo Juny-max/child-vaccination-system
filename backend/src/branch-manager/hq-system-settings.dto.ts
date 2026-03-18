@@ -2,7 +2,8 @@ import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class UpdateHqSystemSettingDto {
   @IsNotEmpty()
-  value: any;
+  // Value can be string, number, boolean, or null - validated at runtime by IsNotEmpty
+  value: string | number | boolean | null;
 
   @IsOptional()
   @IsString()
@@ -19,7 +20,8 @@ export class CreateHqSystemSettingDto {
   category: string;
 
   @IsNotEmpty()
-  value: any;
+  // Value can be string, number, boolean, or null - validated at runtime by IsNotEmpty
+  value: string | number | boolean | null;
 
   @IsOptional()
   @IsString()

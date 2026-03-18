@@ -868,6 +868,29 @@ export class BranchManagerService {
       });
     }
 
+    // Validate branch name and region
+    if (!dto.name?.trim()) {
+      throw new BadRequestException({
+        message: 'Branch name is required',
+        code: 'BRANCH_NAME_REQUIRED',
+      });
+    }
+
+    if (!dto.region?.trim()) {
+      throw new BadRequestException({
+        message: 'Region is required',
+        code: 'REGION_REQUIRED',
+      });
+    }
+
+    // Validate manager name if provided
+    if (dto.manager !== undefined && dto.manager !== null && !dto.manager.trim()) {
+      throw new BadRequestException({
+        message: 'Manager name cannot be empty',
+        code: 'MANAGER_NAME_INVALID',
+      });
+    }
+
     const code = await this.generateNextBranchCode();
     const { data: createdBranch, error: createError } = await db
       .from('branches')
@@ -905,6 +928,29 @@ export class BranchManagerService {
       throw new BadRequestException({
         message: 'At least one catchment area is required',
         code: 'CATCHMENT_REQUIRED',
+      });
+    }
+
+    // Validate branch name and region
+    if (!dto.name?.trim()) {
+      throw new BadRequestException({
+        message: 'Branch name is required',
+        code: 'BRANCH_NAME_REQUIRED',
+      });
+    }
+
+    if (!dto.region?.trim()) {
+      throw new BadRequestException({
+        message: 'Region is required',
+        code: 'REGION_REQUIRED',
+      });
+    }
+
+    // Validate manager name if provided
+    if (dto.manager !== undefined && dto.manager !== null && !dto.manager.trim()) {
+      throw new BadRequestException({
+        message: 'Manager name cannot be empty',
+        code: 'MANAGER_NAME_INVALID',
       });
     }
 
@@ -1035,11 +1081,39 @@ export class BranchManagerService {
     }
     if (!branch) throw new NotFoundException(`Branch with code "${code}" not found`);
 
+    // Check for dependent records before attempting deletion
+    const [staffCount, childrenCount, catchmentCount] = await Promise.all([
+      db
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('branch_id', branch.id),
+      db
+        .from('children')
+        .select('id', { count: 'exact', head: true })
+        .eq('primary_facility_id', branch.id),
+      db
+        .from('catchment_areas')
+        .select('id', { count: 'exact', head: true })
+        .eq('branch_id', branch.id),
+    ]);
+
+    const issues: string[] = [];
+    if ((staffCount.count ?? 0) > 0) issues.push(`${staffCount.count} staff member(s)`);
+    if ((childrenCount.count ?? 0) > 0) issues.push(`${childrenCount.count} registered child(ren)`);
+    if ((catchmentCount.count ?? 0) > 0) issues.push(`${catchmentCount.count} catchment area(s)`);
+
+    if (issues.length > 0) {
+      throw new BadRequestException({
+        message: `Cannot delete branch. It has dependent records: ${issues.join(', ')}. Please remove these first.`,
+        code: 'BRANCH_HAS_DEPENDENTS',
+      });
+    }
+
     const { error } = await db.from('branches').delete().eq('id', branch.id);
     if (error) {
       this.logger.error('Failed to delete branch', error);
       throw new InternalServerErrorException(
-        `Failed to delete branch: ${error.message}. It may have dependent records (staff, children, etc.).`,
+        `Failed to delete branch: ${error.message}`,
       );
     }
     return { success: true, deleted: branch.name };
@@ -1173,6 +1247,30 @@ export class BranchManagerService {
   async updateHqUser(userId: string, dto: UpdateHqUserDto, actorUserId?: string) {
     const db = this.databaseService.supabase;
     const branchId = await this.resolveBranchId(dto.branch);
+
+    // Check if email already exists when trying to update it
+    if (dto.email !== undefined) {
+      const normalizedEmail = dto.email.trim().toLowerCase();
+      const { data: existingUser, error: existingError } = await db
+        .from('users')
+        .select('id')
+        .eq('email', normalizedEmail)
+        .maybeSingle();
+
+      if (existingError) {
+        throw new InternalServerErrorException({
+          message: `Failed to validate user email: ${existingError.message}`,
+          code: 'HQ_USER_EMAIL_VALIDATION_FAILED',
+        });
+      }
+
+      if (existingUser && existingUser.id !== userId) {
+        throw new ConflictException({
+          message: `User with email ${normalizedEmail} already exists`,
+          code: 'EMAIL_EXISTS',
+        });
+      }
+    }
 
     const payload: Record<string, any> = {};
     if (dto.fullName !== undefined) payload.full_name = dto.fullName.trim();
