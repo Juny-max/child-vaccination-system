@@ -189,7 +189,7 @@ export default function Home() {
               A professional command platform for nationwide child immunisation
             </h1>
             <p className="text-pretty text-lg text-muted-foreground md:text-xl">
-              Coordinate multi-branch vaccination drives, empower community health workers with offline tools and keep
+              Coordinate multi-facility vaccination drives, empower community health workers with offline tools and keep
               guardians informed through a unified SMS and Email engagement engine.
             </p>
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:gap-4 sm:justify-start">
