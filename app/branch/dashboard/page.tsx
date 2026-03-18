@@ -281,7 +281,9 @@ export default function BranchDashboardPage() {
       }
       const result = await registerStaff(payload)
       setStaffFormSuccess(
-        `Staff registered successfully! Temporary password: ${result.temporaryPassword}\n\nPlease save this password and send it to ${result.email} via email or SMS.`
+        result.emailSent
+          ? `Staff registered successfully! Login credentials have been sent to ${result.email}.`
+          : `Staff registered successfully! Please contact ${result.email} to provide their login credentials.`
       )
       loadDashboard()
     } catch (err: unknown) {

@@ -18,4 +18,9 @@ export class HqAnalyticsController {
   ) {
     return this.branchManagerService.getHqAnalytics({ region, branch, window });
   }
+
+  @Get('overview')
+  async getOverviewStats() {
+    return this.branchManagerService.getHqOverviewStats();
+  }
 }

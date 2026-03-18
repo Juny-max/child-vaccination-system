@@ -12,12 +12,19 @@ export interface CreateHqVaccinePayload {
   name: string;
   schedule?: string;
   dueDays?: number;
+  code: string;
+  name: string;
+  description?: string;
+  manufacturer?: string;
 }
 
 export interface UpdateHqVaccinePayload {
   name?: string;
   schedule?: string;
   dueDays?: number;
+  description?: string;
+  manufacturer?: string;
+  status?: string;
 }
 
 export interface HqSchedule {
@@ -41,6 +48,23 @@ export interface UpdateHqSchedulePayload {
   dosage?: string;
   ageMonths?: number;
   route?: string;
+  doseNumber: number;
+  scheduleName: string;
+  dueDaysFromBirth: number;
+  minAgeDays?: number;
+  maxAgeDays?: number;
+  isMandatory?: boolean;
+  sortOrder?: number;
+}
+
+export interface UpdateHqSchedulePayload {
+  doseNumber?: number;
+  scheduleName?: string;
+  dueDaysFromBirth?: number;
+  minAgeDays?: number;
+  maxAgeDays?: number;
+  isMandatory?: boolean;
+  sortOrder?: number;
 }
 
 export async function getHqVaccines(): Promise<HqVaccine[]> {

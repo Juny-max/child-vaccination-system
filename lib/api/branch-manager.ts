@@ -156,9 +156,9 @@ export interface UpdateStaffPayload {
 }
 
 export interface RegisterStaffResponse {
-  userId: string;
+  id: string;
   email: string;
-  temporaryPassword: string;
+  emailSent: boolean;
 }
 
 export interface StaffListItem {

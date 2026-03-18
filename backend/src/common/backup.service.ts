@@ -48,12 +48,18 @@ export class BackupService {
 
   /**
    * Fetch all rows from a Supabase table with automatic pagination.
+   * Sanitizes sensitive columns from certain tables.
    */
   private async fetchAllRows(tableName: string): Promise<{ rows: any[]; count: number }> {
     const PAGE_SIZE = 1000;
     const allRows: any[] = [];
     let offset = 0;
     let hasMore = true;
+
+    // Columns to exclude from backup for security
+    const SENSITIVE_COLUMNS: Record<string, string[]> = {
+      users: ['password_hash'],  // Never include password hashes in backups
+    };
 
     while (hasMore) {
       const { data, error } = await this.db.supabase
@@ -70,6 +76,21 @@ export class BackupService {
         hasMore = false;
       } else {
         allRows.push(...data);
+        // Sanitize sensitive columns if applicable
+        const sensitiveColumns = SENSITIVE_COLUMNS[tableName];
+        const sanitizedData = sensitiveColumns
+          ? data.map(row => {
+              const sanitized = { ...row };
+              sensitiveColumns.forEach(col => {
+                if (col in sanitized) {
+                  sanitized[col] = '[REDACTED]';
+                }
+              });
+              return sanitized;
+            })
+          : data;
+
+        allRows.push(...sanitizedData);
         offset += PAGE_SIZE;
         hasMore = data.length === PAGE_SIZE;
       }

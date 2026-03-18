@@ -7,7 +7,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { CreateHqBranchDto, UpdateHqBranchDto } from './hq-branches.dto';
@@ -857,6 +858,93 @@ export class BranchManagerService {
     };
   }
 
+  async getHqOverviewStats() {
+    const db = this.databaseService.supabase;
+
+    // Get total active branches
+    const { count: branchCount, error: branchError } = await db
+      .from('branches')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active');
+
+    if (branchError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch branch count: ${branchError.message}`,
+        code: 'HQ_OVERVIEW_BRANCH_COUNT_FAILED',
+      });
+    }
+
+    // Get total active users (excluding parents)
+    const { count: userCount, error: userError } = await db
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active')
+      .neq('role', 'parent');
+
+    if (userError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch user count: ${userError.message}`,
+        code: 'HQ_OVERVIEW_USER_COUNT_FAILED',
+      });
+    }
+
+    // Get total children registered
+    const { count: childrenCount, error: childrenError } = await db
+      .from('children')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
+
+    if (childrenError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch children count: ${childrenError.message}`,
+        code: 'HQ_OVERVIEW_CHILDREN_COUNT_FAILED',
+      });
+    }
+
+    // Get CHWs active in last 24 hours (based on last_login_at)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count: activeChwCount, error: chwError } = await db
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'chw')
+      .eq('status', 'active')
+      .gte('last_login_at', twentyFourHoursAgo);
+
+    if (chwError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch active CHW count: ${chwError.message}`,
+        code: 'HQ_OVERVIEW_CHW_COUNT_FAILED',
+      });
+    }
+
+    // Get total CHWs for percentage calculation
+    const { count: totalChwCount, error: totalChwError } = await db
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'chw')
+      .eq('status', 'active');
+
+    if (totalChwError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch total CHW count: ${totalChwError.message}`,
+        code: 'HQ_OVERVIEW_TOTAL_CHW_COUNT_FAILED',
+      });
+    }
+
+    const chwSyncPercentage = totalChwCount && totalChwCount > 0
+      ? Math.round(((activeChwCount ?? 0) / totalChwCount) * 100)
+      : 0;
+
+    return {
+      totalBranches: branchCount ?? 0,
+      totalUsers: userCount ?? 0,
+      childrenRegistered: childrenCount ?? 0,
+      chwsActiveToday: activeChwCount ?? 0,
+      totalChws: totalChwCount ?? 0,
+      chwSyncPercentage,
+    };
+  }
+
   async createHqBranch(dto: CreateHqBranchDto) {
     const db = this.databaseService.supabase;
     const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
@@ -1140,6 +1228,9 @@ export class BranchManagerService {
       this.logger.error('Failed to delete branch', error);
       throw new InternalServerErrorException(
         `Failed to delete branch: ${error.message}`,
+      this.logger.error(`Failed to delete branch: ${error.message}`, error);
+      throw new InternalServerErrorException(
+        'Failed to delete branch. Please try again.',
       );
     }
     return { success: true, deleted: branch.name };
@@ -1232,7 +1323,7 @@ export class BranchManagerService {
     }
 
     const temporaryPassword = this.generateTemporaryPassword();
-    const passwordHash = this.hashPassword(temporaryPassword);
+    const passwordHash = await this.hashPassword(temporaryPassword);
 
     const { data: createdUser, error: createError } = await db
       .from('users')
@@ -1385,7 +1476,7 @@ export class BranchManagerService {
     }
 
     const temporaryPassword = this.generateTemporaryPassword();
-    const passwordHash = this.hashPassword(temporaryPassword);
+    const passwordHash = await this.hashPassword(temporaryPassword);
 
     const { error: updateError } = await db
       .from('users')
@@ -1442,8 +1533,8 @@ export class BranchManagerService {
       .slice(0, length);
   }
 
-  private hashPassword(password: string): string {
-    return createHash('sha256').update(password).digest('hex');
+  private async hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, 10);
   }
 
   private toStorageRole(role: string): string {
@@ -1662,7 +1753,7 @@ export class BranchManagerService {
     }
 
     const temporaryPassword = this.generateTemporaryPassword();
-    const passwordHash = this.hashPassword(temporaryPassword);
+    const passwordHash = await this.hashPassword(temporaryPassword);
 
     const { data: created, error } = await db
       .from('users')
@@ -1681,7 +1772,8 @@ export class BranchManagerService {
       .single();
 
     if (error || !created) {
-      throw new InternalServerErrorException({ message: `Failed to register staff: ${error?.message}`, code: 'STAFF_CREATE_FAILED' });
+      this.logger.error(`Staff registration failed: ${error?.message}`, error?.stack);
+      throw new InternalServerErrorException({ message: 'Failed to register staff. Please try again.', code: 'STAFF_CREATE_FAILED' });
     }
 
     await this.emailService.sendStaffInviteEmail(
@@ -1689,7 +1781,9 @@ export class BranchManagerService {
       temporaryPassword,
     );
 
-    return { id: created.id, email: created.email, temporaryPassword };
+    // Don't return temporaryPassword in API response (security: could be logged by proxies)
+    // The password is sent via email to the user
+    return { id: created.id, email: created.email, emailSent: true };
   }
 
   async getStaffList(branchId: string, filters: { role?: string; status?: string; search?: string }) {
@@ -1789,6 +1883,19 @@ export class BranchManagerService {
       ...v,
       schedules: scheduleMap.get(v.id) ?? [],
     }));
+    return (data ?? []).map((v: any) => {
+      const vaccineSchedules = scheduleMap.get(v.id) ?? [];
+      const firstSchedule = vaccineSchedules[0];
+      return {
+        id: v.code, // Use code as ID for frontend compatibility
+        dbId: v.id,
+        name: v.name,
+        schedule: firstSchedule?.schedule_name || v.description || 'Standard schedule',
+        dueDays: firstSchedule?.due_days_from_birth ?? 0,
+        status: v.status,
+        schedules: vaccineSchedules,
+      };
+    });
   }
 
   async createHqVaccine(dto: {
