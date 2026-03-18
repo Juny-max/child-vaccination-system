@@ -858,6 +858,93 @@ export class BranchManagerService {
     };
   }
 
+  async getHqOverviewStats() {
+    const db = this.databaseService.supabase;
+
+    // Get total active branches
+    const { count: branchCount, error: branchError } = await db
+      .from('branches')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active');
+
+    if (branchError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch branch count: ${branchError.message}`,
+        code: 'HQ_OVERVIEW_BRANCH_COUNT_FAILED',
+      });
+    }
+
+    // Get total active users (excluding parents)
+    const { count: userCount, error: userError } = await db
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active')
+      .neq('role', 'parent');
+
+    if (userError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch user count: ${userError.message}`,
+        code: 'HQ_OVERVIEW_USER_COUNT_FAILED',
+      });
+    }
+
+    // Get total children registered
+    const { count: childrenCount, error: childrenError } = await db
+      .from('children')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
+
+    if (childrenError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch children count: ${childrenError.message}`,
+        code: 'HQ_OVERVIEW_CHILDREN_COUNT_FAILED',
+      });
+    }
+
+    // Get CHWs active in last 24 hours (based on last_login_at)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count: activeChwCount, error: chwError } = await db
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'chw')
+      .eq('status', 'active')
+      .gte('last_login_at', twentyFourHoursAgo);
+
+    if (chwError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch active CHW count: ${chwError.message}`,
+        code: 'HQ_OVERVIEW_CHW_COUNT_FAILED',
+      });
+    }
+
+    // Get total CHWs for percentage calculation
+    const { count: totalChwCount, error: totalChwError } = await db
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'chw')
+      .eq('status', 'active');
+
+    if (totalChwError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch total CHW count: ${totalChwError.message}`,
+        code: 'HQ_OVERVIEW_TOTAL_CHW_COUNT_FAILED',
+      });
+    }
+
+    const chwSyncPercentage = totalChwCount && totalChwCount > 0
+      ? Math.round(((activeChwCount ?? 0) / totalChwCount) * 100)
+      : 0;
+
+    return {
+      totalBranches: branchCount ?? 0,
+      totalUsers: userCount ?? 0,
+      childrenRegistered: childrenCount ?? 0,
+      chwsActiveToday: activeChwCount ?? 0,
+      totalChws: totalChwCount ?? 0,
+      chwSyncPercentage,
+    };
+  }
+
   async createHqBranch(dto: CreateHqBranchDto) {
     const db = this.databaseService.supabase;
     const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
@@ -1789,10 +1876,19 @@ export class BranchManagerService {
       scheduleMap.set(s.vaccine_id, list);
     }
 
-    return (data ?? []).map((v: any) => ({
-      ...v,
-      schedules: scheduleMap.get(v.id) ?? [],
-    }));
+    return (data ?? []).map((v: any) => {
+      const vaccineSchedules = scheduleMap.get(v.id) ?? [];
+      const firstSchedule = vaccineSchedules[0];
+      return {
+        id: v.code, // Use code as ID for frontend compatibility
+        dbId: v.id,
+        name: v.name,
+        schedule: firstSchedule?.schedule_name || v.description || 'Standard schedule',
+        dueDays: firstSchedule?.due_days_from_birth ?? 0,
+        status: v.status,
+        schedules: vaccineSchedules,
+      };
+    });
   }
 
   async createHqVaccine(dto: {

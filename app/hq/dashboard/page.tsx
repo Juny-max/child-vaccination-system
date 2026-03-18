@@ -16,6 +16,7 @@ import {
   Globe2,
   Layers,
   ListChecks,
+  Loader2,
   MapPinned,
   Megaphone,
   ServerCog,
@@ -47,7 +48,7 @@ import {
   updateHqUser,
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
-import { getHqAnalytics } from "@/lib/api/hq-analytics"
+import { getHqAnalytics, getHqOverviewStats, HqOverviewStats } from "@/lib/api/hq-analytics"
 import {
   getHqVaccines,
   createHqVaccine,
@@ -496,12 +497,24 @@ export default function HqDashboardPage() {
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false)
   const [isUsingAnalyticsFallback, setIsUsingAnalyticsFallback] = useState(false)
   const [isUsingUsersFallback, setIsUsingUsersFallback] = useState(false)
+  const [overviewStats, setOverviewStats] = useState<HqOverviewStats | null>(null)
+  const [isOverviewLoading, setIsOverviewLoading] = useState(true)
 
   const [templates, setTemplates] = useState(initialTemplates)
   const [activeTemplateId, setActiveTemplateId] = useState(initialTemplates[0]?.id ?? "")
   const [previewChannel, setPreviewChannel] = useState<PreviewChannel>("sms")
   const [templatePreview, setTemplatePreview] = useState<string>("")
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false)
+  const [isVaccineEditModalOpen, setIsVaccineEditModalOpen] = useState(false)
+  const [editingVaccine, setEditingVaccine] = useState<VaccineConfig | null>(null)
+  const [vaccineEditForm, setVaccineEditForm] = useState({ schedule: "", dueDays: "" })
+  const [isVaccinesLoading, setIsVaccinesLoading] = useState(true)
+  const [isVaccineSaving, setIsVaccineSaving] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [isVaccineDeleting, setIsVaccineDeleting] = useState(false)
+  const [vaccineToDelete, setVaccineToDelete] = useState<VaccineConfig | null>(null)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [archivingVaccineId, setArchivingVaccineId] = useState<string | null>(null)
 
   const [systemStatus, setSystemStatus] = useState(initialSystemStatus)
   const [auditLogs, setAuditLogs] = useState(initialAuditLogs)
@@ -599,6 +612,33 @@ export default function HqDashboardPage() {
 
     setUserName(name || "Admin")
   }, [router])
+
+  // Fetch overview stats for the National Dashboard
+  useEffect(() => {
+    let isMounted = true
+
+    const loadOverviewStats = async () => {
+      setIsOverviewLoading(true)
+      try {
+        const stats = await getHqOverviewStats()
+        if (!isMounted) return
+        setOverviewStats(stats)
+      } catch (error) {
+        console.error("Failed to load HQ overview stats", error)
+        if (!isMounted) return
+        // Keep overviewStats null to indicate failure
+      } finally {
+        if (isMounted) {
+          setIsOverviewLoading(false)
+        }
+      }
+    }
+
+    loadOverviewStats()
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   useEffect(() => {
     if (activeSection !== "analytics") return
@@ -762,6 +802,7 @@ export default function HqDashboardPage() {
     let isMounted = true
 
     const loadVaccines = async () => {
+      setIsVaccinesLoading(true)
       try {
         const remoteVaccines = await getHqVaccines()
         if (!isMounted) return
@@ -772,6 +813,10 @@ export default function HqDashboardPage() {
         console.error("Failed to load HQ vaccines from backend", error)
         if (!isMounted) return
         setSystemMessage("Using local fallback data for vaccines while API is unavailable.")
+      } finally {
+        if (isMounted) {
+          setIsVaccinesLoading(false)
+        }
       }
     }
 
@@ -866,14 +911,22 @@ export default function HqDashboardPage() {
     return branches.find((branch) => branch.id === activeChwBranchId) ?? null
   }, [activeChwBranchId, branches])
 
-  const handleLogout = () => {
-    localStorage.removeItem("accessToken")
-    localStorage.removeItem("authToken")
-    localStorage.removeItem("userRole")
-    localStorage.removeItem("userRoleDetail")
-    localStorage.removeItem("userName")
-    sessionStorage.removeItem("userName")
-    router.push("/")
+  const handleLogout = async () => {
+    setIsLoggingOut(true)
+    try {
+      // Add a small delay to show the spinner
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      localStorage.removeItem("accessToken")
+      localStorage.removeItem("authToken")
+      localStorage.removeItem("userRole")
+      localStorage.removeItem("userRoleDetail")
+      localStorage.removeItem("userName")
+      sessionStorage.removeItem("userName")
+      router.push("/")
+    } finally {
+      // Note: setIsLoggingOut(false) not needed since we're navigating away
+    }
   }
 
   const startEditingBranch = (branch: Branch) => {
@@ -1092,33 +1145,7 @@ export default function HqDashboardPage() {
     if (!vaccineForm.name.trim() || Number.isNaN(parsedDays)) return
 
     try {
-      if (editingVaccineId) {
-        // Update existing vaccine via API (only send fields accepted by backend DTO)
-        await updateHqVaccine(editingVaccineId, {
-          name: vaccineForm.name.trim(),
-        })
-
-        const updatedName = vaccineForm.name.trim()
-        setVaccines((previous) =>
-          previous.map((vaccine) => {
-            if (vaccine.id !== editingVaccineId) return vaccine
-            return {
-              ...vaccine,
-              name: vaccineForm.name.trim(),
-              schedule: vaccineForm.schedule.trim() || "Custom schedule",
-              dueDays: parsedDays,
-            }
-          }),
-        )
-
-        setSystemMessage(`Schedule for "${updatedName}" updated.`)
-        appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
-        setEditingVaccineId(null)
-        setVaccineForm({ name: "", schedule: "", dueDays: "" })
-        return
-      }
-
-      // Create new vaccine via API (only send fields accepted by backend DTO)
+      // Create new vaccine via API
       const generatedCode = vaccineForm.name
         .trim()
         .toLowerCase()
@@ -1131,9 +1158,30 @@ export default function HqDashboardPage() {
         code: generatedCode,
       })
 
-      setVaccines((previous) => [newVaccine as any, ...previous])
+      // Create schedule entry for the new vaccine
+      const vaccineId = (newVaccine as any).id
+      if (vaccineId) {
+        await createHqSchedule({
+          vaccineId: vaccineId,
+          doseNumber: 1,
+          scheduleName: vaccineForm.schedule.trim() || "Single dose",
+          dueDaysFromBirth: parsedDays,
+          isMandatory: true,
+          sortOrder: 0,
+        })
+      }
+
+      // Add to local state with form values for schedule/dueDays
+      const vaccineWithSchedule = {
+        ...newVaccine,
+        id: generatedCode, // Use code as ID for consistency
+        schedule: vaccineForm.schedule.trim() || "Single dose",
+        dueDays: parsedDays,
+      }
+
+      setVaccines((previous) => [vaccineWithSchedule as any, ...previous])
       setVaccineForm({ name: "", schedule: "", dueDays: "" })
-      setSystemMessage(`Vaccine "${newVaccine.name}" added to master list.`)
+      setSystemMessage(`Vaccine "${newVaccine.name}" added to national catalogue.`)
       appendAuditLog({ action: `Added vaccine ${newVaccine.name} to master registry`, category: "Schedule" })
     } catch (error) {
       console.error("Failed to save vaccine", error)
@@ -1599,38 +1647,144 @@ export default function HqDashboardPage() {
   }
 
   const handleVaccineEdit = (vaccine: VaccineConfig) => {
-    setEditingVaccineId(vaccine.id)
-    setVaccineForm({
-      name: vaccine.name,
+    setEditingVaccine(vaccine)
+    setVaccineEditForm({
       schedule: vaccine.schedule,
       dueDays: String(vaccine.dueDays),
     })
-    setSystemMessage(`Editing schedule for ${vaccine.name}.`)
-    appendAuditLog({ action: `Opened schedule editor for ${vaccine.name}`, category: "Schedule" })
-
-    window.setTimeout(() => {
-      vaccineFormPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-    }, 80)
+    setIsVaccineEditModalOpen(true)
   }
 
-  const handleVaccineArchiveToggle = (vaccineId: string) => {
-    let targetName = ""
-    let resultingStatus: VaccineConfig["status"] = "active"
+  const handleVaccineEditSave = async () => {
+    if (!editingVaccine || isVaccineSaving) return
 
-    setVaccines((previous) =>
-      previous.map((vaccine) => {
-        if (vaccine.id !== vaccineId) return vaccine
-        const nextStatus = vaccine.status === "active" ? "archived" : "active"
-        targetName = vaccine.name
-        resultingStatus = nextStatus
-        return { ...vaccine, status: nextStatus }
-      }),
-    )
+    const parsedDays = Number.parseInt(vaccineEditForm.dueDays, 10)
+    if (Number.isNaN(parsedDays)) {
+      setSystemMessage("Please enter a valid number for due days.")
+      return
+    }
 
-    if (targetName) {
-      const action = resultingStatus === "active" ? "Restored" : "Archived"
-      setSystemMessage(`Vaccine "${targetName}" ${resultingStatus === "active" ? "restored to" : "removed from"} the active schedule.`)
-      appendAuditLog({ action: `${action} vaccine ${targetName}`, category: "Schedule" })
+    // Check if values have actually changed
+    const hasChanges =
+      editingVaccine.schedule !== (vaccineEditForm.schedule.trim() || "Custom schedule") ||
+      editingVaccine.dueDays !== parsedDays
+
+    if (!hasChanges) {
+      setSystemMessage("No changes to save.")
+      setIsVaccineEditModalOpen(false)
+      setEditingVaccine(null)
+      return
+    }
+
+    setIsVaccineSaving(true)
+    try {
+      // Update or create schedule in database
+      const vaccineObj = vaccines.find((v) => v.id === editingVaccine.id)
+      const schedules = (vaccineObj as any)?.schedules || []
+      const dbId = (vaccineObj as any)?.dbId
+
+      if (schedules.length > 0 && schedules[0].id) {
+        // Update existing schedule
+        await updateHqSchedule(schedules[0].id, {
+          scheduleName: vaccineEditForm.schedule.trim() || "Custom schedule",
+          dueDaysFromBirth: parsedDays,
+        })
+      } else if (dbId) {
+        // Create new schedule for this vaccine
+        await createHqSchedule({
+          vaccineId: dbId,
+          doseNumber: 1,
+          scheduleName: vaccineEditForm.schedule.trim() || "Custom schedule",
+          dueDaysFromBirth: parsedDays,
+          isMandatory: true,
+          sortOrder: 0,
+        })
+      }
+
+      // Update local state
+      setVaccines((previous) =>
+        previous.map((vaccine) => {
+          if (vaccine.id !== editingVaccine.id) return vaccine
+          return {
+            ...vaccine,
+            schedule: vaccineEditForm.schedule.trim() || "Custom schedule",
+            dueDays: parsedDays,
+          }
+        }),
+      )
+
+      setSystemMessage(`Timing for "${editingVaccine.name}" updated to ${parsedDays} days.`)
+      appendAuditLog({ action: `Updated timing for ${editingVaccine.name} to ${parsedDays} days`, category: "Schedule" })
+      setIsVaccineEditModalOpen(false)
+      setEditingVaccine(null)
+    } catch (error) {
+      console.error("Failed to update vaccine timing", error)
+      setSystemMessage("Failed to update vaccine timing. Please try again.")
+    } finally {
+      setIsVaccineSaving(false)
+    }
+  }
+
+  const handleVaccineArchiveToggle = async (vaccineId: string) => {
+    const vaccine = vaccines.find((v) => v.id === vaccineId)
+    if (!vaccine) return
+
+    const nextStatus = vaccine.status === "active" ? "archived" : "active"
+    const dbId = (vaccine as any)?.dbId
+
+    try {
+      // Update status in database
+      if (dbId) {
+        await updateHqVaccine(dbId, { status: nextStatus })
+      }
+
+      // Update local state
+      setVaccines((previous) =>
+        previous.map((v) => {
+          if (v.id !== vaccineId) return v
+          return { ...v, status: nextStatus }
+        }),
+      )
+
+      const action = nextStatus === "active" ? "Restored" : "Archived"
+      setSystemMessage(`Vaccine "${vaccine.name}" ${nextStatus === "active" ? "restored to" : "removed from"} the active schedule.`)
+      appendAuditLog({ action: `${action} vaccine ${vaccine.name}`, category: "Schedule" })
+    } catch (error) {
+      console.error("Failed to update vaccine status", error)
+      setSystemMessage("Failed to update vaccine status. Please try again.")
+    }
+  }
+
+  const handleVaccineDelete = (vaccine: VaccineConfig) => {
+    setVaccineToDelete(vaccine)
+    setIsDeleteModalOpen(true)
+  }
+
+  const confirmVaccineDelete = async () => {
+    if (!vaccineToDelete) return
+
+    const vaccineId = vaccineToDelete.id
+    const dbId = (vaccineToDelete as any)?.dbId
+
+    setIsVaccineDeleting(true)
+    try {
+      // Delete from database
+      if (dbId) {
+        await updateHqVaccine(dbId, { status: "discontinued" })
+      }
+
+      // Remove from local state
+      setVaccines((previous) => previous.filter((v) => v.id !== vaccineId))
+
+      setSystemMessage(`Vaccine "${vaccineToDelete.name}" permanently deleted.`)
+      appendAuditLog({ action: `Deleted vaccine ${vaccineToDelete.name}`, category: "Schedule" })
+      setIsDeleteModalOpen(false)
+      setVaccineToDelete(null)
+    } catch (error) {
+      console.error("Failed to delete vaccine", error)
+      setSystemMessage("Failed to delete vaccine. Please try again.")
+    } finally {
+      setIsVaccineDeleting(false)
     }
   }
 
@@ -1661,8 +1815,10 @@ export default function HqDashboardPage() {
             <CardDescription>Active healthcare facilities onboarded.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">128</p>
-            <p className="text-xs text-muted-foreground mt-1">+6 branches added this quarter</p>
+            <p className="text-3xl font-semibold">
+              {isOverviewLoading ? "..." : (overviewStats?.totalBranches ?? branches.length).toLocaleString()}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">Active branches in the system</p>
           </CardContent>
         </Card>
         <Card>
@@ -1673,8 +1829,10 @@ export default function HqDashboardPage() {
             <CardDescription>Managers, Nurses, CHWs, and Officers.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">9,842</p>
-            <p className="text-xs text-muted-foreground mt-1">+412 activated last 30 days</p>
+            <p className="text-3xl font-semibold">
+              {isOverviewLoading ? "..." : (overviewStats?.totalUsers ?? users.length).toLocaleString()}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">Active staff accounts</p>
           </CardContent>
         </Card>
         <Card>
@@ -1685,8 +1843,10 @@ export default function HqDashboardPage() {
             <CardDescription>Nationwide vaccination journeys created.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">1,234,550</p>
-            <p className="text-xs text-muted-foreground mt-1">+18,904 this month</p>
+            <p className="text-3xl font-semibold">
+              {isOverviewLoading ? "..." : (overviewStats?.childrenRegistered ?? 0).toLocaleString()}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">Children in vaccination program</p>
           </CardContent>
         </Card>
         <Card>
@@ -1697,8 +1857,12 @@ export default function HqDashboardPage() {
             <CardDescription>Devices synced in the last 24 hours.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">1,104</p>
-            <p className="text-xs text-muted-foreground mt-1">82% of total CHWs synced so far today</p>
+            <p className="text-3xl font-semibold">
+              {isOverviewLoading ? "..." : (overviewStats?.chwsActiveToday ?? 0).toLocaleString()}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {isOverviewLoading ? "Loading..." : `${overviewStats?.chwSyncPercentage ?? 0}% of ${overviewStats?.totalChws ?? 0} total CHWs`}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -2180,12 +2344,10 @@ export default function HqDashboardPage() {
       <Card ref={vaccineFormPanelRef} className="border-primary/40">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Shield className="h-5 w-5 text-primary" /> {editingVaccineId ? "Edit Vaccine Schedule" : "Master Vaccine Registry"}
+            <Shield className="h-5 w-5 text-primary" /> Add New Vaccine Type
           </CardTitle>
           <CardDescription>
-            {editingVaccineId
-              ? "Update vaccine name and timing, then save changes."
-              : "Centralise vaccine metadata before syncing to branches."}
+            Register a new vaccine type in the national system (e.g., for new diseases or vaccine formulations).
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -2221,14 +2383,9 @@ export default function HqDashboardPage() {
                 required
               />
             </div>
-            <div className="md:col-span-3 flex justify-end gap-2">
-              {editingVaccineId ? (
-                <Button type="button" variant="ghost" onClick={cancelVaccineEditing}>
-                  Cancel edit
-                </Button>
-              ) : null}
+            <div className="md:col-span-3 flex justify-end">
               <Button type="submit" className="gap-2">
-                <CheckCircle2 className="h-4 w-4" /> {editingVaccineId ? "Save schedule" : "Add vaccine to schedule"}
+                <CheckCircle2 className="h-4 w-4" /> Add vaccine to schedule
               </Button>
             </div>
           </form>
@@ -2237,41 +2394,216 @@ export default function HqDashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>National Schedule Overview</CardTitle>
-          <CardDescription>Active vaccines synchronised to branch systems.</CardDescription>
+          <CardTitle>National Vaccination Catalogue</CardTitle>
+          <CardDescription>Vaccine types and timing configured for the national immunization program.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {vaccines.map((vaccine) => {
-            const isArchived = vaccine.status === "archived"
-            return (
-              <div key={vaccine.id} className="rounded-lg border border-border bg-background p-4">
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-base font-semibold text-foreground">{vaccine.name}</p>
-                    <p className="text-sm text-muted-foreground">{vaccine.schedule}</p>
+          {isVaccinesLoading ? (
+            // Loading skeleton
+            <>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="rounded-lg border border-border bg-background p-4 animate-pulse">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-2 flex-1">
+                      <div className="h-5 bg-muted rounded w-1/3"></div>
+                      <div className="h-4 bg-muted rounded w-1/4"></div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <div className="h-6 bg-muted rounded w-36"></div>
+                      <div className="h-6 bg-muted rounded w-16"></div>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">Due {vaccine.dueDays} days post birth</Badge>
-                    <Badge variant={isArchived ? "outline" : "secondary"}>{isArchived ? "Archived" : "Active"}</Badge>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="h-8 bg-muted rounded w-24"></div>
+                    <div className="h-8 bg-muted rounded w-20"></div>
                   </div>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => handleVaccineEdit(vaccine)}>
-                    Edit timing
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={isArchived ? "ghost" : "outline"}
-                    onClick={() => handleVaccineArchiveToggle(vaccine.id)}
-                  >
-                    {isArchived ? "Restore" : "Archive"}
-                  </Button>
+              ))}
+            </>
+          ) : vaccines.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Shield className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>No vaccines configured yet.</p>
+              <p className="text-sm">Add your first vaccine type using the form above.</p>
+            </div>
+          ) : (
+            vaccines.map((vaccine) => {
+              const isArchived = vaccine.status === "archived"
+              return (
+                <div key={vaccine.id} className="rounded-lg border border-border bg-background p-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-base font-semibold text-foreground">{vaccine.name}</p>
+                      <p className="text-sm text-muted-foreground">{vaccine.schedule}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="secondary">Due {vaccine.dueDays} days post birth</Badge>
+                      <Badge variant={isArchived ? "outline" : "secondary"}>{isArchived ? "Archived" : "Active"}</Badge>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={() => handleVaccineEdit(vaccine)}>
+                      Edit timing
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={isArchived ? "ghost" : "outline"}
+                      onClick={() => handleVaccineArchiveToggle(vaccine.id)}
+                      disabled={archivingVaccineId === vaccine.id}
+                    >
+                      {archivingVaccineId === vaccine.id ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" /> {isArchived ? "Restoring..." : "Archiving..."}
+                        </>
+                      ) : (
+                        <>{isArchived ? "Restore" : "Archive"}</>
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleVaccineDelete(vaccine)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            )
-          })}
+              )
+            })
+          )}
         </CardContent>
       </Card>
+
+      {isVaccineEditModalOpen && editingVaccine && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader className="flex flex-row items-center justify-between border-b">
+              <div>
+                <CardTitle>Edit Timing</CardTitle>
+                <CardDescription>{editingVaccine.name}</CardDescription>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsVaccineEditModalOpen(false)
+                  setEditingVaccine(null)
+                }}
+                disabled={isVaccineSaving}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4 p-6">
+              <div className="space-y-2">
+                <Label htmlFor="edit-schedule">Schedule Name</Label>
+                <Input
+                  id="edit-schedule"
+                  placeholder="e.g. 9 months"
+                  value={vaccineEditForm.schedule}
+                  onChange={(e) => setVaccineEditForm((prev) => ({ ...prev, schedule: e.target.value }))}
+                  disabled={isVaccineSaving}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-due-days">Due Days (from birth)</Label>
+                <Input
+                  id="edit-due-days"
+                  type="number"
+                  placeholder="e.g. 270"
+                  value={vaccineEditForm.dueDays}
+                  onChange={(e) => setVaccineEditForm((prev) => ({ ...prev, dueDays: e.target.value }))}
+                  disabled={isVaccineSaving}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Current: {editingVaccine.dueDays} days ({Math.round(editingVaccine.dueDays / 30)} months)
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsVaccineEditModalOpen(false)
+                    setEditingVaccine(null)
+                  }}
+                  disabled={isVaccineSaving}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handleVaccineEditSave} disabled={isVaccineSaving}>
+                  {isVaccineSaving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 mr-2" /> Save Changes
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && vaccineToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader className="pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-10 h-10 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center">
+                  <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Delete Vaccine</CardTitle>
+                  <CardDescription className="text-sm text-muted-foreground">
+                    This action cannot be undone
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <p className="text-sm text-red-800 dark:text-red-200">
+                  Are you sure you want to permanently delete <span className="font-semibold">"{vaccineToDelete.name}"</span>?
+                </p>
+                <p className="text-xs text-red-600 dark:text-red-300 mt-1">
+                  This will remove the vaccine from all schedules and cannot be undone.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsDeleteModalOpen(false)
+                    setVaccineToDelete(null)
+                  }}
+                  disabled={isVaccineDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={confirmVaccineDelete}
+                  disabled={isVaccineDeleting}
+                >
+                  {isVaccineDeleting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-4 w-4 mr-2" /> Delete Permanently
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 
@@ -2662,8 +2994,14 @@ export default function HqDashboardPage() {
               <span className="text-sm text-muted-foreground">Welcome, {userName}</span>
               <span className="text-xs text-muted-foreground/80">Role: HQ Admin</span>
             </div>
-            <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
-              Logout
+            <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2" disabled={isLoggingOut}>
+              {isLoggingOut ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Logging out...
+                </>
+              ) : (
+                "Logout"
+              )}
             </Button>
           </div>
         </div>

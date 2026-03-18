@@ -15,6 +15,15 @@ export interface HqAnalyticsResponse {
   trend: HqAnalyticsTrendPoint[];
 }
 
+export interface HqOverviewStats {
+  totalBranches: number;
+  totalUsers: number;
+  childrenRegistered: number;
+  chwsActiveToday: number;
+  totalChws: number;
+  chwSyncPercentage: number;
+}
+
 export interface GetHqAnalyticsParams {
   region?: string;
   branch?: string;
@@ -30,4 +39,8 @@ export async function getHqAnalytics(params: GetHqAnalyticsParams = {}): Promise
 
   const suffix = query.toString() ? `?${query.toString()}` : '';
   return apiRequest<HqAnalyticsResponse>(`/hq-admin/analytics${suffix}`);
+}
+
+export async function getHqOverviewStats(): Promise<HqOverviewStats> {
+  return apiRequest<HqOverviewStats>('/hq-admin/analytics/overview');
 }
