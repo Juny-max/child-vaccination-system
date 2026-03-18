@@ -482,6 +482,7 @@ export default function HqDashboardPage() {
 
   const [vaccines, setVaccines] = useState(initialVaccines)
   const [vaccineForm, setVaccineForm] = useState({
+    code: "",
     name: "",
     schedule: "",
     dueDays: "",
@@ -1089,7 +1090,7 @@ export default function HqDashboardPage() {
   const handleAddVaccine = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const parsedDays = Number.parseInt(vaccineForm.dueDays, 10)
-    if (!vaccineForm.name.trim() || Number.isNaN(parsedDays)) return
+    if ((!editingVaccineId && !vaccineForm.code.trim()) || !vaccineForm.name.trim() || Number.isNaN(parsedDays)) return
 
     try {
       if (editingVaccineId) {
@@ -1114,17 +1115,18 @@ export default function HqDashboardPage() {
         setSystemMessage(`Schedule for "${updatedName}" updated.`)
         appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
         setEditingVaccineId(null)
-        setVaccineForm({ name: "", schedule: "", dueDays: "" })
+        setVaccineForm({ code: "", name: "", schedule: "", dueDays: "" })
         return
       }
 
       // Create new vaccine via API (only send fields accepted by backend DTO)
       const newVaccine = await createHqVaccine({
+        code: vaccineForm.code.trim(),
         name: vaccineForm.name.trim(),
       })
 
       setVaccines((previous) => [newVaccine as any, ...previous])
-      setVaccineForm({ name: "", schedule: "", dueDays: "" })
+      setVaccineForm({ code: "", name: "", schedule: "", dueDays: "" })
       setSystemMessage(`Vaccine "${newVaccine.name}" added to master list.`)
       appendAuditLog({ action: `Added vaccine ${newVaccine.name} to master registry`, category: "Schedule" })
     } catch (error) {
@@ -1586,13 +1588,14 @@ export default function HqDashboardPage() {
 
   const cancelVaccineEditing = () => {
     setEditingVaccineId(null)
-    setVaccineForm({ name: "", schedule: "", dueDays: "" })
+    setVaccineForm({ code: "", name: "", schedule: "", dueDays: "" })
     setSystemMessage("Vaccine schedule editing cancelled.")
   }
 
   const handleVaccineEdit = (vaccine: VaccineConfig) => {
     setEditingVaccineId(vaccine.id)
     setVaccineForm({
+      code: "",
       name: vaccine.name,
       schedule: vaccine.schedule,
       dueDays: String(vaccine.dueDays),
@@ -2182,6 +2185,18 @@ export default function HqDashboardPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleAddVaccine} className="grid gap-4 md:grid-cols-3">
+            {!editingVaccineId ? (
+              <div className="space-y-2">
+                <Label htmlFor="vaccineCode">Vaccine code</Label>
+                <Input
+                  id="vaccineCode"
+                  placeholder="e.g. VAC-IPV1"
+                  value={vaccineForm.code}
+                  onChange={(event) => setVaccineForm((prev) => ({ ...prev, code: event.target.value.toUpperCase() }))}
+                  required
+                />
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="vaccineName">Vaccine name</Label>
               <Input
