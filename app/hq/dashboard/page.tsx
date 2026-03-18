@@ -1093,11 +1093,9 @@ export default function HqDashboardPage() {
 
     try {
       if (editingVaccineId) {
-        // Update existing vaccine via API
+        // Update existing vaccine via API (only send fields accepted by backend DTO)
         await updateHqVaccine(editingVaccineId, {
           name: vaccineForm.name.trim(),
-          schedule: vaccineForm.schedule.trim() || "Custom schedule",
-          dueDays: parsedDays,
         })
 
         const updatedName = vaccineForm.name.trim()
@@ -1120,11 +1118,9 @@ export default function HqDashboardPage() {
         return
       }
 
-      // Create new vaccine via API
+      // Create new vaccine via API (only send fields accepted by backend DTO)
       const newVaccine = await createHqVaccine({
         name: vaccineForm.name.trim(),
-        schedule: vaccineForm.schedule.trim() || "Custom schedule",
-        dueDays: parsedDays,
       })
 
       setVaccines((previous) => [newVaccine as any, ...previous])
