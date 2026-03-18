@@ -26,15 +26,23 @@ export class AuthService {
   }
 
   /**
+   * Normalize email used as a key for rate limiting
+   */
+  private normalizeEmailKey(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
+  /**
    * Check if an email is rate limited
    */
   private isRateLimited(email: string): boolean {
-    const attempt = this.loginAttempts.get(email);
+    const key = this.normalizeEmailKey(email);
+    const attempt = this.loginAttempts.get(key);
     if (!attempt) return false;
 
     const timeSinceLastAttempt = Date.now() - attempt.lastAttempt;
     if (timeSinceLastAttempt > this.LOCKOUT_TIME_MS) {
-      this.loginAttempts.delete(email);
+      this.loginAttempts.delete(key);
       return false;
     }
 
@@ -45,17 +53,28 @@ export class AuthService {
    * Record a failed login attempt
    */
   private recordFailedAttempt(email: string): void {
-    const attempt = this.loginAttempts.get(email) || { count: 0, lastAttempt: Date.now() };
+    const key = this.normalizeEmailKey(email);
+    const now = Date.now();
+
+    // Clean up expired entries to avoid unbounded growth
+    for (const [storedKey, attempt] of this.loginAttempts) {
+      if (now - attempt.lastAttempt > this.LOCKOUT_TIME_MS) {
+        this.loginAttempts.delete(storedKey);
+      }
+    }
+
+    const attempt = this.loginAttempts.get(key) || { count: 0, lastAttempt: now };
     attempt.count += 1;
-    attempt.lastAttempt = Date.now();
-    this.loginAttempts.set(email, attempt);
+    attempt.lastAttempt = now;
+    this.loginAttempts.set(key, attempt);
   }
 
   /**
    * Clear login attempts after successful login
    */
   private clearLoginAttempts(email: string): void {
-    this.loginAttempts.delete(email);
+    const key = this.normalizeEmailKey(email);
+    this.loginAttempts.delete(key);
   }
 
   /**
