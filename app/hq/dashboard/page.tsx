@@ -1119,8 +1119,16 @@ export default function HqDashboardPage() {
       }
 
       // Create new vaccine via API (only send fields accepted by backend DTO)
+      const generatedCode = vaccineForm.name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 32)
+
       const newVaccine = await createHqVaccine({
         name: vaccineForm.name.trim(),
+        code: generatedCode,
       })
 
       setVaccines((previous) => [newVaccine as any, ...previous])

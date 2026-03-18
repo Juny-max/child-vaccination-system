@@ -1768,11 +1768,15 @@ export class BranchManagerService {
 
     // Attach schedule rows for each vaccine
     const vaccineIds = (data ?? []).map((v: any) => v.id);
-    const { data: schedules } = await db
+    const { data: schedules, error: schedulesError } = await db
       .from('vaccination_schedules')
       .select('id, vaccine_id, dose_number, schedule_name, due_days_from_birth, min_age_days, max_age_days, is_mandatory, sort_order')
       .in('vaccine_id', vaccineIds.length ? vaccineIds : ['__none__'])
       .order('sort_order', { ascending: true });
+    if (schedulesError) {
+      this.logger.error('Failed to fetch vaccination schedules', schedulesError);
+      throw new InternalServerErrorException('Failed to fetch vaccination schedules');
+    }
 
     const scheduleMap = new Map<string, any[]>();
     for (const s of schedules ?? []) {

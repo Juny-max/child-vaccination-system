@@ -1,7 +1,9 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
+import LRUCache from 'lru-cache';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto, UserRole } from './dto';
@@ -11,7 +13,7 @@ export class AuthService {
   private readonly jwtService: JwtService;
   private readonly databaseService: DatabaseService;
   private readonly emailService: EmailService;
-  private readonly loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+  private readonly loginAttempts: LRUCache<string, { count: number; lastAttempt: number }>;
   private readonly MAX_LOGIN_ATTEMPTS = 5;
   private readonly LOCKOUT_TIME_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -23,6 +25,10 @@ export class AuthService {
     this.jwtService = jwtService;
     this.databaseService = databaseService;
     this.emailService = emailService;
+    this.loginAttempts = new LRUCache<string, { count: number; lastAttempt: number }>({
+      max: 10000,
+      ttl: this.LOCKOUT_TIME_MS,
+    });
   }
 
   /**
@@ -40,12 +46,6 @@ export class AuthService {
     const attempt = this.loginAttempts.get(key);
     if (!attempt) return false;
 
-    const timeSinceLastAttempt = Date.now() - attempt.lastAttempt;
-    if (timeSinceLastAttempt > this.LOCKOUT_TIME_MS) {
-      this.loginAttempts.delete(key);
-      return false;
-    }
-
     return attempt.count >= this.MAX_LOGIN_ATTEMPTS;
   }
 
@@ -56,14 +56,11 @@ export class AuthService {
     const key = this.normalizeEmailKey(email);
     const now = Date.now();
 
-    // Clean up expired entries to avoid unbounded growth
-    for (const [storedKey, attempt] of this.loginAttempts) {
-      if (now - attempt.lastAttempt > this.LOCKOUT_TIME_MS) {
-        this.loginAttempts.delete(storedKey);
-      }
-    }
+    const existing = this.loginAttempts.get(key);
+    const attempt = existing
+      ? { ...existing }
+      : { count: 0, lastAttempt: now };
 
-    const attempt = this.loginAttempts.get(key) || { count: 0, lastAttempt: now };
     attempt.count += 1;
     attempt.lastAttempt = now;
     this.loginAttempts.set(key, attempt);
@@ -116,8 +113,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Verify password
-    const isPasswordValid = await this.verifyPassword(password, user.password_hash);
+    // Verify password (auto-upgrades SHA-256 to bcrypt on success)
+    const isPasswordValid = await this.verifyPassword(password, user.password_hash, user.id);
     
     if (!isPasswordValid) {
       // Log failed login attempt - invalid password
@@ -708,8 +705,8 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    // Verify current password
-    const isPasswordValid = await this.verifyPassword(currentPassword, user.password_hash);
+    // Verify current password (auto-upgrades SHA-256 to bcrypt on success)
+    const isPasswordValid = await this.verifyPassword(currentPassword, user.password_hash, userId);
     
     if (!isPasswordValid) {
       // Log failed password change attempt
