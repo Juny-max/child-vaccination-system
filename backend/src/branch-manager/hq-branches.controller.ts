@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -56,5 +57,10 @@ export class HqBranchesController {
     @Body() dto: UpdateHqBranchChwsDto,
   ) {
     return this.branchManagerService.updateHqBranchChws(code, dto.assignedChws);
+  }
+
+  @Delete(':code')
+  async deleteBranch(@Param('code') code: string) {
+    return this.branchManagerService.deleteHqBranch(code);
   }
 }

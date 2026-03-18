@@ -1,4 +1,7 @@
-import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
+import LRUCache from 'lru-cache';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
@@ -7,13 +10,69 @@ import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto, U
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
+  private readonly jwtService: JwtService;
+  private readonly databaseService: DatabaseService;
+  private readonly emailService: EmailService;
+  private readonly loginAttempts: LRUCache<string, { count: number; lastAttempt: number }>;
+  private readonly MAX_LOGIN_ATTEMPTS = 5;
+  private readonly LOCKOUT_TIME_MS = 15 * 60 * 1000; // 15 minutes
 
   constructor(
-    private readonly jwtService: JwtService,
-    private readonly databaseService: DatabaseService,
-    private readonly emailService: EmailService,
-  ) {}
+    jwtService: JwtService,
+    databaseService: DatabaseService,
+    emailService: EmailService,
+  ) {
+    this.jwtService = jwtService;
+    this.databaseService = databaseService;
+    this.emailService = emailService;
+    this.loginAttempts = new LRUCache<string, { count: number; lastAttempt: number }>({
+      max: 10000,
+      ttl: this.LOCKOUT_TIME_MS,
+    });
+  }
+
+  /**
+   * Normalize email used as a key for rate limiting
+   */
+  private normalizeEmailKey(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
+  /**
+   * Check if an email is rate limited
+   */
+  private isRateLimited(email: string): boolean {
+    const key = this.normalizeEmailKey(email);
+    const attempt = this.loginAttempts.get(key);
+    if (!attempt) return false;
+
+    return attempt.count >= this.MAX_LOGIN_ATTEMPTS;
+  }
+
+  /**
+   * Record a failed login attempt
+   */
+  private recordFailedAttempt(email: string): void {
+    const key = this.normalizeEmailKey(email);
+    const now = Date.now();
+
+    const existing = this.loginAttempts.get(key);
+    const attempt = existing
+      ? { ...existing }
+      : { count: 0, lastAttempt: now };
+
+    attempt.count += 1;
+    attempt.lastAttempt = now;
+    this.loginAttempts.set(key, attempt);
+  }
+
+  /**
+   * Clear login attempts after successful login
+   */
+  private clearLoginAttempts(email: string): void {
+    const key = this.normalizeEmailKey(email);
+    this.loginAttempts.delete(key);
+  }
 
   /**
    * Validate user credentials and generate JWT token
@@ -21,6 +80,11 @@ export class AuthService {
    */
   async login(loginDto: LoginDto): Promise<AuthResponseDto> {
     const { email, password, userType } = loginDto;
+
+    // Rate limiting check
+    if (this.isRateLimited(email)) {
+      throw new UnauthorizedException('Too many login attempts. Please try again later.');
+    }
 
     // Get user from database
     const user = await this.databaseService.getUserByEmail(email);
@@ -45,6 +109,7 @@ export class AuthService {
       } catch (auditError) {
         console.warn('Audit log failed (non-critical):', auditError);
       }
+      this.recordFailedAttempt(email);
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -71,6 +136,7 @@ export class AuthService {
       } catch (auditError) {
         console.warn('Audit log failed (non-critical):', auditError);
       }
+      this.recordFailedAttempt(email);
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -140,6 +206,9 @@ export class AuthService {
     } catch (auditError) {
       console.warn('Audit log failed (non-critical):', auditError);
     }
+
+    // Clear login attempts after successful login
+    this.clearLoginAttempts(email);
 
     return {
       accessToken,
@@ -407,71 +476,28 @@ export class AuthService {
   }
 
   /**
-   * Hash password using bcrypt with 10 salt rounds
-   * All new passwords use bcrypt for security
+   * Hash password using bcrypt
    */
   private async hashPassword(password: string): Promise<string> {
     return bcrypt.hash(password, 10);
   }
 
   /**
-   * Legacy SHA-256 hash (for old passwords only)
-   * Used during migration period to verify existing passwords
+   * Verify password against stored hash
+   * Supports both bcrypt (new) and SHA-256 (legacy seed data)
    */
-  private async hashPasswordLegacy(password: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  /**
-   * Detect hash type based on format
-   * SHA-256: 64 hex characters
-   * bcrypt: starts with $2a$, $2b$, or $2y$
-   */
-  private detectHashType(hash: string): 'bcrypt' | 'sha256' {
-    if (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$')) {
-      return 'bcrypt';
-    }
-    if (hash.length === 64 && /^[a-f0-9]+$/.test(hash)) {
-      return 'sha256';
-    }
-    return 'sha256'; // Default fallback
-  }
-
-  /**
-   * Verify password against stored hash (supports both SHA-256 and bcrypt)
-   * Automatically upgrades SHA-256 passwords to bcrypt on successful login
-   */
-  private async verifyPassword(
-    password: string,
-    storedHash: string,
-    userId?: string
-  ): Promise<boolean> {
-    const hashType = this.detectHashType(storedHash);
-
-    if (hashType === 'bcrypt') {
-      // Modern bcrypt hash - verify normally
-      return bcrypt.compare(password, storedHash);
+  private async verifyPassword(password: string, storedHash: string): Promise<boolean> {
+    // Try bcrypt first (for new user passwords)
+    try {
+      const isBcryptValid = await bcrypt.compare(password, storedHash);
+      if (isBcryptValid) return true;
+    } catch (error) {
+      // Not a bcrypt hash, continue to SHA-256
     }
 
-    // Legacy SHA-256 hash - verify using old method
-    const legacyHash = await this.hashPasswordLegacy(password);
-    const isValid = legacyHash === storedHash;
-
-    // Auto-upgrade to bcrypt if password is correct
-    if (isValid && userId) {
-      const newHash = await this.hashPassword(password);
-      await this.databaseService.supabase
-        .from('users')
-        .update({ password_hash: newHash })
-        .eq('id', userId);
-      this.logger.log(`Auto-upgraded password to bcrypt for user ${userId}`);
-    }
-
-    return isValid;
+    // Fall back to SHA-256 for legacy passwords (seed data)
+    const sha256Hash = createHash('sha256').update(password).digest('hex');
+    return sha256Hash === storedHash;
   }
 
   /**

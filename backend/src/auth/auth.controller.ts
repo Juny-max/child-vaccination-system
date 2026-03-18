@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Request, Response, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, Response, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
 import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto, AuthResponseDto, UserProfileDto, ChangePasswordDto, AdminLoginDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
@@ -194,10 +194,17 @@ export class AuthController {
   async forgotPassword(
     @Body() forgotPasswordDto: ForgotPasswordDto,
     @Request() req: ExpressRequest,
-  ): Promise<{ success: boolean; message: string; emailFound: boolean }> {
+  ): Promise<{ success: boolean; message: string }> {
     // Use the actual origin of the request so the reset link points to the right deployment
     const baseUrl = (req.headers.origin as string) || process.env.FRONTEND_URL || 'http://localhost:3000';
-    return this.authService.forgotPassword(forgotPasswordDto.email, baseUrl);
+    try {
+      await this.authService.forgotPassword(forgotPasswordDto.email, baseUrl);
+    } catch (error) {
+      // Don't expose whether email exists or not - return same response
+      console.warn('Password reset attempt:', error instanceof Error ? error.message : 'Unknown error');
+    }
+    // Always return success to prevent email enumeration
+    return { success: true, message: 'If an account exists with this email, you will receive password reset instructions shortly.' };
   }
 
   /**
@@ -211,6 +218,12 @@ export class AuthController {
   async resetPassword(
     @Body() resetPasswordDto: ResetPasswordDto
   ): Promise<{ success: boolean; message: string }> {
-    return this.authService.resetPassword(resetPasswordDto.token, resetPasswordDto.newPassword);
+    try {
+      return await this.authService.resetPassword(resetPasswordDto.token, resetPasswordDto.newPassword);
+    } catch (error) {
+      // Log the actual error but return generic message to prevent schema leakage
+      console.warn('Password reset error:', error instanceof Error ? error.message : 'Unknown error');
+      throw new BadRequestException('Invalid or expired reset token.');
+    }
   }
 }

@@ -25,3 +25,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# backups
+backend/backups/
+
+# test reports
+backend/test-report-*.txt

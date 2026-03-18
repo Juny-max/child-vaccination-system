@@ -11,6 +11,9 @@ import { BranchManagerModule } from './branch-manager/branch-manager.module';
 import { ChatbotController } from './common/chatbot.controller';
 import { ChatbotService } from './common/chatbot.service';
 import { HealthController } from './common/health.controller';
+import { BackupController } from './common/backup.controller';
+import { BackupService } from './common/backup.service';
+import { EmailService } from './common/email.service';
 import { SmsService } from './common/sms.service';
 import { VaccinationSchedulerService } from './common/vaccination-scheduler.service';
 
@@ -42,7 +45,7 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
     // HqAdminModule,       // Julius will implement
     // DataOfficerModule,   // Julius will implement
   ],
-  controllers: [ChatbotController, HealthController],
-  providers: [ChatbotService, SmsService, VaccinationSchedulerService],
+  controllers: [ChatbotController, HealthController, BackupController],
+  providers: [ChatbotService, BackupService, EmailService, SmsService, VaccinationSchedulerService],
 })
 export class AppModule {}

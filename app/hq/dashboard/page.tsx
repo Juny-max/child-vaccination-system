@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import DOMPurify from "dompurify"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import {
@@ -47,6 +48,28 @@ import {
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
 import { getHqAnalytics } from "@/lib/api/hq-analytics"
+import {
+  getHqVaccines,
+  createHqVaccine,
+  updateHqVaccine,
+  getHqSchedules,
+  createHqSchedule,
+  updateHqSchedule,
+  deleteHqSchedule,
+} from "@/lib/api/hq-vaccines"
+import {
+  getHqCatchmentAreas,
+  createHqCatchmentArea,
+  updateHqCatchmentArea,
+  deleteHqCatchmentArea,
+} from "@/lib/api/hq-catchment-areas"
+import {
+  getHqSystemSettings,
+  createHqSystemSetting,
+  updateHqSystemSetting,
+} from "@/lib/api/hq-system-settings"
+import { getHqAuditLogs } from "@/lib/api/hq-audit-logs"
+import { API_BASE_URL, getAuthHeaders } from "@/lib/api/config"
 
 const SECTIONS = [
   { id: "overview", label: "National Dashboard", icon: Activity },
@@ -424,6 +447,10 @@ const previewTemplateValues: Record<string, string> = {
   facilityName: "Korle Bu Teaching Hospital",
 }
 
+const sanitizeHtml = (html: string): string =>
+  DOMPurify.sanitize(html)
+    .replace(/javascript\s*:/gi, "")
+
 const compileTemplatePreview = (templateContent: string) =>
   templateContent.replace(/\{([a-zA-Z0-9_]+)\}/g, (_fullMatch, token: string) => {
     const replacement = previewTemplateValues[token]
@@ -474,6 +501,7 @@ export default function HqDashboardPage() {
   const [activeTemplateId, setActiveTemplateId] = useState(initialTemplates[0]?.id ?? "")
   const [previewChannel, setPreviewChannel] = useState<PreviewChannel>("sms")
   const [templatePreview, setTemplatePreview] = useState<string>("")
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false)
 
   const [systemStatus, setSystemStatus] = useState(initialSystemStatus)
   const [auditLogs, setAuditLogs] = useState(initialAuditLogs)
@@ -729,6 +757,97 @@ export default function HqDashboardPage() {
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
 
+  // Load vaccines on mount
+  useEffect(() => {
+    let isMounted = true
+
+    const loadVaccines = async () => {
+      try {
+        const remoteVaccines = await getHqVaccines()
+        if (!isMounted) return
+        if (remoteVaccines && remoteVaccines.length > 0) {
+          setVaccines(remoteVaccines as any)
+        }
+      } catch (error) {
+        console.error("Failed to load HQ vaccines from backend", error)
+        if (!isMounted) return
+        setSystemMessage("Using local fallback data for vaccines while API is unavailable.")
+      }
+    }
+
+    loadVaccines()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  // Load system settings and audit logs on mount
+  useEffect(() => {
+    let isMounted = true
+
+    const loadSystemData = async () => {
+      try {
+        const [settingsData, auditLogsData] = await Promise.all([
+          getHqSystemSettings(),
+          getHqAuditLogs({ limit: 50 }),
+        ])
+
+        if (!isMounted) return
+
+        if (settingsData && settingsData.length > 0) {
+          // Transform system settings into system status format
+          const statusMap = new Map<string, any>()
+          settingsData.forEach((setting) => {
+            statusMap.set(setting.id, setting)
+          })
+
+          const transformedStatus = [
+            {
+              id: "api-service",
+              name: "API Service",
+              status: statusMap.get("api_status")?.value === "operational" ? "operational" : "degraded",
+              detail: statusMap.get("api_detail")?.value || "System online",
+            },
+            {
+              id: "database",
+              name: "Database",
+              status: statusMap.get("db_status")?.value === "operational" ? "operational" : "degraded",
+              detail: statusMap.get("db_detail")?.value || "Connected",
+            },
+            {
+              id: "notifications",
+              name: "Notifications",
+              status: statusMap.get("notification_status")?.value === "operational" ? "operational" : "degraded",
+              detail: statusMap.get("notification_detail")?.value || "Q-linked",
+            },
+          ]
+          setSystemStatus(transformedStatus as any)
+        }
+
+        const auditLogItems = auditLogsData?.data ?? []
+        if (Array.isArray(auditLogItems) && auditLogItems.length > 0) {
+          const transformedLogs = auditLogItems.map((log: any) => ({
+            id: log.id,
+            actor: log.user_id,
+            action: log.action,
+            category: log.category,
+            timestamp: new Date(log.created_at).toISOString().slice(0, 16).replace("T", " "),
+          }))
+          setAuditLogs(transformedLogs as any)
+        }
+      } catch (error) {
+        console.error("Failed to load system data from backend", error)
+        if (!isMounted) return
+        setSystemMessage("Using local fallback data for system health while API is unavailable.")
+      }
+    }
+
+    loadSystemData()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   const activeTemplate = useMemo(() => templates.find((template) => template.id === activeTemplateId) ?? null, [activeTemplateId, templates])
   const messageTone = useMemo(() => {
     if (!systemMessage) return "neutral"
@@ -967,50 +1086,74 @@ export default function HqDashboardPage() {
     setUserForm({ name: "", email: "", role: "Branch Manager", branch: "" })
   }
 
-  const handleAddVaccine = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleAddVaccine = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const parsedDays = Number.parseInt(vaccineForm.dueDays, 10)
     if (!vaccineForm.name.trim() || Number.isNaN(parsedDays)) return
 
-    if (editingVaccineId) {
-      let updatedName = ""
+    try {
+      if (editingVaccineId) {
+        // Update existing vaccine via API (only send fields accepted by backend DTO)
+        await updateHqVaccine(editingVaccineId, {
+          name: vaccineForm.name.trim(),
+        })
 
-      setVaccines((previous) =>
-        previous.map((vaccine) => {
-          if (vaccine.id !== editingVaccineId) return vaccine
-          updatedName = vaccineForm.name.trim()
-          return {
-            ...vaccine,
-            name: vaccineForm.name.trim(),
-            schedule: vaccineForm.schedule.trim() || "Custom schedule",
-            dueDays: parsedDays,
-          }
-        }),
-      )
+        const updatedName = vaccineForm.name.trim()
+        setVaccines((previous) =>
+          previous.map((vaccine) => {
+            if (vaccine.id !== editingVaccineId) return vaccine
+            return {
+              ...vaccine,
+              name: vaccineForm.name.trim(),
+              schedule: vaccineForm.schedule.trim() || "Custom schedule",
+              dueDays: parsedDays,
+            }
+          }),
+        )
 
-      setSystemMessage(`Schedule for "${updatedName}" updated.`)
-      appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
-      setEditingVaccineId(null)
+        setSystemMessage(`Schedule for "${updatedName}" updated.`)
+        appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
+        setEditingVaccineId(null)
+        setVaccineForm({ name: "", schedule: "", dueDays: "" })
+        return
+      }
+
+      // Create new vaccine via API (only send fields accepted by backend DTO)
+      const generatedCode = vaccineForm.name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 32)
+
+      const newVaccine = await createHqVaccine({
+        name: vaccineForm.name.trim(),
+        code: generatedCode,
+      })
+
+      setVaccines((previous) => [newVaccine as any, ...previous])
       setVaccineForm({ name: "", schedule: "", dueDays: "" })
-      return
+      setSystemMessage(`Vaccine "${newVaccine.name}" added to master list.`)
+      appendAuditLog({ action: `Added vaccine ${newVaccine.name} to master registry`, category: "Schedule" })
+    } catch (error) {
+      console.error("Failed to save vaccine", error)
+      setSystemMessage("Failed to save vaccine. Please try again.")
     }
-
-    const nextVaccine: VaccineConfig = {
-      id: `VAC-${Math.floor(Math.random() * 900 + 100)}`,
-      name: vaccineForm.name.trim(),
-      schedule: vaccineForm.schedule.trim() || "Custom schedule",
-      dueDays: parsedDays,
-      status: "active",
-    }
-
-    setVaccines((previous) => [nextVaccine, ...previous])
-    setVaccineForm({ name: "", schedule: "", dueDays: "" })
-    setSystemMessage(`Vaccine "${nextVaccine.name}" added to master list.`)
-    appendAuditLog({ action: `Added vaccine ${nextVaccine.name} to master registry`, category: "Schedule" })
   }
 
   const handleTemplateUpdate = () => {
     if (!activeTemplate) return
+
+    // Get the last saved version from localStorage
+    const stored = localStorage.getItem(HQ_NOTIFICATION_TEMPLATES_STORAGE_KEY)
+    const savedTemplates = stored ? JSON.parse(stored) : initialTemplates
+    const savedTemplate = savedTemplates.find((t: NotificationTemplate) => t.id === activeTemplate.id)
+
+    // Check if content has actually changed
+    if (savedTemplate && savedTemplate.sms === activeTemplate.sms && savedTemplate.email === activeTemplate.email) {
+      setSystemMessage("No changes to save.")
+      return
+    }
 
     try {
       localStorage.setItem(HQ_NOTIFICATION_TEMPLATES_STORAGE_KEY, JSON.stringify(templates))
@@ -1022,14 +1165,86 @@ export default function HqDashboardPage() {
     }
   }
 
-  const handleBackup = () => {
-  setSystemMessage("Backup job queued. You'll receive an email when complete.")
-    appendAuditLog({ action: "Triggered manual system backup", category: "System" })
+  const handleBackup = async () => {
+    try {
+      setSystemMessage("Triggering backup...")
+      const response = await fetch(`${API_BASE_URL}/common/backup/trigger`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setSystemMessage(`✓ ${data.message}`)
+      } else {
+        setSystemMessage(data.message || "Failed to trigger backup")
+      }
+      appendAuditLog({ action: "Triggered manual system backup", category: "System" })
+    } catch (error: any) {
+      console.error("Backup trigger error:", error)
+      if (error.message.includes("Failed to fetch") || error.name === "TypeError") {
+        setSystemMessage("Backend server is not running. Start backend to trigger backups.")
+      } else {
+        setSystemMessage("Failed to trigger backup. Please try again.")
+      }
+    }
   }
 
   const handleBackupDownload = () => {
-    setSystemMessage("Encrypted backup download will start once backend endpoints are wired.")
-    appendAuditLog({ action: "Requested latest backup download", category: "System" })
+    try {
+      setSystemMessage("Fetching latest encrypted backup...")
+
+      fetch(`${API_BASE_URL}/common/backup/download-latest`, {
+        method: "GET",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}))
+            throw new Error(err.message || `HTTP error! status: ${response.status}`)
+          }
+          return response.blob()
+        })
+        .then((blob) => {
+          const url = window.URL.createObjectURL(blob)
+          const link = document.createElement("a")
+          link.href = url
+
+          const timestamp = new Date().toISOString().split("T")[0]
+          link.download = `cvcc-backup-encrypted-${timestamp}.bin`
+
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          window.URL.revokeObjectURL(url)
+
+          setSystemMessage("✓ Encrypted backup downloaded successfully")
+          appendAuditLog({
+            action: "Downloaded latest encrypted backup",
+            category: "System",
+          })
+        })
+        .catch((error) => {
+          console.error("Backup download failed:", error)
+
+          if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
+            setSystemMessage(
+              "Backend server is not running. Start backend to enable backup downloads."
+            )
+          } else {
+            setSystemMessage(error.message || "Failed to download backup.")
+          }
+
+          appendAuditLog({
+            action: "Backup download failed",
+            category: "System",
+          })
+        })
+    } catch (error) {
+      console.error("Backup download error:", error)
+      setSystemMessage("Encrypted backup endpoint ready. Backend storage configuration in progress...")
+    }
   }
 
   const handleCoverageExport = () => {
@@ -1153,19 +1368,137 @@ export default function HqDashboardPage() {
     }
   }
 
-  const handleAuditExport = () => {
-    setSystemMessage("Audit log export queued. Watch for the download notification.")
-    appendAuditLog({ action: "Queued audit log export", category: "System" })
+  const exportAuditLogCSV = () => {
+    try {
+      // Prepare CSV headers
+      const headers = ["Timestamp", "Action", "Actor", "Category"]
+      
+      // Prepare CSV rows
+      const rows = auditLogs.map((log) => [
+        log.timestamp,
+        log.action,
+        log.actor,
+        log.category,
+      ])
+
+      // Create CSV content
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")),
+      ].join("\n")
+
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+      const link = document.createElement("a")
+      const url = URL.createObjectURL(blob)
+      link.setAttribute("href", url)
+      link.setAttribute("download", `audit-log-${new Date().toISOString().split("T")[0]}.csv`)
+      link.style.visibility = "hidden"
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      setSystemMessage("✓ Audit log exported as CSV")
+      appendAuditLog({ action: "Exported audit log (CSV format)", category: "System" })
+    } catch (error) {
+      console.error("Failed to export audit log as CSV", error)
+      setSystemMessage("Could not export audit log as CSV. Please try again.")
+    }
   }
 
-  const handleTemplatePreview = () => {
+  const exportAuditLogPDF = () => {
+    try {
+      // Dynamic import of jsPDF
+      import("jspdf").then(({ jsPDF }) => {
+        const doc = new jsPDF()
+        const pageWidth = doc.internal.pageSize.getWidth()
+        const pageHeight = doc.internal.pageSize.getHeight()
+        let yPosition = 20
+
+        // Title
+        doc.setFontSize(18)
+        doc.text("System Audit Log Report", 20, yPosition)
+        yPosition += 10
+
+        // Metadata
+        doc.setFontSize(10)
+        doc.text(`Generated: ${new Date().toLocaleString()}`, 20, yPosition)
+        yPosition += 5
+        doc.text(`Total Records: ${auditLogs.length}`, 20, yPosition)
+        yPosition += 10
+
+        // Add divider
+        doc.setDrawColor(100)
+        doc.line(20, yPosition, pageWidth - 20, yPosition)
+        yPosition += 5
+
+        // Table headers
+        doc.setFontSize(11)
+        doc.setFont("helvetica", "bold")
+        const headerY = yPosition
+        doc.text("Timestamp", 20, headerY)
+        doc.text("Action", 70, headerY)
+        doc.text("Actor", 140, headerY)
+        doc.text("Category", 180, headerY)
+        yPosition += 7
+
+        // Add divider
+        doc.setDrawColor(150)
+        doc.line(20, yPosition, pageWidth - 20, yPosition)
+        yPosition += 3
+
+        // Table rows
+        doc.setFont("helvetica", "normal")
+        doc.setFontSize(9)
+
+        auditLogs.forEach((log) => {
+          // Check if we need a new page
+          if (yPosition > pageHeight - 20) {
+            doc.addPage()
+            yPosition = 20
+            
+            // Repeat headers on new page
+            doc.setFont("helvetica", "bold")
+            doc.text("Timestamp", 20, yPosition)
+            doc.text("Action", 70, yPosition)
+            doc.text("Actor", 140, yPosition)
+            doc.text("Category", 180, yPosition)
+            yPosition += 7
+            doc.setFont("helvetica", "normal")
+          }
+
+          doc.text(log.timestamp.substring(0, 16), 20, yPosition)
+          
+          // Wrap action text if too long
+          const actionLines = doc.splitTextToSize(log.action, 65)
+          doc.text(actionLines, 70, yPosition)
+          
+          doc.text(log.actor.substring(0, 35), 140, yPosition)
+          doc.text(log.category, 180, yPosition)
+          
+          yPosition += actionLines.length > 1 ? actionLines.length * 4 + 3 : 7
+        })
+
+        // Save PDF
+        doc.save(`audit-log-${new Date().toISOString().split("T")[0]}.pdf`)
+        
+        setSystemMessage("✓ Audit log exported as PDF")
+        appendAuditLog({ action: "Exported audit log (PDF format)", category: "System" })
+      })
+    } catch (error) {
+      console.error("Failed to export audit log as PDF", error)
+      setSystemMessage("Could not export audit log as PDF. Please try again.")
+    }
+  }
+
+  const handleTemplatePreview = async () => {
     if (!activeTemplate) return
 
     const source = previewChannel === "sms" ? activeTemplate.sms : activeTemplate.email
     const compiled = compileTemplatePreview(source)
 
     setTemplatePreview(compiled)
-    setSystemMessage(`Preview generated for ${activeTemplate.label} (${previewChannel.toUpperCase()}).`)
+    setIsPreviewModalOpen(true)
     appendAuditLog({ action: `Previewed notification template ${activeTemplate.label}`, category: "Notifications" })
   }
 
@@ -2140,30 +2473,6 @@ export default function HqDashboardPage() {
                     }
                   />
                 </div>
-                <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground">Live preview ({previewChannel.toUpperCase()})</p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(templatePreview)
-                          setSystemMessage("Preview copied to clipboard.")
-                        } catch (error) {
-                          console.error("Failed to copy preview", error)
-                          setSystemMessage("Could not copy preview. Please copy it manually.")
-                        }
-                      }}
-                    >
-                      Copy preview
-                    </Button>
-                  </div>
-                  <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 text-xs text-foreground">
-                    {templatePreview || "Preview will appear here."}
-                  </pre>
-                </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" className="gap-2" onClick={handleTemplatePreview}>
                     <ListChecks className="h-4 w-4" /> Preview delivery
@@ -2181,6 +2490,59 @@ export default function HqDashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      {isPreviewModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-2xl">
+            <CardHeader className="flex flex-row items-center justify-between border-b">
+              <div>
+                <CardTitle>Preview: {activeTemplate?.label}</CardTitle>
+                <CardDescription>Channel: {previewChannel.toUpperCase()}</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setIsPreviewModalOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4 p-6">
+              {previewChannel === "sms" ? (
+                <div className="rounded-lg border border-border bg-muted/30 p-4">
+                  <p className="text-sm font-medium text-foreground mb-2">SMS Preview</p>
+                  <div className="bg-background p-4 rounded border border-border">
+                    <p className="text-sm whitespace-pre-wrap">{templatePreview}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border bg-muted/30 p-4">
+                  <p className="text-sm font-medium text-foreground mb-2">Email Preview</p>
+                  <div className="bg-background p-4 rounded border border-border max-h-96 overflow-auto">
+                    <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(templatePreview) }} />
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsPreviewModalOpen(false)}>
+                  Close
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(templatePreview)
+                      setSystemMessage("Preview copied to clipboard.")
+                    } catch (error) {
+                      console.error("Failed to copy preview", error)
+                      setSystemMessage("Could not copy preview.")
+                    }
+                  }}
+                >
+                  Copy preview
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 
@@ -2227,9 +2589,14 @@ export default function HqDashboardPage() {
               <p className="mt-2 text-xs text-muted-foreground">{log.timestamp}</p>
             </div>
           ))}
-          <Button variant="outline" className="gap-2" onClick={handleAuditExport}>
-            <ArrowDownToLine className="h-4 w-4" /> Export audit log
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="gap-2" onClick={exportAuditLogCSV}>
+              <ArrowDownToLine className="h-4 w-4" /> Export as CSV
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={exportAuditLogPDF}>
+              <ArrowDownToLine className="h-4 w-4" /> Export as PDF
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
