@@ -1097,10 +1097,36 @@ export class BranchManagerService {
         .eq('branch_id', branch.id),
     ]);
 
+    // Fail closed: if any dependency check errored or did not return a count, abort deletion
+    const dependencyErrors = [
+      staffCount?.error,
+      childrenCount?.error,
+      catchmentCount?.error,
+    ].filter((err) => err);
+
+    const invalidCounts =
+      staffCount?.count == null ||
+      childrenCount?.count == null ||
+      catchmentCount?.count == null;
+
+    if (dependencyErrors.length > 0 || invalidCounts) {
+      this.logger.error('Failed to verify dependent records before deleting branch', {
+        staffError: staffCount?.error,
+        childrenError: childrenCount?.error,
+        catchmentError: catchmentCount?.error,
+        staffCount: staffCount?.count,
+        childrenCount: childrenCount?.count,
+        catchmentCount: catchmentCount?.count,
+      });
+      throw new InternalServerErrorException(
+        'Failed to verify branch dependencies before deletion',
+      );
+    }
+
     const issues: string[] = [];
-    if ((staffCount.count ?? 0) > 0) issues.push(`${staffCount.count} staff member(s)`);
-    if ((childrenCount.count ?? 0) > 0) issues.push(`${childrenCount.count} registered child(ren)`);
-    if ((catchmentCount.count ?? 0) > 0) issues.push(`${catchmentCount.count} catchment area(s)`);
+    if (staffCount.count > 0) issues.push(`${staffCount.count} staff member(s)`);
+    if (childrenCount.count > 0) issues.push(`${childrenCount.count} registered child(ren)`);
+    if (catchmentCount.count > 0) issues.push(`${catchmentCount.count} catchment area(s)`);
 
     if (issues.length > 0) {
       throw new BadRequestException({
