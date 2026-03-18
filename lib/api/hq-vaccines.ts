@@ -1,46 +1,64 @@
 import { apiRequest } from './config';
 
+export interface HqSchedule {
+  id: string;
+  vaccine_id: string;
+  dose_number: number;
+  schedule_name: string;
+  due_days_from_birth: number;
+  min_age_days: number | null;
+  max_age_days: number | null;
+  is_mandatory: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface HqVaccine {
   id: string;
+  code: string;
   name: string;
-  schedule: string;
-  dueDays: number;
+  description: string | null;
+  manufacturer: string | null;
   status: 'active' | 'archived';
+  created_at: string;
+  updated_at: string;
+  schedules: HqSchedule[];
 }
 
 export interface CreateHqVaccinePayload {
+  code: string;
   name: string;
-  schedule?: string;
-  dueDays?: number;
+  description?: string;
+  manufacturer?: string;
 }
 
 export interface UpdateHqVaccinePayload {
   name?: string;
-  schedule?: string;
-  dueDays?: number;
-}
-
-export interface HqSchedule {
-  id: string;
-  vaccineId: string;
-  vaccineName: string;
-  dosage: string;
-  ageMonths: number;
-  route: string;
-  status: 'active' | 'archived';
+  description?: string;
+  manufacturer?: string;
+  status?: 'active' | 'archived';
 }
 
 export interface CreateHqSchedulePayload {
   vaccineId: string;
-  dosage: string;
-  ageMonths: number;
-  route: string;
+  doseNumber: number;
+  scheduleName: string;
+  dueDaysFromBirth: number;
+  minAgeDays?: number;
+  maxAgeDays?: number;
+  isMandatory?: boolean;
+  sortOrder?: number;
 }
 
 export interface UpdateHqSchedulePayload {
-  dosage?: string;
-  ageMonths?: number;
-  route?: string;
+  doseNumber?: number;
+  scheduleName?: string;
+  dueDaysFromBirth?: number;
+  minAgeDays?: number;
+  maxAgeDays?: number;
+  isMandatory?: boolean;
+  sortOrder?: number;
 }
 
 export async function getHqVaccines(): Promise<HqVaccine[]> {
