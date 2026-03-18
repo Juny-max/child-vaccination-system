@@ -31,3 +31,4 @@ backend/backups/
 
 # test reports
 backend/test-report-*.txt
+backend/package-lock.json
