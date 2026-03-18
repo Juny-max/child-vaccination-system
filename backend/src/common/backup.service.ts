@@ -221,38 +221,50 @@ export class BackupService {
   }
 
   /**
-   * Encrypt data using AES-256-CBC
+   * Encrypt data using AES-256-GCM (AEAD — provides confidentiality + integrity).
+   * Output format: IV (12 bytes) || AuthTag (16 bytes) || Ciphertext
    */
   private encryptData(data: Buffer, key: string): Buffer {
     if (!key || key.length < 64) {
       throw new Error('Invalid encryption key. Must be 256-bit (64 hex characters)');
     }
 
-    const iv = crypto.randomBytes(16);
+    const iv = crypto.randomBytes(12);
     const keyBuffer = Buffer.from(key, 'hex');
-    const cipher = crypto.createCipheriv('aes-256-cbc', keyBuffer, iv);
+    const cipher = crypto.createCipheriv('aes-256-gcm', keyBuffer, iv);
 
     const encrypted = Buffer.concat([
       cipher.update(data),
       cipher.final(),
     ]);
 
-    // Return IV + encrypted data (IV needed for decryption)
-    return Buffer.concat([iv, encrypted]);
+    const authTag = cipher.getAuthTag();
+
+    // Return IV || AuthTag || Ciphertext
+    return Buffer.concat([iv, authTag, encrypted]);
   }
 
   /**
-   * Decrypt data using AES-256-CBC
+   * Decrypt data using AES-256-GCM.
+   * Verifies the authentication tag before returning plaintext;
+   * throws if the ciphertext has been tampered with.
    */
-  decryptData(encryptedData: Buffer, key: string): Buffer {
+  private decryptData(encryptedData: Buffer, key: string): Buffer {
     if (!key || key.length < 64) {
       throw new Error('Invalid encryption key. Must be 256-bit (64 hex characters)');
     }
 
-    const iv = encryptedData.slice(0, 16);
-    const data = encryptedData.slice(16);
+    // Minimum: 12-byte IV + 16-byte auth tag = 28 bytes
+    if (encryptedData.length < 28) {
+      throw new Error('Invalid encrypted data: too short to contain IV and authentication tag');
+    }
+
+    const iv = encryptedData.subarray(0, 12);
+    const authTag = encryptedData.subarray(12, 28);
+    const data = encryptedData.subarray(28);
     const keyBuffer = Buffer.from(key, 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', keyBuffer, iv);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, iv);
+    decipher.setAuthTag(authTag);
 
     return Buffer.concat([
       decipher.update(data),
