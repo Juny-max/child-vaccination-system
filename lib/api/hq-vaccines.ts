@@ -13,7 +13,6 @@ export interface CreateHqVaccinePayload {
   schedule?: string;
   dueDays?: number;
   code: string;
-  name: string;
   description?: string;
   manufacturer?: string;
 }
