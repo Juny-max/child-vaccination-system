@@ -1,11 +1,14 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { LoginDto, RegisterDto, AuthResponseDto, TokenPayload, UserProfileDto, UserRole } from './dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly databaseService: DatabaseService,
@@ -45,8 +48,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Verify password
-    const isPasswordValid = await this.verifyPassword(password, user.password_hash);
+    // Verify password (auto-upgrades SHA-256 to bcrypt on success)
+    const isPasswordValid = await this.verifyPassword(password, user.password_hash, user.id);
     
     if (!isPasswordValid) {
       // Log failed login attempt - invalid password
@@ -404,12 +407,18 @@ export class AuthService {
   }
 
   /**
-   * Hash password using bcrypt-like algorithm
-   * In production, use proper bcrypt with salt rounds
+   * Hash password using bcrypt with 10 salt rounds
+   * All new passwords use bcrypt for security
    */
   private async hashPassword(password: string): Promise<string> {
-    // For demo purposes, we'll use a simple hash
-    // In production, use: return bcrypt.hash(password, 10);
+    return bcrypt.hash(password, 10);
+  }
+
+  /**
+   * Legacy SHA-256 hash (for old passwords only)
+   * Used during migration period to verify existing passwords
+   */
+  private async hashPasswordLegacy(password: string): Promise<string> {
     const encoder = new TextEncoder();
     const data = encoder.encode(password);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -418,13 +427,51 @@ export class AuthService {
   }
 
   /**
-   * Verify password against stored hash
+   * Detect hash type based on format
+   * SHA-256: 64 hex characters
+   * bcrypt: starts with $2a$, $2b$, or $2y$
    */
-  private async verifyPassword(password: string, storedHash: string): Promise<boolean> {
-    // For demo purposes, hash the input and compare
-    // In production, use: return bcrypt.compare(password, storedHash);
-    const hashedInput = await this.hashPassword(password);
-    return hashedInput === storedHash;
+  private detectHashType(hash: string): 'bcrypt' | 'sha256' {
+    if (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$')) {
+      return 'bcrypt';
+    }
+    if (hash.length === 64 && /^[a-f0-9]+$/.test(hash)) {
+      return 'sha256';
+    }
+    return 'sha256'; // Default fallback
+  }
+
+  /**
+   * Verify password against stored hash (supports both SHA-256 and bcrypt)
+   * Automatically upgrades SHA-256 passwords to bcrypt on successful login
+   */
+  private async verifyPassword(
+    password: string,
+    storedHash: string,
+    userId?: string
+  ): Promise<boolean> {
+    const hashType = this.detectHashType(storedHash);
+
+    if (hashType === 'bcrypt') {
+      // Modern bcrypt hash - verify normally
+      return bcrypt.compare(password, storedHash);
+    }
+
+    // Legacy SHA-256 hash - verify using old method
+    const legacyHash = await this.hashPasswordLegacy(password);
+    const isValid = legacyHash === storedHash;
+
+    // Auto-upgrade to bcrypt if password is correct
+    if (isValid && userId) {
+      const newHash = await this.hashPassword(password);
+      await this.databaseService.supabase
+        .from('users')
+        .update({ password_hash: newHash })
+        .eq('id', userId);
+      this.logger.log(`Auto-upgraded password to bcrypt for user ${userId}`);
+    }
+
+    return isValid;
   }
 
   /**
@@ -632,8 +679,8 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    // Verify current password
-    const isPasswordValid = await this.verifyPassword(currentPassword, user.password_hash);
+    // Verify current password (auto-upgrades SHA-256 to bcrypt on success)
+    const isPasswordValid = await this.verifyPassword(currentPassword, user.password_hash, userId);
     
     if (!isPasswordValid) {
       // Log failed password change attempt
