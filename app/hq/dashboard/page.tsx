@@ -824,13 +824,14 @@ export default function HqDashboardPage() {
           setSystemStatus(transformedStatus as any)
         }
 
-        if (auditLogsData && auditLogsData.length > 0) {
-          const transformedLogs = auditLogsData.map((log: any) => ({
+        const auditLogItems = auditLogsData?.data ?? []
+        if (Array.isArray(auditLogItems) && auditLogItems.length > 0) {
+          const transformedLogs = auditLogItems.map((log: any) => ({
             id: log.id,
-            actor: log.userId,
+            actor: log.user_id,
             action: log.action,
             category: log.category,
-            timestamp: new Date(log.timestamp).toISOString().slice(0, 16).replace("T", " "),
+            timestamp: new Date(log.created_at).toISOString().slice(0, 16).replace("T", " "),
           }))
           setAuditLogs(transformedLogs as any)
         }
