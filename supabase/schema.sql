@@ -689,6 +689,13 @@ ALTER TABLE sync_conflicts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_inventory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.spatial_ref_sys ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY allow_select_spatial_ref_sys
+  ON public.spatial_ref_sys
+  FOR SELECT
+  TO anon, authenticated
+  USING (true);
 
 -- ============================================================================
 -- END OF SCHEMA
