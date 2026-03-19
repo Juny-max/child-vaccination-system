@@ -56,7 +56,8 @@ export class BackupController {
         if (!res.headersSent) {
           res.status(500).json({
             success: false,
-            message: 'Failed to retrieve backup. Please try again.',
+            message: 'Failed to stream backup file',
+            error: error.message,
           });
         }
       });
@@ -64,7 +65,8 @@ export class BackupController {
       console.error('Backup download error:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve backup. Please try again.',
+        message: 'Failed to retrieve backup',
+        error: error.message,
       });
     }
   }
@@ -97,7 +99,8 @@ export class BackupController {
       console.error('Backup trigger error:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to create backup. Please try again.',
+        message: 'Failed to trigger backup',
+        error: error.message,
       });
     }
   }

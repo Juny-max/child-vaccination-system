@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
+import { LRUCache } from 'lru-cache';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
@@ -12,7 +13,7 @@ export class AuthService {
   private readonly jwtService: JwtService;
   private readonly databaseService: DatabaseService;
   private readonly emailService: EmailService;
-  private readonly loginAttempts: Map<string, { count: number; lastAttempt: number }>;
+  private readonly loginAttempts: LRUCache<string, { count: number; lastAttempt: number }>;
   private readonly MAX_LOGIN_ATTEMPTS = 5;
   private readonly LOCKOUT_TIME_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -24,7 +25,10 @@ export class AuthService {
     this.jwtService = jwtService;
     this.databaseService = databaseService;
     this.emailService = emailService;
-    this.loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+    this.loginAttempts = new LRUCache<string, { count: number; lastAttempt: number }>({
+      max: 10000,
+      ttl: this.LOCKOUT_TIME_MS,
+    });
   }
 
   /**

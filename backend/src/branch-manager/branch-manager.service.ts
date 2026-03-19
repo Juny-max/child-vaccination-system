@@ -1225,7 +1225,7 @@ export class BranchManagerService {
 
     const { error } = await db.from('branches').delete().eq('id', branch.id);
     if (error) {
-      this.logger.error(`Failed to delete branch: ${error.message}`, error);
+      this.logger.error('Failed to delete branch', error);
       throw new InternalServerErrorException(
         'Failed to delete branch. Please try again.',
       );
@@ -1876,6 +1876,10 @@ export class BranchManagerService {
       scheduleMap.set(s.vaccine_id, list);
     }
 
+    return (data ?? []).map((v: any) => ({
+      ...v,
+      schedules: scheduleMap.get(v.id) ?? [],
+    }));
     return (data ?? []).map((v: any) => {
       const vaccineSchedules = scheduleMap.get(v.id) ?? [];
       const firstSchedule = vaccineSchedules[0];

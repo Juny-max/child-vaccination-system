@@ -61,6 +61,10 @@ export default function UnifiedLoginPage() {
       const storedRole = resolvedRole === "parent" ? "parent" : "staff"
       const route = ROLE_ROUTES[resolvedRole] ?? "/dashboard"
 
+      // Store token
+      if (response.accessToken) {
+        localStorage.setItem("accessToken", response.accessToken)
+      }
       localStorage.setItem("userRole", storedRole)
       localStorage.setItem("userRoleDetail", resolvedRole)
       sessionStorage.setItem("userName", response.user.fullName)

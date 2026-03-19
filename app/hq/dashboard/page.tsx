@@ -48,6 +48,7 @@ import {
   updateHqUser,
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
+import { getHqAnalytics } from "@/lib/api/hq-analytics"
 import { getHqAnalytics, getHqOverviewStats, HqOverviewStats } from "@/lib/api/hq-analytics"
 import {
   getHqVaccines,
@@ -1147,6 +1148,48 @@ export default function HqDashboardPage() {
     if (!vaccineForm.name.trim() || Number.isNaN(parsedDays)) return
 
     try {
+      if (editingVaccineId) {
+        // Update existing vaccine via API (only send fields accepted by backend DTO)
+        await updateHqVaccine(editingVaccineId, {
+          name: vaccineForm.name.trim(),
+        })
+
+        const updatedName = vaccineForm.name.trim()
+        setVaccines((previous) =>
+          previous.map((vaccine) => {
+            if (vaccine.id !== editingVaccineId) return vaccine
+            return {
+              ...vaccine,
+              name: vaccineForm.name.trim(),
+              schedule: vaccineForm.schedule.trim() || "Custom schedule",
+              dueDays: parsedDays,
+            }
+          }),
+        )
+
+        setSystemMessage(`Schedule for "${updatedName}" updated.`)
+        appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
+        setEditingVaccineId(null)
+        setVaccineForm({ name: "", schedule: "", dueDays: "" })
+        return
+      }
+
+      // Create new vaccine via API (only send fields accepted by backend DTO)
+      const generatedCode = vaccineForm.name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 32)
+
+      const newVaccine = await createHqVaccine({
+        name: vaccineForm.name.trim(),
+        code: generatedCode,
+      })
+
+      setVaccines((previous) => [newVaccine as any, ...previous])
+      setVaccineForm({ name: "", schedule: "", dueDays: "" })
+      setSystemMessage(`Vaccine "${newVaccine.name}" added to master list.`)
       // Create new vaccine via API
       const generatedCode = vaccineForm.name
         .trim()

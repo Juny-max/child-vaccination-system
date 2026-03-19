@@ -75,6 +75,7 @@ export class BackupService {
       if (!data || data.length === 0) {
         hasMore = false;
       } else {
+        allRows.push(...data);
         // Sanitize sensitive columns if applicable
         const sensitiveColumns = SENSITIVE_COLUMNS[tableName];
         const sanitizedData = sensitiveColumns

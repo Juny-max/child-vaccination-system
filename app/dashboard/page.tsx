@@ -49,7 +49,7 @@ export default function Dashboard() {
   })
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken")
+    const token = localStorage.getItem("accessToken")
     const role = localStorage.getItem("userRole")
     const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
     const detail = localStorage.getItem("userRoleDetail")
@@ -249,7 +249,7 @@ export default function Dashboard() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem("authToken")
+    localStorage.removeItem("accessToken")
     localStorage.removeItem("userRole")
     localStorage.removeItem("userRoleDetail")
     localStorage.removeItem("userName")
