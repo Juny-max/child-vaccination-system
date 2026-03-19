@@ -1947,7 +1947,24 @@ export class BranchManagerService {
   async deleteHqVaccine(vaccineId: string) {
     const db = this.databaseService.supabase;
 
-    // First, delete all associated schedules
+    // First, check if there are any vaccination events using this vaccine
+    const { count: eventCount, error: countError } = await db
+      .from('vaccination_events')
+      .select('*', { count: 'exact', head: true })
+      .eq('vaccine_id', vaccineId);
+
+    if (countError) {
+      this.logger.error('Failed to check vaccination events', countError);
+      throw new InternalServerErrorException('Failed to check vaccine usage');
+    }
+
+    if (eventCount && eventCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete this vaccine. It has been used in ${eventCount} vaccination record(s). Consider archiving it instead.`
+      );
+    }
+
+    // Delete all associated schedules
     const { error: scheduleError } = await db
       .from('vaccination_schedules')
       .delete()
