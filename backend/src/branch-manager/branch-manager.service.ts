@@ -1227,9 +1227,6 @@ export class BranchManagerService {
     if (error) {
       this.logger.error('Failed to delete branch', error);
       throw new InternalServerErrorException(
-        `Failed to delete branch: ${error.message}`,
-      this.logger.error(`Failed to delete branch: ${error.message}`, error);
-      throw new InternalServerErrorException(
         'Failed to delete branch. Please try again.',
       );
     }
