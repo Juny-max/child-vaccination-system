@@ -48,7 +48,6 @@ import {
   updateHqUser,
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
-import { getHqAnalytics } from "@/lib/api/hq-analytics"
 import { getHqAnalytics, getHqOverviewStats, HqOverviewStats } from "@/lib/api/hq-analytics"
 import {
   getHqVaccines,
@@ -1188,18 +1187,6 @@ export default function HqDashboardPage() {
       setVaccines((previous) => [newVaccine as any, ...previous])
       setVaccineForm({ name: "", schedule: "", dueDays: "" })
       setSystemMessage(`Vaccine "${newVaccine.name}" added to master list.`)
-      // Create new vaccine via API
-      const generatedCode = vaccineForm.name
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "")
-        .slice(0, 32)
-
-      const newVaccine = await createHqVaccine({
-        name: vaccineForm.name.trim(),
-        code: generatedCode,
-      })
 
       // Create schedule entry for the new vaccine
       const vaccineId = (newVaccine as any).id
