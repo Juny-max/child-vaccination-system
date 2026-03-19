@@ -66,4 +66,9 @@ export class HqVaccinesController {
   ) {
     return this.branchManagerService.updateHqVaccine(vaccineId, dto);
   }
+
+  @Delete(':vaccineId')
+  async deleteVaccine(@Param('vaccineId') vaccineId: string) {
+    return this.branchManagerService.deleteHqVaccine(vaccineId);
+  }
 }

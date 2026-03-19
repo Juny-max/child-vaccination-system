@@ -53,6 +53,7 @@ import {
   getHqVaccines,
   createHqVaccine,
   updateHqVaccine,
+  deleteHqVaccine,
   getHqSchedules,
   createHqSchedule,
   updateHqSchedule,
@@ -1768,16 +1769,16 @@ export default function HqDashboardPage() {
 
     setIsVaccineDeleting(true)
     try {
-      // Delete from database
+      // Actually delete from database
       if (dbId) {
-        await updateHqVaccine(dbId, { status: "discontinued" })
+        await deleteHqVaccine(dbId)
       }
 
       // Remove from local state
       setVaccines((previous) => previous.filter((v) => v.id !== vaccineId))
 
-      setSystemMessage(`Vaccine "${vaccineToDelete.name}" permanently deleted.`)
-      appendAuditLog({ action: `Deleted vaccine ${vaccineToDelete.name}`, category: "Schedule" })
+      setSystemMessage(`Vaccine "${vaccineToDelete.name}" permanently deleted from database.`)
+      appendAuditLog({ action: `Permanently deleted vaccine ${vaccineToDelete.name}`, category: "Schedule" })
       setIsDeleteModalOpen(false)
       setVaccineToDelete(null)
     } catch (error) {

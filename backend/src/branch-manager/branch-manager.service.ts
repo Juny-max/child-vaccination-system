@@ -1944,6 +1944,38 @@ export class BranchManagerService {
     return data;
   }
 
+  async deleteHqVaccine(vaccineId: string) {
+    const db = this.databaseService.supabase;
+
+    // First, delete all associated schedules
+    const { error: scheduleError } = await db
+      .from('vaccination_schedules')
+      .delete()
+      .eq('vaccine_id', vaccineId);
+
+    if (scheduleError) {
+      this.logger.error('Failed to delete vaccine schedules', scheduleError);
+      throw new InternalServerErrorException('Failed to delete vaccine schedules');
+    }
+
+    // Then delete the vaccine itself
+    const { data, error } = await db
+      .from('vaccines')
+      .delete()
+      .eq('id', vaccineId)
+      .select()
+      .single();
+
+    if (error) {
+      this.logger.error('Failed to delete vaccine', error);
+      throw new InternalServerErrorException('Failed to delete vaccine');
+    }
+
+    if (!data) throw new NotFoundException('Vaccine not found');
+
+    return { success: true, deleted: data.name };
+  }
+
   async createHqSchedule(dto: {
     vaccineId: string;
     doseNumber: number;

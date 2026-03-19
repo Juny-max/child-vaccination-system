@@ -71,6 +71,12 @@ export async function updateHqVaccine(vaccineId: string, payload: UpdateHqVaccin
   });
 }
 
+export async function deleteHqVaccine(vaccineId: string): Promise<{ success: boolean; deleted: string }> {
+  return apiRequest<{ success: boolean; deleted: string }>(`/hq-admin/vaccines/${encodeURIComponent(vaccineId)}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function getHqSchedules(): Promise<HqSchedule[]> {
   return apiRequest<HqSchedule[]>('/hq-admin/vaccines/schedules');
 }
