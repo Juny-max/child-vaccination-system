@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AlertCircle, Loader2, MapPinned, Pencil, Trash2, UserCheck } from "lucide-react"
 import L from "leaflet"
 import { EditControl } from "react-leaflet-draw"
-import { FeatureGroup, GeoJSON, MapContainer, TileLayer, Tooltip, useMap } from "react-leaflet"
+import { FeatureGroup, GeoJSON, MapContainer, TileLayer, Tooltip, useMap, Popup } from "react-leaflet"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -562,13 +562,61 @@ export default function CatchmentCommandCenter({
                         fillOpacity: 0.3,
                         weight: 2,
                       }}
-                      eventHandlers={{
-                        click: () => openAssignModal(zone),
-                      }}
                     >
                       <Tooltip sticky>
-                        {`Zone: ${zone.name} | Status: ${zone.assignedChwName ?? "Unassigned"}`}
+                        <div className="flex flex-col items-center gap-0.5 p-1 text-center font-sans">
+                          <span className="text-sm font-bold">{zone.name}</span>
+                          <span className="text-xs text-muted-foreground">{zone.assignedChwName ?? "Unassigned"}</span>
+                          <span className="text-[10px] font-medium text-primary/80">(Click to view)</span>
+                        </div>
                       </Tooltip>
+                      <Popup>
+                        <div className="min-w-[200px] font-sans">
+                          <div className="mb-3 border-b pb-2">
+                            <h3 className="text-lg font-bold leading-none">{zone.name}</h3>
+                            <div className="mt-1 flex items-center gap-2 text-xs">
+                              <span
+                                className={`font-medium ${
+                                  zone.assignedChwId ? "text-emerald-600" : "text-rose-600"
+                                }`}
+                              >
+                                {zone.assignedChwName ?? "Unassigned"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mb-4 grid grid-cols-3 gap-2">
+                            <div className="flex flex-col items-center rounded-md border border-blue-100 bg-blue-50/50 p-2 text-center">
+                              <span className="text-[10px] font-bold uppercase text-blue-600">Active</span>
+                              <span className="mt-1 text-lg font-bold leading-none text-blue-700">
+                                {zone.stats?.activeChildren ?? 0}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col items-center rounded-md border border-emerald-100 bg-emerald-50/50 p-2 text-center">
+                              <span className="text-[10px] font-bold uppercase text-emerald-600">In</span>
+                              <span className="mt-1 text-lg font-bold leading-none text-emerald-700">
+                                {zone.stats?.transferredIn ?? 0}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col items-center rounded-md border border-rose-100 bg-rose-50/50 p-2 text-center">
+                              <span className="text-[10px] font-bold uppercase text-rose-600">Out</span>
+                              <span className="mt-1 text-lg font-bold leading-none text-rose-700">
+                                {zone.stats?.transferredOut ?? 0}
+                              </span>
+                            </div>
+                          </div>
+
+                          <Button
+                            size="sm"
+                            className="h-8 w-full text-xs"
+                            onClick={() => openAssignModal(zone)}
+                          >
+                            Manage Zone
+                          </Button>
+                        </div>
+                      </Popup>
                     </GeoJSON>
                   )
                 })}
@@ -702,7 +750,7 @@ export default function CatchmentCommandCenter({
           </DialogHeader>
 
           <p className="text-sm text-muted-foreground">
-            Delete catchment zone "{zonePendingDelete?.name}"? This action cannot be undone.
+            Delete catchment zone &quot;{zonePendingDelete?.name}&quot;? This action cannot be undone.
           </p>
 
           <DialogFooter>

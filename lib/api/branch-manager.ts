@@ -113,6 +113,11 @@ export interface BranchCatchmentArea {
   assignedChwId: string | null;
   assignedChwName: string | null;
   status: 'assigned' | 'unassigned';
+  stats?: {
+    activeChildren: number;
+    transferredIn: number;
+    transferredOut: number;
+  };
   createdAt: string;
   updatedAt: string;
 }

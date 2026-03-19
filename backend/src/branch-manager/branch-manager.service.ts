@@ -1841,7 +1841,40 @@ export class BranchManagerService {
       });
     }
 
-    return rows.map((row: any) => this.mapBranchCatchmentArea(row, chwNameMap));
+    const result = await Promise.all(
+      rows.map(async (row: any) => {
+        // 1. Active Children Count
+        const { count: activeChildren } = await db
+          .from('children')
+          .select('*', { count: 'exact', head: true })
+          .eq('catchment_area_id', row.id)
+          .eq('is_active', true);
+
+        // 2. Transferred In Count (search by catchment name in audit details)
+        const { count: transferredIn } = await db
+          .from('audit_logs')
+          .select('*', { count: 'exact', head: true })
+          .eq('action', 'transfer_in')
+          .filter('details->>newCatchment', 'eq', row.name);
+
+        // 3. Transferred Out Count (search by catchment name in audit details)
+        const { count: transferredOut } = await db
+          .from('audit_logs')
+          .select('*', { count: 'exact', head: true })
+          .eq('action', 'transfer_out')
+          .filter('details->>previousCatchment', 'eq', row.name);
+
+        const stats = {
+          activeChildren: activeChildren || 0,
+          transferredIn: transferredIn || 0,
+          transferredOut: transferredOut || 0,
+        };
+
+        return this.mapBranchCatchmentArea(row, chwNameMap, stats);
+      })
+    );
+
+    return result;
   }
 
   async updateBranchCatchmentArea(
@@ -2301,6 +2334,7 @@ export class BranchManagerService {
   private mapBranchCatchmentArea(
     row: any,
     chwNameMap: Map<string, string> = new Map<string, string>(),
+    stats?: { activeChildren: number; transferredIn: number; transferredOut: number },
   ) {
     const geometry = row.polygon
       ? this.extractCatchmentGeometry(row.polygon)
@@ -2330,6 +2364,7 @@ export class BranchManagerService {
       assignedChwId,
       assignedChwName,
       status: assignedChwId ? 'assigned' : 'unassigned',
+      stats: stats || { activeChildren: 0, transferredIn: 0, transferredOut: 0 },
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
