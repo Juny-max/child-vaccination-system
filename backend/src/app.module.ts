@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { resolve } from 'path';
 import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { ParentModule } from './parent/parent.module';
@@ -23,7 +24,10 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
     // Load environment variables
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: [
+        resolve(process.cwd(), '.env'),
+        resolve(process.cwd(), 'backend', '.env'),
+      ],
     }),
 
     // Enable scheduled tasks (cron jobs)

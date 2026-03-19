@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Image from "next/image"
-import Link from "next/link"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import {
   Activity,
@@ -17,7 +17,6 @@ import {
   Gauge,
   Layers,
   Loader2,
-  MapPin,
   MessageSquareWarning,
   Package,
   Radio,
@@ -29,6 +28,7 @@ import {
   ResponsiveContainer,
   RadialBarChart,
   RadialBar,
+  PolarAngleAxis,
   BarChart,
   Bar,
   CartesianGrid,
@@ -65,19 +65,23 @@ const SECTIONS = [
   { id: "actions", label: "Action Centre", icon: AlertTriangle },
   { id: "staff", label: "Staff Supervision", icon: Users },
   { id: "analytics", label: "Coverage Analytics", icon: BarChart3 },
+  { id: "catchment", label: "Catchment Command", icon: Compass },
   { id: "modules", label: "Key Modules", icon: ClipboardList },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]["id"]
 
-type HeatStatus = "High" | "Moderate" | "Low" | "Critical"
-
-const heatClassMap: Record<HeatStatus, string> = {
-  High: "from-emerald-500/80 via-emerald-500/40 to-transparent",
-  Moderate: "from-sky-500/80 via-sky-500/30 to-transparent",
-  Low: "from-amber-500/80 via-amber-500/40 to-transparent",
-  Critical: "from-rose-500/80 via-rose-500/40 to-transparent",
-}
+const CatchmentCommandCenter = dynamic(
+  () => import("@/components/branch/catchment-command-center"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[300px] items-center justify-center rounded-xl border border-border bg-background/80 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading catchment command center...
+      </div>
+    ),
+  },
+)
 
 export default function BranchDashboardPage() {
   const router = useRouter()
@@ -112,6 +116,9 @@ export default function BranchDashboardPage() {
 
   // Register staff modal state
   const [registerStaffModalOpen, setRegisterStaffModalOpen] = useState(false)
+  const [registerStaffOpening, setRegisterStaffOpening] = useState(false)
+  const [visitLogModalOpen, setVisitLogModalOpen] = useState(false)
+  const [visitSummaryDownloading, setVisitSummaryDownloading] = useState(false)
   const [staffRole, setStaffRole] = useState<StaffRole>("facility-nurse")
   const [staffForm, setStaffForm] = useState({
     fullName: "",
@@ -122,6 +129,7 @@ export default function BranchDashboardPage() {
     catchmentAreaId: "", // for CHWs
   })
   const [staffSubmitting, setStaffSubmitting] = useState(false)
+  const [staffStatusUpdatingId, setStaffStatusUpdatingId] = useState<string | null>(null)
   const [staffFormError, setStaffFormError] = useState<string | null>(null)
   const [staffFormSuccess, setStaffFormSuccess] = useState<string | null>(null)
 
@@ -246,6 +254,7 @@ export default function BranchDashboardPage() {
   }
 
   const handleOpenRegisterStaffModal = () => {
+    setRegisterStaffOpening(true)
     setRegisterStaffModalOpen(true)
     setStaffFormError(null)
     setStaffFormSuccess(null)
@@ -258,6 +267,7 @@ export default function BranchDashboardPage() {
       catchmentAreaId: "",
     })
     setStaffRole("facility-nurse")
+    window.setTimeout(() => setRegisterStaffOpening(false), 250)
   }
 
   const handleStaffSubmit = async (e: React.FormEvent) => {
@@ -271,13 +281,13 @@ export default function BranchDashboardPage() {
     setStaffFormSuccess(null)
     try {
       const payload: RegisterStaffPayload = {
-        fullName: staffForm.fullName,
-        email: staffForm.email,
-        phoneNumber: staffForm.phoneNumber,
-        nationalId: staffForm.nationalId || undefined,
+        fullName: staffForm.fullName.trim(),
+        email: staffForm.email.trim(),
+        phoneNumber: staffForm.phoneNumber.trim(),
+        nationalId: staffForm.nationalId.trim() || undefined,
         role: staffRole,
-        specialization: staffRole === "facility-nurse" ? staffForm.specialization : undefined,
-        catchmentAreaId: staffRole === "chw" ? staffForm.catchmentAreaId : undefined,
+        specialization: staffRole === "facility-nurse" ? staffForm.specialization.trim() || undefined : undefined,
+        catchmentAreaId: staffRole === "chw" ? staffForm.catchmentAreaId.trim() || undefined : undefined,
       }
       const result = await registerStaff(payload)
       setStaffFormSuccess(
@@ -294,6 +304,7 @@ export default function BranchDashboardPage() {
   }
 
   const handleSuspendStaff = async (staffId: string, currentStatus: string) => {
+    setStaffStatusUpdatingId(staffId)
     try {
       const newStatus = currentStatus === "active" ? "suspended" : "active"
       await updateStaffStatus(staffId, newStatus)
@@ -301,22 +312,82 @@ export default function BranchDashboardPage() {
       loadDashboard()
     } catch (err: unknown) {
       setSystemMessage(err instanceof Error ? err.message : "Failed to update staff status.")
+    } finally {
+      setStaffStatusUpdatingId(null)
     }
   }
 
-  const handleOpenModule = (module: "users" | "child-records" | "chw-log") => {
+  const handleOpenVisitLog = () => {
+    setVisitLogModalOpen(true)
+  }
+
+  const handleDownloadVisitSummary = () => {
+    const visitLogs = dashData?.recentVisitLogs ?? []
+
+    if (visitLogs.length === 0) {
+      setSystemMessage("No visit logs available yet to download.")
+      return
+    }
+
+    setVisitSummaryDownloading(true)
+    try {
+      const csvHeaders = ["Visit Date", "CHW", "Child", "Status", "Vaccines Administered", "Notes"]
+      const csvRows = visitLogs.map((log) => [
+        log.visitDate,
+        log.chwName,
+        log.childName,
+        log.status,
+        String(log.vaccinesAdministered),
+        (log.notes || "").replace(/\r?\n/g, " "),
+      ])
+
+      const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`
+      const csvContent = [csvHeaders, ...csvRows]
+        .map((row) => row.map((cell) => escapeCsv(cell)).join(","))
+        .join("\n")
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(blob)
+
+      const anchor = document.createElement("a")
+      anchor.href = url
+      const branchSlug = (dashData?.branchMeta?.name || "branch")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+      const dateStamp = new Date().toISOString().split("T")[0]
+      anchor.download = `${branchSlug || "branch"}-visit-summary-${dateStamp}.csv`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+
+      URL.revokeObjectURL(url)
+      setSystemMessage("Visit summary downloaded successfully.")
+    } catch {
+      setSystemMessage("Failed to download visit summary. Please try again.")
+    } finally {
+      setVisitSummaryDownloading(false)
+    }
+  }
+
+  const handleOpenModule = (module: "users" | "child-records") => {
     const messages: Record<typeof module, string> = {
       users: "Branch user management will open once backend routes are integrated.",
       "child-records": "Child record search coming soon. Connect API to enable lookups.",
-      "chw-log": "CHW visit log viewer will load once data sync is wired.",
     }
     setSystemMessage(messages[module])
   }
 
   const kpis = dashData?.kpis ?? { childrenRegistered: 0, vaccinationsToday: 0, chwsActiveToday: 0, pendingSyncs: 0, zeroDoseChildren: 0 }
   const coverageTrendData = (dashData?.coverageTrend ?? []).map((p) => ({ day: p.day, measles: p.vaccinations }))
-  const branchCoverageValue = dashData?.branchCoverage ?? 0
-  const branchCoverageChart = [{ name: "Coverage", value: branchCoverageValue, fill: "#2563eb" }]
+  const branchCoverageValueRaw = dashData?.branchCoverage ?? 0
+  const branchCoverageValue = Math.max(0, Math.min(100, Number(branchCoverageValueRaw) || 0))
+  const branchCoverageChart = [
+    {
+      name: "Coverage",
+      covered: branchCoverageValue,
+    },
+  ]
 
   const renderOverview = () => (
     <div className="space-y-6">
@@ -372,9 +443,24 @@ export default function BranchDashboardPage() {
           <CardContent className="flex-1">
             <ResponsiveContainer width="100%" height={280}>
               <RadialBarChart innerRadius="60%" outerRadius="110%" data={branchCoverageChart} startAngle={90} endAngle={-270}>
-                <RadialBar background cornerRadius={18} dataKey="value" />
+                <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                <RadialBar
+                  dataKey="covered"
+                  cornerRadius={18}
+                  fill="#16a34a"
+                  background={{ fill: "#cbd5e1" }}
+                  clockWise
+                />
               </RadialBarChart>
             </ResponsiveContainer>
+            <div className="mt-3 flex items-center justify-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" /> Covered
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-slate-300" /> Remaining
+              </span>
+            </div>
             <p className="mt-4 text-center text-sm text-muted-foreground">Coverage: {branchCoverageValue}%</p>
           </CardContent>
         </Card>
@@ -564,9 +650,9 @@ export default function BranchDashboardPage() {
               <CardTitle>Staff roster</CardTitle>
               <CardDescription>Monitor nurse and CHW activity across catchments.</CardDescription>
             </div>
-            <Button onClick={handleOpenRegisterStaffModal}>
-              <Users className="mr-2 h-4 w-4" />
-              Register Staff
+            <Button onClick={handleOpenRegisterStaffModal} disabled={registerStaffOpening}>
+              {registerStaffOpening ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4" />}
+              {registerStaffOpening ? "Opening..." : "Register Staff"}
             </Button>
           </div>
         </CardHeader>
@@ -597,13 +683,22 @@ export default function BranchDashboardPage() {
                   </td>
                   <td className="py-2 pr-4 text-muted-foreground">{staff.lastActive}</td>
                   <td className="py-2 pr-4">
+                    {(() => {
+                      const isUpdatingThisRow = staffStatusUpdatingId === staff.id
+                      const actionLabel = (staff.status || "active") === "active" ? "Suspend" : "Activate"
+                      const loadingLabel = actionLabel === "Suspend" ? "Suspending..." : "Activating..."
+                      return (
                     <Button
                       variant="outline"
                       size="sm"
+                      disabled={isUpdatingThisRow}
                       onClick={() => handleSuspendStaff(staff.id, staff.status || "active")}
                     >
-                      {(staff.status || "active") === "active" ? "Suspend" : "Activate"}
+                      {isUpdatingThisRow ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      {isUpdatingThisRow ? loadingLabel : actionLabel}
                     </Button>
+                      )
+                    })()}
                   </td>
                 </tr>
               ))}
@@ -639,9 +734,10 @@ export default function BranchDashboardPage() {
           <CardDescription>Open the detailed outreach visit tracker.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={() => handleOpenModule("chw-log")}>Open CHW visit log</Button>
-          <Button variant="ghost" asChild>
-            <Link href="#">Download latest visit summary</Link>
+          <Button variant="outline" onClick={handleOpenVisitLog}>Open CHW visit log</Button>
+          <Button variant="ghost" className="gap-2" onClick={handleDownloadVisitSummary} disabled={visitSummaryDownloading}>
+            {visitSummaryDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowDownToLine className="h-4 w-4" />}
+            {visitSummaryDownloading ? "Preparing summary..." : "Download latest visit summary"}
           </Button>
         </CardContent>
       </Card>
@@ -650,36 +746,6 @@ export default function BranchDashboardPage() {
 
   const renderAnalytics = () => (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <MapPin className="h-5 w-5 text-primary" /> Coverage heatmap by catchment
-          </CardTitle>
-          <CardDescription>Identify cold spots requiring additional CHW support.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {(dashData?.catchmentCoverage ?? []).map((catchment) => (
-              <div
-                key={catchment.name}
-                className={`relative overflow-hidden rounded-xl border border-border bg-background p-4`}
-              >
-                <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${heatClassMap[catchment.status as HeatStatus]}`} />
-                <div className="relative">
-                  <p className="text-sm font-semibold text-foreground">{catchment.name}</p>
-                  <p className="mt-1 text-2xl font-semibold">{catchment.coverage}%</p>
-                  <Badge className="mt-2" variant="outline">{catchment.status} coverage</Badge>
-                  <p className="mt-3 text-xs text-muted-foreground">Data synced from CHW mobile app</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Map overlay will switch to a full GIS view once geospatial services are connected.
-          </p>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -715,6 +781,16 @@ export default function BranchDashboardPage() {
           </Button>
         </CardContent>
       </Card>
+    </div>
+  )
+
+  const renderCatchment = () => (
+    <div className="space-y-6">
+      <CatchmentCommandCenter
+        staffRoster={dashData?.staffRoster ?? []}
+        branchRegion={dashData?.branchMeta?.region}
+        onDataChanged={loadDashboard}
+      />
     </div>
   )
 
@@ -771,6 +847,8 @@ export default function BranchDashboardPage() {
         return renderStaff()
       case "analytics":
         return renderAnalytics()
+      case "catchment":
+        return renderCatchment()
       case "modules":
         return renderModules()
       default:
@@ -884,6 +962,63 @@ export default function BranchDashboardPage() {
           </section>
         </div>
       </main>
+
+      {/* ── CHW Visit Log Modal ─────────────────────────────────────────── */}
+      <Dialog open={visitLogModalOpen} onOpenChange={setVisitLogModalOpen}>
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5 text-primary" /> CHW Visit Log Tracker
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Latest outreach visits recorded by CHWs in this branch.
+            </p>
+          </DialogHeader>
+
+          <div className="max-h-[420px] overflow-auto rounded-lg border border-border">
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/40 text-left text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Date</th>
+                  <th className="px-3 py-2 font-medium">CHW</th>
+                  <th className="px-3 py-2 font-medium">Child</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Vaccines</th>
+                  <th className="px-3 py-2 font-medium">Notes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(dashData?.recentVisitLogs ?? []).length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
+                      No CHW visit logs found yet for this branch.
+                    </td>
+                  </tr>
+                ) : (dashData?.recentVisitLogs ?? []).map((log) => (
+                  <tr key={log.id} className="align-top">
+                    <td className="px-3 py-2 text-muted-foreground">{log.visitDate}</td>
+                    <td className="px-3 py-2 font-medium text-foreground">{log.chwName}</td>
+                    <td className="px-3 py-2 text-foreground">{log.childName}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant={log.status === "completed" ? "default" : "secondary"}>{log.status}</Badge>
+                    </td>
+                    <td className="px-3 py-2 text-foreground">{log.vaccinesAdministered}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{log.notes || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" className="gap-2" onClick={handleDownloadVisitSummary} disabled={visitSummaryDownloading}>
+              {visitSummaryDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowDownToLine className="h-4 w-4" />}
+              {visitSummaryDownloading ? "Preparing summary..." : "Download summary"}
+            </Button>
+            <Button onClick={() => setVisitLogModalOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Urgent Stock Warning Modal ─────────────────────────────────────── */}
       <Dialog

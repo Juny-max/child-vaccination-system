@@ -12,22 +12,34 @@ type EmailDispatchResult = {
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
 
+  getMissingEmailConfig(): string[] {
+    const missing: string[] = [];
+
+    if (!process.env.BREVO_API_KEY?.trim()) {
+      missing.push('BREVO_API_KEY');
+    }
+
+    // Allow SMTP_USER as a fallback sender identity when SMTP_FROM is omitted.
+    if (!(process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim())) {
+      missing.push('SMTP_FROM');
+    }
+
+    return missing;
+  }
+
   private async sendEmail(payload: {
     to: { email: string; name: string };
     subject: string;
     html: string;
   }): Promise<boolean> {
-    const apiKey = process.env.BREVO_API_KEY;
-    const senderEmail = process.env.SMTP_FROM;
+    const apiKey = process.env.BREVO_API_KEY?.trim();
+    const senderEmail = process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim();
     const senderName = 'Child Vaccination Command Center';
 
-    if (!apiKey) {
-      this.logger.error('BREVO_API_KEY is not set in environment variables');
-      throw new Error('BREVO_API_KEY is not configured');
-    }
-    if (!senderEmail) {
-      this.logger.error('SMTP_FROM is not set in environment variables');
-      throw new Error('SMTP_FROM is not configured');
+    const missing = this.getMissingEmailConfig();
+    if (missing.length > 0) {
+      this.logger.error(`Email provider is not configured. Missing: ${missing.join(', ')}`);
+      throw new Error(`Email provider is not configured. Missing: ${missing.join(', ')}`);
     }
 
     try {

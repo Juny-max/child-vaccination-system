@@ -17,6 +17,11 @@ import {
   HqUserStatus,
   UpdateHqUserDto,
 } from './hq-users.dto';
+import {
+  AssignBranchCatchmentAreaDto,
+  CreateBranchCatchmentAreaDto,
+  UpdateBranchCatchmentAreaDto,
+} from './catchment-areas.dto';
 import { RegisterStaffDto } from './register-staff.dto';
 import { UpdateStaffDto } from './update-staff.dto';
 
@@ -104,8 +109,7 @@ export class BranchManagerService {
           .from('users')
           .select('id, full_name, role, status, last_login_at')
           .eq('branch_id', branchId)
-          .in('role', ['facility-nurse', 'chw'])
-          .eq('status', 'active'),
+          .in('role', ['facility-nurse', 'chw']),
 
         // National vaccination schedule (mandatory doses) for overdue computation
         db
@@ -147,7 +151,7 @@ export class BranchManagerService {
         // CHW visit logs for the past 7 days
         db
           .from('visit_logs')
-          .select('id, chw_id, child_id, visit_date, status, vaccines_administered, notes, users!inner(full_name, branch_id)')
+          .select('id, chw_id, child_id, visit_date, status, vaccines_administered, notes, users!inner(full_name, branch_id), children(full_name)')
           .eq('users.branch_id', branchId)
           .gte('visit_date', sevenDaysAgoStr)
           .order('visit_date', { ascending: false })
@@ -189,7 +193,11 @@ export class BranchManagerService {
       const oneDayAgo = new Date();
       oneDayAgo.setDate(oneDayAgo.getDate() - 1);
       const chwsActiveToday = staff.filter(
-        (s: any) => s.role === 'chw' && s.last_login_at && new Date(s.last_login_at) > oneDayAgo,
+        (s: any) =>
+          s.role === 'chw' &&
+          s.status === 'active' &&
+          s.last_login_at &&
+          new Date(s.last_login_at) > oneDayAgo,
       ).length;
 
       const pendingSyncs = (syncQueueRows.data ?? []).length;
@@ -387,6 +395,7 @@ export class BranchManagerService {
         id: s.id,
         name: s.full_name,
         role: s.role === 'facility-nurse' ? 'Nurse' : 'CHW',
+        status: s.status,
         lastActive: s.last_login_at
           ? this.formatLastActive(new Date(s.last_login_at))
           : 'Never',
@@ -412,11 +421,24 @@ export class BranchManagerService {
 
       const chwProductivity = Array.from(visitsByChw.values());
 
-      // ── Step 13: Catchment coverage heatmap ───────────────────────────
+      // ── Step 13: Recent visit logs for branch manager tracker ──────────
+      const recentVisitLogs = (visitLogRows.data ?? []).map((v: any) => ({
+        id: v.id,
+        visitDate: v.visit_date,
+        chwName: (v.users as any)?.full_name ?? 'Unknown CHW',
+        childName: (v.children as any)?.full_name ?? 'Unknown child',
+        status: v.status ?? 'pending',
+        vaccinesAdministered: Array.isArray(v.vaccines_administered)
+          ? v.vaccines_administered.length
+          : 0,
+        notes: v.notes ?? '',
+      }));
+
+      // ── Step 14: Catchment coverage heatmap ───────────────────────────
       const catchments = catchmentRows.data ?? [];
       const catchmentCoverage = await this.computeCatchmentCoverage(db, catchments, branchId);
 
-      // ── Step 14: Dropout analysis (Dose 1 vs Dose 3 for key vaccines) ─
+      // ── Step 15: Dropout analysis (Dose 1 vs Dose 3 for key vaccines) ─
       const dropoutData = await this.computeDropoutAnalysis(db, branchId);
 
       return {
@@ -441,6 +463,7 @@ export class BranchManagerService {
         notificationFailures,
         staffRoster,
         chwProductivity,
+        recentVisitLogs,
         catchmentCoverage,
         dropoutData,
       };
@@ -1735,9 +1758,334 @@ export class BranchManagerService {
 
   // ── Branch Manager Staff Management ────────────────────────────────────────
 
+  async createBranchCatchmentArea(
+    branchId: string,
+    dto: CreateBranchCatchmentAreaDto,
+  ) {
+    const db = this.databaseService.supabase;
+    const name = dto.name.trim();
+
+    if (!name) {
+      throw new BadRequestException('Catchment area name is required.');
+    }
+
+    const geometry = this.extractCatchmentGeometry(dto.boundaries);
+    const code = await this.generateNextBranchCatchmentCode(branchId);
+
+    const { data, error } = await db
+      .from('catchment_areas')
+      .insert({
+        branch_id: branchId,
+        name,
+        code,
+        polygon: geometry,
+        assigned_chw_id: null,
+      })
+      .select('id, name, code, branch_id, polygon, assigned_chw_id, created_at, updated_at')
+      .single();
+
+    if (error || !data) {
+      if (error?.code === '23505') {
+        throw new ConflictException({
+          message: `Catchment area "${name}" already exists in this branch.`,
+          code: 'CATCHMENT_NAME_EXISTS',
+        });
+      }
+
+      throw new InternalServerErrorException({
+        message: `Failed to save catchment area: ${error?.message ?? 'Unknown error'}`,
+        code: 'CATCHMENT_CREATE_FAILED',
+      });
+    }
+
+    return this.mapBranchCatchmentArea(data);
+  }
+
+  async getBranchCatchmentAreas(branchId: string) {
+    const db = this.databaseService.supabase;
+
+    const { data, error } = await db
+      .from('catchment_areas')
+      .select('id, name, code, branch_id, polygon, assigned_chw_id, created_at, updated_at')
+      .eq('branch_id', branchId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch catchment areas: ${error.message}`,
+        code: 'CATCHMENT_FETCH_FAILED',
+      });
+    }
+
+    const rows = data ?? [];
+    const chwIds = [...new Set(rows.map((row: any) => row.assigned_chw_id).filter(Boolean))] as string[];
+
+    const chwNameMap = new Map<string, string>();
+    if (chwIds.length > 0) {
+      const { data: chws, error: chwError } = await db
+        .from('users')
+        .select('id, full_name')
+        .in('id', chwIds)
+        .eq('branch_id', branchId)
+        .eq('role', 'chw');
+
+      if (chwError) {
+        throw new InternalServerErrorException({
+          message: `Failed to resolve CHW assignments: ${chwError.message}`,
+          code: 'CATCHMENT_CHW_LOOKUP_FAILED',
+        });
+      }
+
+      (chws ?? []).forEach((chw: any) => {
+        chwNameMap.set(chw.id, chw.full_name ?? 'Unknown CHW');
+      });
+    }
+
+    return rows.map((row: any) => this.mapBranchCatchmentArea(row, chwNameMap));
+  }
+
+  async updateBranchCatchmentArea(
+    branchId: string,
+    catchmentAreaId: string,
+    dto: UpdateBranchCatchmentAreaDto,
+  ) {
+    const db = this.databaseService.supabase;
+
+    const { data: existingZone, error: zoneError } = await db
+      .from('catchment_areas')
+      .select('id, branch_id')
+      .eq('id', catchmentAreaId)
+      .maybeSingle();
+
+    if (zoneError) {
+      throw new InternalServerErrorException({
+        message: `Failed to verify catchment area: ${zoneError.message}`,
+        code: 'CATCHMENT_LOOKUP_FAILED',
+      });
+    }
+
+    if (!existingZone) {
+      throw new NotFoundException({
+        message: 'Catchment area not found.',
+        code: 'CATCHMENT_NOT_FOUND',
+      });
+    }
+
+    if (existingZone.branch_id !== branchId) {
+      throw new ForbiddenException('You can only update catchment areas within your branch.');
+    }
+
+    const payload: Record<string, any> = {};
+
+    if (dto.name !== undefined) {
+      const name = dto.name.trim();
+      if (!name) {
+        throw new BadRequestException({
+          message: 'Catchment area name cannot be empty.',
+          code: 'CATCHMENT_NAME_REQUIRED',
+        });
+      }
+      payload.name = name;
+    }
+
+    if (dto.boundaries !== undefined) {
+      payload.polygon = this.extractCatchmentGeometry(dto.boundaries);
+    }
+
+    if (Object.keys(payload).length === 0) {
+      throw new BadRequestException({
+        message: 'No catchment changes were provided.',
+        code: 'CATCHMENT_UPDATE_EMPTY',
+      });
+    }
+
+    const { data: updated, error: updateError } = await db
+      .from('catchment_areas')
+      .update(payload)
+      .eq('id', catchmentAreaId)
+      .eq('branch_id', branchId)
+      .select('id, name, code, branch_id, polygon, assigned_chw_id, created_at, updated_at')
+      .single();
+
+    if (updateError || !updated) {
+      if (updateError?.code === '23505') {
+        throw new ConflictException({
+          message: `Catchment area name already exists in this branch.`,
+          code: 'CATCHMENT_NAME_EXISTS',
+        });
+      }
+
+      throw new InternalServerErrorException({
+        message: `Failed to update catchment area: ${updateError?.message ?? 'Unknown error'}`,
+        code: 'CATCHMENT_UPDATE_FAILED',
+      });
+    }
+
+    const assignedChwId = updated.assigned_chw_id ?? null;
+    const chwNameMap = new Map<string, string>();
+
+    if (assignedChwId) {
+      const { data: chw, error: chwError } = await db
+        .from('users')
+        .select('id, full_name')
+        .eq('id', assignedChwId)
+        .eq('branch_id', branchId)
+        .eq('role', 'chw')
+        .maybeSingle();
+
+      if (chwError) {
+        throw new InternalServerErrorException({
+          message: `Failed to resolve CHW assignment: ${chwError.message}`,
+          code: 'CATCHMENT_CHW_LOOKUP_FAILED',
+        });
+      }
+
+      if (chw?.id) {
+        chwNameMap.set(chw.id, chw.full_name ?? 'Unknown CHW');
+      }
+    }
+
+    return this.mapBranchCatchmentArea(updated, chwNameMap);
+  }
+
+  async deleteBranchCatchmentArea(
+    branchId: string,
+    catchmentAreaId: string,
+  ) {
+    const db = this.databaseService.supabase;
+
+    const { data: existingZone, error: zoneError } = await db
+      .from('catchment_areas')
+      .select('id, name, branch_id')
+      .eq('id', catchmentAreaId)
+      .maybeSingle();
+
+    if (zoneError) {
+      throw new InternalServerErrorException({
+        message: `Failed to verify catchment area: ${zoneError.message}`,
+        code: 'CATCHMENT_LOOKUP_FAILED',
+      });
+    }
+
+    if (!existingZone) {
+      throw new NotFoundException({
+        message: 'Catchment area not found.',
+        code: 'CATCHMENT_NOT_FOUND',
+      });
+    }
+
+    if (existingZone.branch_id !== branchId) {
+      throw new ForbiddenException('You can only delete catchment areas within your branch.');
+    }
+
+    const { error: deleteError } = await db
+      .from('catchment_areas')
+      .delete()
+      .eq('id', catchmentAreaId)
+      .eq('branch_id', branchId);
+
+    if (deleteError) {
+      throw new InternalServerErrorException({
+        message: `Failed to delete catchment area: ${deleteError.message}`,
+        code: 'CATCHMENT_DELETE_FAILED',
+      });
+    }
+
+    return {
+      success: true,
+      id: catchmentAreaId,
+      name: existingZone.name,
+    };
+  }
+
+  async assignBranchCatchmentArea(
+    branchId: string,
+    catchmentAreaId: string,
+    dto: AssignBranchCatchmentAreaDto,
+  ) {
+    const db = this.databaseService.supabase;
+
+    const { data: existingZone, error: zoneError } = await db
+      .from('catchment_areas')
+      .select('id, branch_id')
+      .eq('id', catchmentAreaId)
+      .maybeSingle();
+
+    if (zoneError) {
+      throw new InternalServerErrorException({
+        message: `Failed to verify catchment area: ${zoneError.message}`,
+        code: 'CATCHMENT_LOOKUP_FAILED',
+      });
+    }
+
+    if (!existingZone) {
+      throw new NotFoundException({
+        message: 'Catchment area not found.',
+        code: 'CATCHMENT_NOT_FOUND',
+      });
+    }
+
+    if (existingZone.branch_id !== branchId) {
+      throw new ForbiddenException('You can only assign CHWs within your branch.');
+    }
+
+    const { data: chw, error: chwError } = await db
+      .from('users')
+      .select('id, full_name, role, branch_id, status')
+      .eq('id', dto.chwId)
+      .maybeSingle();
+
+    if (chwError) {
+      throw new InternalServerErrorException({
+        message: `Failed to validate CHW assignment: ${chwError.message}`,
+        code: 'CATCHMENT_ASSIGN_VALIDATE_FAILED',
+      });
+    }
+
+    if (!chw || chw.role !== 'chw' || chw.branch_id !== branchId) {
+      throw new BadRequestException({
+        message: 'Selected CHW is invalid or not assigned to your branch.',
+        code: 'INVALID_CHW_ASSIGNMENT',
+      });
+    }
+
+    if (chw.status !== 'active') {
+      throw new BadRequestException({
+        message: 'Only active CHWs can be assigned to a catchment area.',
+        code: 'INACTIVE_CHW_ASSIGNMENT',
+      });
+    }
+
+    const { data: updated, error: updateError } = await db
+      .from('catchment_areas')
+      .update({ assigned_chw_id: dto.chwId })
+      .eq('id', catchmentAreaId)
+      .eq('branch_id', branchId)
+      .select('id, name, code, branch_id, polygon, assigned_chw_id, created_at, updated_at')
+      .single();
+
+    if (updateError || !updated) {
+      throw new InternalServerErrorException({
+        message: `Failed to assign CHW: ${updateError?.message ?? 'Unknown error'}`,
+        code: 'CATCHMENT_ASSIGN_FAILED',
+      });
+    }
+
+    const chwNameMap = new Map<string, string>([[chw.id, chw.full_name ?? 'Unknown CHW']]);
+    return this.mapBranchCatchmentArea(updated, chwNameMap);
+  }
+
   async registerStaff(branchId: string, dto: RegisterStaffDto) {
     const db = this.databaseService.supabase;
     const normalizedEmail = dto.email.trim().toLowerCase();
+
+    const missingEmailConfig = this.emailService.getMissingEmailConfig();
+    if (missingEmailConfig.length > 0) {
+      throw new InternalServerErrorException({
+        message: `Staff invite email is not configured. Missing: ${missingEmailConfig.join(', ')}`,
+        code: 'STAFF_INVITE_EMAIL_CONFIG_MISSING',
+      });
+    }
 
     const { data: existing } = await db
       .from('users')
@@ -1757,8 +2105,7 @@ export class BranchManagerService {
       .insert({
         full_name: dto.fullName.trim(),
         email: normalizedEmail,
-        phone_number: dto.phoneNumber,
-        national_id: dto.nationalId ?? null,
+        phone: dto.phoneNumber,
         role: dto.role,
         branch_id: branchId,
         password_hash: passwordHash,
@@ -1773,10 +2120,31 @@ export class BranchManagerService {
       throw new InternalServerErrorException({ message: 'Failed to register staff. Please try again.', code: 'STAFF_CREATE_FAILED' });
     }
 
-    await this.emailService.sendStaffInviteEmail(
+    const emailSent = await this.emailService.sendStaffInviteEmail(
       { email: normalizedEmail, name: dto.fullName.trim(), role: dto.role },
       temporaryPassword,
     );
+
+    if (!emailSent) {
+      // Roll back account creation so credentials are never left undisclosed.
+      const { error: rollbackError } = await db
+        .from('users')
+        .delete()
+        .eq('id', created.id);
+
+      if (rollbackError) {
+        this.logger.error(
+          `Staff invite email failed and rollback failed for ${normalizedEmail}: ${rollbackError.message}`,
+          rollbackError.stack,
+        );
+      }
+
+      throw new InternalServerErrorException({
+        message:
+          'Staff account was not created because invitation email could not be sent. Check email settings and try again.',
+        code: 'STAFF_INVITE_EMAIL_FAILED',
+      });
+    }
 
     // Don't return temporaryPassword in API response (security: could be logged by proxies)
     // The password is sent via email to the user
@@ -1787,7 +2155,7 @@ export class BranchManagerService {
     const db = this.databaseService.supabase;
     let query = db
       .from('users')
-      .select('id, full_name, email, phone_number, role, status, created_at')
+      .select('id, full_name, email, phone_number:phone, role, status, created_at')
       .eq('branch_id', branchId)
       .in('role', ['facility-nurse', 'chw']);
 
@@ -1815,8 +2183,7 @@ export class BranchManagerService {
     const payload: Record<string, any> = {};
     if (dto.fullName) payload.full_name = dto.fullName.trim();
     if (dto.email) payload.email = dto.email.trim().toLowerCase();
-    if (dto.phoneNumber) payload.phone_number = dto.phoneNumber;
-    if (dto.nationalId !== undefined) payload.national_id = dto.nationalId;
+    if (dto.phoneNumber) payload.phone = dto.phoneNumber;
     if (dto.catchmentAreaId !== undefined) payload.catchment_area_id = dto.catchmentAreaId;
     if (dto.specialization !== undefined) payload.specialization = dto.specialization;
 
@@ -1840,6 +2207,132 @@ export class BranchManagerService {
     const { error } = await db.from('users').update({ status }).eq('id', staffId);
     if (error) throw new InternalServerErrorException('Failed to update staff status.');
     return { success: true, status };
+  }
+
+  private async generateNextBranchCatchmentCode(branchId: string): Promise<string> {
+    const db = this.databaseService.supabase;
+
+    const { data: branch, error: branchError } = await db
+      .from('branches')
+      .select('code')
+      .eq('id', branchId)
+      .maybeSingle();
+
+    if (branchError || !branch) {
+      throw new InternalServerErrorException({
+        message: `Failed to resolve branch code: ${branchError?.message ?? 'Branch not found'}`,
+        code: 'CATCHMENT_CODE_BRANCH_LOOKUP_FAILED',
+      });
+    }
+
+    const branchCodeSegment = String(branch.code ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/^BR-/, '') || '00';
+
+    const prefix = `CA-${branchCodeSegment}-`;
+
+    const { data: existingCodes, error: codeError } = await db
+      .from('catchment_areas')
+      .select('code')
+      .eq('branch_id', branchId)
+      .ilike('code', `${prefix}%`);
+
+    if (codeError) {
+      throw new InternalServerErrorException({
+        message: `Failed to generate catchment code: ${codeError.message}`,
+        code: 'CATCHMENT_CODE_GENERATION_FAILED',
+      });
+    }
+
+    const maxSerial = (existingCodes ?? []).reduce((max: number, row: any) => {
+      const code = String(row.code ?? '');
+      if (!code.startsWith(prefix)) return max;
+      const parsed = Number.parseInt(code.slice(prefix.length), 10);
+      if (Number.isNaN(parsed)) return max;
+      return Math.max(max, parsed);
+    }, 0);
+
+    return `${prefix}${String(maxSerial + 1).padStart(2, '0')}`;
+  }
+
+  private extractCatchmentGeometry(
+    boundaries: Record<string, any>,
+  ): { type: 'Polygon' | 'MultiPolygon'; coordinates: any[] } {
+    if (!boundaries || typeof boundaries !== 'object') {
+      throw new BadRequestException({
+        message: 'Boundaries payload is required.',
+        code: 'CATCHMENT_BOUNDARIES_REQUIRED',
+      });
+    }
+
+    const geometryCandidate = boundaries.type === 'Feature'
+      ? boundaries.geometry
+      : boundaries;
+
+    if (!geometryCandidate || typeof geometryCandidate !== 'object') {
+      throw new BadRequestException({
+        message: 'Invalid GeoJSON geometry payload.',
+        code: 'CATCHMENT_GEOMETRY_INVALID',
+      });
+    }
+
+    const geometryType = geometryCandidate.type;
+    if (geometryType !== 'Polygon' && geometryType !== 'MultiPolygon') {
+      throw new BadRequestException({
+        message: 'Only Polygon and MultiPolygon shapes are supported.',
+        code: 'CATCHMENT_GEOMETRY_TYPE_INVALID',
+      });
+    }
+
+    if (!Array.isArray(geometryCandidate.coordinates) || geometryCandidate.coordinates.length === 0) {
+      throw new BadRequestException({
+        message: 'GeoJSON coordinates are required for catchment boundaries.',
+        code: 'CATCHMENT_GEOMETRY_COORDS_MISSING',
+      });
+    }
+
+    return {
+      type: geometryType,
+      coordinates: geometryCandidate.coordinates,
+    };
+  }
+
+  private mapBranchCatchmentArea(
+    row: any,
+    chwNameMap: Map<string, string> = new Map<string, string>(),
+  ) {
+    const geometry = row.polygon
+      ? this.extractCatchmentGeometry(row.polygon)
+      : null;
+
+    const assignedChwId = row.assigned_chw_id ?? null;
+    const assignedChwName = assignedChwId
+      ? (chwNameMap.get(assignedChwId) ?? null)
+      : null;
+
+    return {
+      id: row.id,
+      branchId: row.branch_id,
+      name: row.name,
+      code: row.code,
+      boundaries: geometry
+        ? {
+            type: 'Feature',
+            geometry,
+            properties: {
+              catchmentId: row.id,
+              name: row.name,
+              code: row.code,
+            },
+          }
+        : null,
+      assignedChwId,
+      assignedChwName,
+      status: assignedChwId ? 'assigned' : 'unassigned',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -3,8 +3,10 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
+  ParseUUIDPipe,
   Query,
   UseGuards,
   ForbiddenException,
@@ -14,6 +16,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { BranchManagerService } from './branch-manager.service';
+import {
+  AssignBranchCatchmentAreaDto,
+  CreateBranchCatchmentAreaDto,
+  UpdateBranchCatchmentAreaDto,
+} from './catchment-areas.dto';
 import { LogStockDto } from './log-stock.dto';
 import { RegisterStaffDto } from './register-staff.dto';
 import { UpdateStaffDto, UpdateStaffStatusDto } from './update-staff.dto';
@@ -171,6 +178,113 @@ export class BranchManagerController {
       staffId,
       user.branchId,
       dto.status,
+    );
+  }
+
+  /**
+   * POST /api/branch-manager/catchment-areas
+   * Save a new drawn catchment polygon for this manager's branch.
+   */
+  @Post('catchment-areas')
+  async createCatchmentArea(
+    @CurrentUser() user: any,
+    @Body() dto: CreateBranchCatchmentAreaDto,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+
+    return this.branchManagerService.createBranchCatchmentArea(user.branchId, dto);
+  }
+
+  /**
+   * GET /api/branch-manager/catchment-areas?branchId=...
+   * Fetch all catchment zones for this manager's branch map.
+   */
+  @Get('catchment-areas')
+  async getCatchmentAreas(
+    @CurrentUser() user: any,
+    @Query('branchId') branchId?: string,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+
+    if (branchId && branchId !== user.branchId) {
+      throw new ForbiddenException('You can only access catchment areas for your own branch.');
+    }
+
+    return this.branchManagerService.getBranchCatchmentAreas(user.branchId);
+  }
+
+  /**
+   * PATCH /api/branch-manager/catchment-areas/:id
+   * Update catchment zone metadata and/or boundaries.
+   */
+  @Patch('catchment-areas/:id')
+  async updateCatchmentArea(
+    @CurrentUser() user: any,
+    @Param('id', new ParseUUIDPipe()) catchmentAreaId: string,
+    @Body() dto: UpdateBranchCatchmentAreaDto,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+
+    return this.branchManagerService.updateBranchCatchmentArea(
+      user.branchId,
+      catchmentAreaId,
+      dto,
+    );
+  }
+
+  /**
+   * DELETE /api/branch-manager/catchment-areas/:id
+   * Delete a catchment zone from this manager's branch.
+   */
+  @Delete('catchment-areas/:id')
+  async deleteCatchmentArea(
+    @CurrentUser() user: any,
+    @Param('id', new ParseUUIDPipe()) catchmentAreaId: string,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+
+    return this.branchManagerService.deleteBranchCatchmentArea(
+      user.branchId,
+      catchmentAreaId,
+    );
+  }
+
+  /**
+   * PATCH /api/branch-manager/catchment-areas/:id/assign
+   * Assign a CHW to a catchment zone.
+   */
+  @Patch('catchment-areas/:id/assign')
+  async assignCatchmentArea(
+    @CurrentUser() user: any,
+    @Param('id', new ParseUUIDPipe()) catchmentAreaId: string,
+    @Body() dto: AssignBranchCatchmentAreaDto,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+
+    return this.branchManagerService.assignBranchCatchmentArea(
+      user.branchId,
+      catchmentAreaId,
+      dto,
     );
   }
 }
