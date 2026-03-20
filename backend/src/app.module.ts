@@ -24,11 +24,11 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
     // Rate limiting
     ThrottlerModule.forRoot([
       {
-        ttl: 60000,     // 60 seconds
+        ttl: 60,        // 60 seconds
         limit: 10,      // 10 requests per minute default
       },
       {
-        ttl: 3600000,   // 1 hour
+        ttl: 3600,      // 1 hour
         limit: 100,     // 100 requests per hour
       },
     ]),
