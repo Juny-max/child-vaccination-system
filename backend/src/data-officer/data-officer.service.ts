@@ -325,7 +325,7 @@ export class DataOfficerService {
       }
 
       // Redirect all vaccination events from loser to survivor
-      await db
+      const { error: vaccinationUpdateError } = await db
         .from('vaccination_events')
         .update({
           child_id: survivorId,
@@ -333,8 +333,14 @@ export class DataOfficerService {
         })
         .eq('child_id', loserChildId);
 
+      if (vaccinationUpdateError) {
+        throw new InternalServerErrorException(
+          'Failed to update vaccination events during merge',
+        );
+      }
+
       // Redirect all appointments from loser to survivor
-      await db
+      const { error: appointmentUpdateError } = await db
         .from('appointments')
         .update({
           child_id: survivorId,
@@ -342,18 +348,50 @@ export class DataOfficerService {
         })
         .eq('child_id', loserChildId);
 
+      if (appointmentUpdateError) {
+        throw new InternalServerErrorException(
+          'Failed to update appointments during merge',
+        );
+      }
+
+      // Fetch existing child metadata so we can merge rather than overwrite
+      const { data: loserChild, error: loserChildFetchError } = await db
+        .from('children')
+        .select('metadata')
+        .eq('id', loserChildId)
+        .single();
+
+      if (loserChildFetchError) {
+        const isNotFound = loserChildFetchError.code === 'PGRST116';
+        throw new InternalServerErrorException(
+          isNotFound
+            ? `Child record ${loserChildId} not found during merge`
+            : `Failed to fetch child data during merge: ${loserChildFetchError.message}`,
+        );
+      }
+
+      const existingMetadata =
+        (loserChild.metadata as Record<string, unknown>) ?? {};
+      const mergedMetadata = { ...existingMetadata, merged_to: survivorId };
+
       // Mark the loser child as deleted/merged
-      await db
+      const { error: childUpdateError } = await db
         .from('children')
         .update({
           status: 'inactive',
           updated_at: new Date().toISOString(),
-          metadata: { merged_to: survivorId },
+          metadata: mergedMetadata,
         })
         .eq('id', loserChildId);
 
+      if (childUpdateError) {
+        throw new InternalServerErrorException(
+          'Failed to update child record during merge',
+        );
+      }
+
       // Log merge action to audit
-      await db.from('audit_logs').insert({
+      const { error: auditLogError } = await db.from('audit_logs').insert({
         user_id: userId,
         action: 'merge',
         entity_type: 'child',
@@ -362,6 +400,12 @@ export class DataOfficerService {
         after_data: { survivor_child_id: survivorId },
         category: 'data-quality',
       });
+
+      if (auditLogError) {
+        throw new InternalServerErrorException(
+          'Failed to create audit log for merge',
+        );
+      }
 
       this.logger.log(
         `Successfully merged duplicate ${duplicateId}: ${loserChildId} -> ${survivorId}`,
