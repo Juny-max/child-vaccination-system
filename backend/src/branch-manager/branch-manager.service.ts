@@ -935,6 +935,46 @@ export class BranchManagerService {
       ? Math.round(((activeChwCount ?? 0) / totalChwCount) * 100)
       : 0;
 
+    // Calculate national vaccination coverage rate
+    // Coverage = children with completed vaccination schedule / total children registered
+    let nationalCoverageRate = 0;
+
+    if (childrenCount && childrenCount > 0) {
+      // Query for children who have completed their vaccination schedule
+      // A child has completed vaccination if they have all required vaccines from the schedule
+      const { count: fullyVaccinatedCount, error: vaccinationError } = await db
+        .rpc('get_fully_vaccinated_count', {}, { count: 'exact', head: true });
+
+      if (!vaccinationError && fullyVaccinatedCount) {
+        nationalCoverageRate = Math.round(((fullyVaccinatedCount ?? 0) / childrenCount) * 100);
+      } else {
+        // Fallback: count vaccination_events where children have all doses
+        const { data: childrenWithVaccines } = await db
+          .from('children')
+          .select('id')
+          .eq('is_active', true);
+
+        if (childrenWithVaccines && childrenWithVaccines.length > 0) {
+          const childIds = childrenWithVaccines.map((c: any) => c.id);
+          
+          // Count children with at least 3 vaccinations (BCG, OPV/IPV, DPT/Penta)
+          const { data: vaccinationCounts } = await db
+            .from('vaccination_events')
+            .select('child_id')
+            .in('child_id', childIds)
+            .eq('status', 'completed');
+
+          const uniqueChildrenWithVaccines = new Set(
+            (vaccinationCounts ?? []).map((v: any) => v.child_id)
+          ).size;
+
+          nationalCoverageRate = Math.round(
+            ((uniqueChildrenWithVaccines ?? 0) / childrenCount) * 100
+          );
+        }
+      }
+    }
+
     return {
       totalBranches: branchCount ?? 0,
       totalUsers: userCount ?? 0,
@@ -942,7 +982,176 @@ export class BranchManagerService {
       chwsActiveToday: activeChwCount ?? 0,
       totalChws: totalChwCount ?? 0,
       chwSyncPercentage,
+      nationalCoverageRate,
     };
+  }
+
+  async getHqAefiReports(params: { limit?: number; priority?: string }) {
+    const db = this.databaseService.supabase;
+    const limit = params.limit || 10;
+
+    let query = db
+      .from('aefi_reports')
+      .select(`
+        id,
+        child_id,
+        vaccination_event_id,
+        severity,
+        onset_date,
+        reported_by_user_id,
+        created_at
+      `)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    // Filter by priority/severity if specified
+    if (params.priority && params.priority !== 'all') {
+      query = query.eq('severity', params.priority);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch AEFI reports: ${error.message}`,
+        code: 'HQ_AEFI_FETCH_FAILED',
+      });
+    }
+
+    // Fetch related data separately if available
+    const childIds = (data ?? [])
+      .map((report: any) => report.child_id)
+      .filter((id: any) => id);
+    const vaccEventIds = (data ?? [])
+      .map((report: any) => report.vaccination_event_id)
+      .filter((id: any) => id);
+
+    let childMap: Record<string, any> = {};
+    let vaccineMap: Record<string, any> = {};
+
+    if (childIds.length > 0) {
+      const { data: children } = await db
+        .from('children')
+        .select('id, name')
+        .in('id', [...new Set(childIds)]);
+      childMap = Object.fromEntries(
+        (children ?? []).map((c: any) => [c.id, c])
+      );
+    }
+
+    // Fetch vaccination events to get vaccine_id
+    let vaccEventMap: Record<string, any> = {};
+    if (vaccEventIds.length > 0) {
+      const { data: vaccEvents } = await db
+        .from('vaccination_events')
+        .select('id, vaccine_id')
+        .in('id', [...new Set(vaccEventIds)]);
+      
+      vaccEventMap = Object.fromEntries(
+        (vaccEvents ?? []).map((ve: any) => [ve.id, ve])
+      );
+
+      // Get unique vaccine IDs
+      const vaccineIds = (vaccEvents ?? [])
+        .map((ve: any) => ve.vaccine_id)
+        .filter((id: any) => id);
+
+      if (vaccineIds.length > 0) {
+        const { data: vaccines } = await db
+          .from('vaccines')
+          .select('id, name')
+          .in('id', [...new Set(vaccineIds)]);
+        vaccineMap = Object.fromEntries(
+          (vaccines ?? []).map((v: any) => [v.id, v])
+        );
+      }
+    }
+
+    // Transform data for frontend
+    return (data ?? []).map((report: any) => {
+      const vaccEventData = vaccEventMap[report.vaccination_event_id];
+      const vaccineId = vaccEventData?.vaccine_id;
+
+      return {
+        id: report.id,
+        child: childMap[report.child_id]?.name || 'Unknown',
+        vaccine: vaccineMap[vaccineId]?.name || 'Unknown vaccine',
+        branch: 'Field Report',
+        reportedAt: report.created_at,
+        priority: report.severity === 'severe' ? 'High' : report.severity === 'moderate' ? 'Medium' : 'Low',
+      };
+    });
+  }
+
+  async getHqDeviceSyncStatus() {
+    const db = this.databaseService.supabase;
+
+    // Get all CHW users and their last sync/login times
+    const { data: chwUsers, error: chwError } = await db
+      .from('users')
+      .select('id, full_name, branch_id, last_login_at, created_at')
+      .eq('role', 'chw')
+      .eq('status', 'active')
+      .order('last_login_at', { ascending: false });
+
+    if (chwError) {
+      throw new InternalServerErrorException({
+        message: `Failed to fetch CHW device status: ${chwError.message}`,
+        code: 'HQ_DEVICE_SYNC_FETCH_FAILED',
+      });
+    }
+
+    // For each CHW, count pending vaccination forms
+    const deviceStatus = await Promise.all(
+      (chwUsers ?? []).map(async (chw: any) => {
+        // Count pending vaccination_events for this CHW (could track via branch or chw_id if available)
+        const { count: pendingForms } = await db
+          .from('vaccination_events')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending')
+          .eq('facility_id', chw.branch_id)
+          .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()); // Last 7 days
+
+        const lastSyncTime = chw.last_login_at ? new Date(chw.last_login_at) : null;
+        const nowTime = new Date();
+        const diffMs = lastSyncTime ? nowTime.getTime() - lastSyncTime.getTime() : Number.MAX_SAFE_INTEGER;
+        let lastSyncText = 'Never';
+        
+        if (lastSyncTime) {
+          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+          const diffDays = Math.floor(diffHours / 24);
+
+          if (diffDays > 0) {
+            lastSyncText = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+          } else if (diffHours > 0) {
+            lastSyncText = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+          } else {
+            lastSyncText = 'Just now';
+          }
+        }
+
+        return {
+          id: chw.id,
+          name: chw.full_name,
+          branch: 'Field',
+          lastSync: lastSyncText,
+          lastSyncAt: chw.last_login_at,
+          pending: pendingForms ?? 0,
+          diffMs,
+          status: diffMs > 24 * 60 * 60 * 1000 ? 'stale' : 'active', // Mark as stale if not synced in 24 hours
+        };
+      })
+    );
+
+    return deviceStatus
+      .sort((a, b) => {
+        // Prioritize devices with pending forms and older last sync times
+        if (a.status !== b.status) return a.status === 'stale' ? -1 : 1;
+        if (a.pending !== b.pending) return b.pending - a.pending;
+        return b.diffMs - a.diffMs;
+      })
+      .map(({ diffMs, ...rest }) => rest) // Remove diffMs from result
+      .slice(0, 10); // Return top 10 devices needing attention
   }
 
   async createHqBranch(dto: CreateHqBranchDto) {
@@ -1120,7 +1329,7 @@ export class BranchManagerService {
 
     const { data: branch, error: branchError } = await db
       .from('branches')
-      .select('id, metadata')
+      .select('id, code, name, metadata')
       .eq('code', code.trim())
       .single();
 
@@ -1128,6 +1337,42 @@ export class BranchManagerService {
       throw new NotFoundException({
         message: `Branch not found: ${code}`,
         code: 'BRANCH_NOT_FOUND',
+      });
+    }
+
+    // Check for duplicate CHW assignments across branches
+    const { data: allBranches } = await db
+      .from('branches')
+      .select('id, code, name, metadata');
+
+    const conflicts: Array<{ chwName: string; assignedTo: string }> = [];
+
+    normalizedChws.forEach((chwName) => {
+      allBranches?.forEach((otherBranch: any) => {
+        // Skip current branch
+        if (otherBranch.id === branch.id) return;
+
+        const otherMetadata = (otherBranch.metadata ?? {}) as Record<string, any>;
+        const otherChws = (otherMetadata.assignedChwNames ?? []) as string[];
+
+        if (otherChws.includes(chwName)) {
+          conflicts.push({
+            chwName,
+            assignedTo: otherBranch.name,
+          });
+        }
+      });
+    });
+
+    if (conflicts.length > 0) {
+      const conflictList = conflicts
+        .map((c) => `"${c.chwName}" is already assigned to ${c.assignedTo}`)
+        .join('; ');
+
+      throw new ConflictException({
+        message: `Cannot assign CHW to multiple branches. ${conflictList}. Remove from the other branch first.`,
+        code: 'CHW_ALREADY_ASSIGNED',
+        conflicts,
       });
     }
 
@@ -1152,6 +1397,77 @@ export class BranchManagerService {
 
     const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === branch.id));
     return fullBranch;
+  }
+
+  async cleanupDuplicateChwAssignments() {
+    const db = this.databaseService.supabase;
+    const { data: allBranches } = await db
+      .from('branches')
+      .select('id, code, name, metadata, created_at')
+      .order('created_at', { ascending: true });
+
+    if (!allBranches || allBranches.length === 0) {
+      return { message: 'No branches found', cleaned: 0 };
+    }
+
+    // Map CHW names to the branches they're assigned to (in creation order)
+    const chwToBranches = new Map<string, any[]>();
+
+    allBranches.forEach((branch: any) => {
+      const metadata = (branch.metadata ?? {}) as Record<string, any>;
+      const chws = (metadata.assignedChwNames ?? []) as string[];
+
+      chws.forEach((chwName) => {
+        if (!chwToBranches.has(chwName)) {
+          chwToBranches.set(chwName, []);
+        }
+        chwToBranches.get(chwName)!.push(branch);
+      });
+    });
+
+    // Find duplicates and clean them up
+    const duplicateChws: Array<{ chwName: string; keptIn: string; removedFrom: string[] }> = [];
+    let cleanupCount = 0;
+
+    for (const [chwName, branches] of chwToBranches.entries()) {
+      if (branches.length > 1) {
+        // Keep in the first (oldest) branch, remove from others
+        const keptBranch = branches[0];
+        const removedBranches = branches.slice(1);
+
+        duplicateChws.push({
+          chwName,
+          keptIn: keptBranch.name,
+          removedFrom: removedBranches.map((b) => b.name),
+        });
+
+        // Update each branch to remove this CHW if it's not the keeper
+        for (const branchToClean of removedBranches) {
+          const metadata = (branchToClean.metadata ?? {}) as Record<string, any>;
+          const chws = ((metadata.assignedChwNames ?? []) as string[]).filter((c) => c !== chwName);
+
+          const { error } = await db
+            .from('branches')
+            .update({
+              metadata: {
+                ...metadata,
+                assignedChwNames: chws,
+              },
+            })
+            .eq('id', branchToClean.id);
+
+          if (!error) {
+            cleanupCount++;
+          }
+        }
+      }
+    }
+
+    return {
+      message: `Cleanup complete: removed ${cleanupCount} duplicate CHW assignments`,
+      cleaned: cleanupCount,
+      details: duplicateChws,
+    };
   }
 
   async deleteHqBranch(code: string) {

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
@@ -39,6 +40,8 @@ type AssignedChild = {
 
 @Injectable()
 export class ChwService {
+  private readonly logger = new Logger(ChwService.name);
+
   constructor(private readonly db: DatabaseService) {}
 
   private toChildArray(rawChild: any): any[] {
@@ -89,7 +92,7 @@ export class ChwService {
   }
 
   private async getAssignedChildren(chwUserId: string): Promise<AssignedChild[]> {
-    console.log(`[CHW getAssignedChildren] Looking for catchments assigned to CHW: ${chwUserId}`);
+    this.logger.debug('[CHW getAssignedChildren] Fetching assigned catchments');
     
     const { data: catchments, error: catchmentError } = await this.db.supabase
       .from('catchment_areas')
@@ -100,7 +103,7 @@ export class ChwService {
       throw new BadRequestException(catchmentError.message);
     }
 
-    console.log(`[CHW getAssignedChildren] Found ${(catchments || []).length} catchment areas:`, catchments);
+    this.logger.debug(`[CHW getAssignedChildren] Found ${(catchments || []).length} catchment areas`);
 
     const catchmentIds = (catchments || []).map((item: any) => item.id);
     const catchmentMap = new Map<string, string | undefined>(
@@ -108,7 +111,7 @@ export class ChwService {
     );
 
     if (catchmentIds.length === 0) {
-      console.log(`[CHW getAssignedChildren] No catchments found for CHW ${chwUserId}`);
+      this.logger.debug('[CHW getAssignedChildren] No catchments found');
       return [];
     }
 
@@ -139,7 +142,7 @@ export class ChwService {
       throw new BadRequestException(guardiansError.message);
     }
 
-    console.log(`[CHW getAssignedChildren] Found ${(guardians || []).length} guardians in catchments`);
+    this.logger.debug(`[CHW getAssignedChildren] Found ${(guardians || []).length} guardians`);
 
     const deduped = new Map<string, AssignedChild>();
 
@@ -175,7 +178,7 @@ export class ChwService {
       });
     });
 
-    console.log(`[CHW getAssignedChildren] Total unique children found: ${deduped.size}`);
+    this.logger.debug(`[CHW getAssignedChildren] Found ${deduped.size} unique children`);
 
     return Array.from(deduped.values());
   }
@@ -272,8 +275,7 @@ export class ChwService {
       return [];
     }
 
-    console.log(`[CHW Search All] User ID: ${chwUserId}`);
-    console.log(`[CHW Search All] Query: "${query}"`);
+    this.logger.debug('[CHW Search All] Starting search');
 
     // Strategy 1: Search children by name or CVCC ID
     const { data: childrenByName, error: nameError } = await this.db.supabase
@@ -306,7 +308,7 @@ export class ChwService {
 
     // Strategy 2: Search guardians by phone, then get their children
     const phoneNormalized = normalized.replace(/\s+/g, '').replace(/[^\d+]/g, '');
-    console.log(`[CHW Search All] Phone normalized: "${phoneNormalized}"`);
+    this.logger.debug('[CHW Search All] Searching by phone');
     
     const { data: guardiansByPhone, error: phoneError } = await this.db.supabase
       .from('guardians')
@@ -378,7 +380,7 @@ export class ChwService {
 
     const childrenWithGuardians = Array.from(childrenMap.values()).slice(0, 20);
 
-    console.log(`[CHW Search All] Found ${childrenWithGuardians.length} children (${(childrenByName || []).length} by name, ${(guardiansByPhone || []).flatMap((g: any) => g.child_guardian || []).length} by phone)`);
+    this.logger.debug(`[CHW Search All] Search returned ${childrenWithGuardians.length} results`);
 
     const results = await Promise.all(
       (childrenWithGuardians || []).map(async (child: any) => {
@@ -487,7 +489,7 @@ export class ChwService {
    * Used when CHW is online and can help children from any area
    */
   async getChildChartAll(childId: string, chwUserId: string) {
-    console.log(`[CHW Chart All] User ID: ${chwUserId}, Child ID: ${childId}`);
+    this.logger.debug('[CHW Chart All] Fetching child chart');
 
     // Get child data without catchment filter
     const { data: child, error: childError } = await this.db.supabase
@@ -533,7 +535,7 @@ export class ChwService {
       child.date_of_birth,
     );
 
-    console.log(`[CHW Chart All] Found child: ${child.full_name}`);
+    this.logger.debug('[CHW Chart All] Child chart retrieved');
 
     return {
       id: child.id,
@@ -770,7 +772,7 @@ export class ChwService {
    * Used when a mother/child leaves the area
    */
   async transferOut(childId: string, chwUserId: string, reason?: string) {
-    console.log(`[CHW TransferOut] CHW ${chwUserId} transferring out child ${childId}`);
+    this.logger.debug('[CHW TransferOut] Processing transfer out');
 
     // Get CHW's catchment area(s)
     const { data: chwCatchments } = await this.db.supabase
@@ -846,7 +848,7 @@ export class ChwService {
    * Used when a new mother arrives in the area (found via global search)
    */
   async transferIn(childId: string, chwUserId: string, notes?: string) {
-    console.log(`[CHW TransferIn] CHW ${chwUserId} transferring in child ${childId}`);
+    this.logger.debug('[CHW TransferIn] Processing transfer in');
 
     // Get CHW's primary catchment area
     const { data: chwCatchments } = await this.db.supabase
@@ -940,7 +942,7 @@ export class ChwService {
    * Uses child's direct catchment_area_id instead of guardian's
    */
   async getLocalRegister(chwUserId: string) {
-    console.log(`[CHW getLocalRegister] Fetching for CHW ${chwUserId}`);
+    this.logger.debug('[CHW getLocalRegister] Fetching local register');
 
     // Get CHW's catchment areas
     const { data: catchments } = await this.db.supabase
@@ -949,7 +951,7 @@ export class ChwService {
       .eq('assigned_chw_id', chwUserId);
 
     if (!catchments || catchments.length === 0) {
-      console.log(`[CHW getLocalRegister] No catchments found for CHW ${chwUserId}`);
+      this.logger.debug('[CHW getLocalRegister] No catchments assigned');
       return [];
     }
 
@@ -1002,7 +1004,7 @@ export class ChwService {
       };
     });
 
-    console.log(`[CHW getLocalRegister] Found ${register.length} children in catchments`);
+    this.logger.debug(`[CHW getLocalRegister] Register retrieved successfully`);
 
     return register;
   }
