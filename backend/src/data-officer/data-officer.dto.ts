@@ -2,6 +2,19 @@
  * Data Officer DTOs
  */
 
+import {
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsPositive,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
+
 // ============================================================================
 // DASHBOARD DTOs
 // ============================================================================
@@ -52,8 +65,15 @@ export interface DuplicateCandidateDto {
 }
 
 export class MergeDuplicateDto {
+  @IsUUID()
   survivor_id: string;
+
+  @IsString()
+  @IsNotEmpty()
   merge_reason: string;
+
+  @IsOptional()
+  @IsString()
   merge_note?: string;
 }
 
@@ -75,9 +95,19 @@ export interface SyncConflictDto {
 }
 
 export class ResolveSyncConflictDto {
+  @IsIn(['relink', 'discard', 'hold-for-hq'])
   resolution_type: 'relink' | 'discard' | 'hold-for-hq';
+
+  @IsOptional()
+  @IsUUID()
   related_child_id?: string;
+
+  @IsOptional()
+  @IsString()
   follow_up_action?: string;
+
+  @IsString()
+  @IsNotEmpty()
   resolution_note: string;
 }
 
@@ -100,15 +130,36 @@ export interface NotificationLogDto {
 }
 
 export class FilterNotificationsDto {
+  @IsOptional()
+  @IsIn(['all', 'sent', 'delivered', 'failed', 'pending'])
   status?: 'all' | 'sent' | 'delivered' | 'failed' | 'pending';
+
+  @IsOptional()
+  @IsIn(['sms', 'email', 'all'])
   channel?: 'sms' | 'email' | 'all';
+
+  @IsOptional()
+  @IsString()
   date_from?: string;
+
+  @IsOptional()
+  @IsString()
   date_to?: string;
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
   limit?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
   offset?: number;
 }
 
 export class BulkRetryDto {
+  @IsArray()
+  @IsString({ each: true })
   notification_ids: string[];
 }
 
@@ -128,15 +179,31 @@ export interface ReportDto {
 }
 
 export class CreateReportDto {
+  @IsString()
+  @IsNotEmpty()
   name: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
+
+  @IsString()
+  @IsNotEmpty()
   data_source: string;
+
+  @IsArray()
+  @IsString({ each: true })
   columns: string[];
+
+  @IsObject()
   filters: Record<string, any>;
 }
 
 export class ExportReportDto {
+  @IsUUID()
   report_id: string;
+
+  @IsIn(['csv', 'excel', 'pdf'])
   format: 'csv' | 'excel' | 'pdf';
 }
 
