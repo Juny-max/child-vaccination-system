@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   assignCatchmentAreaChw,
@@ -129,6 +130,9 @@ export default function CatchmentCommandCenter({
   const [message, setMessage] = useState<string | null>(null)
   const [boundaryEditZoneId, setBoundaryEditZoneId] = useState<string | null>(null)
   const [zonePendingDelete, setZonePendingDelete] = useState<BranchCatchmentArea | null>(null)
+  const [createZoneModalOpen, setCreateZoneModalOpen] = useState(false)
+  const [pendingNewZoneGeoJson, setPendingNewZoneGeoJson] = useState<Record<string, any> | null>(null)
+  const [newZoneName, setNewZoneName] = useState("")
 
   const [selectedZone, setSelectedZone] = useState<BranchCatchmentArea | null>(null)
   const [selectedChwId, setSelectedChwId] = useState("")
@@ -137,6 +141,13 @@ export default function CatchmentCommandCenter({
     setSelectedZone(null)
     setSelectedChwId("")
   }, [])
+
+  const closeCreateZoneModal = useCallback(() => {
+    if (isSavingZone) return
+    setCreateZoneModalOpen(false)
+    setPendingNewZoneGeoJson(null)
+    setNewZoneName("")
+  }, [isSavingZone])
 
   const activeChws = useMemo(
     () => staffRoster.filter((staff) => staff.role === "CHW" && staff.status === "active"),
@@ -261,33 +272,47 @@ export default function CatchmentCommandCenter({
         return
       }
 
-      const zoneName = window.prompt("Enter catchment zone name")
-
-      if (!zoneName || !zoneName.trim()) {
-        setMessage("Catchment zone creation cancelled.")
-        return
-      }
-
-      setIsSavingZone(true)
       setError(null)
-
-      try {
-        const created = await createBranchCatchmentArea({
-          name: zoneName.trim(),
-          boundaries: geoJson as any,
-        })
-
-        setZones((previous) => [created, ...previous])
-        setMessage(`Zone \"${created.name}\" saved successfully.`)
-        onDataChanged?.()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to save catchment area.")
-      } finally {
-        setIsSavingZone(false)
-      }
+      setPendingNewZoneGeoJson(geoJson)
+      setNewZoneName("")
+      setCreateZoneModalOpen(true)
     },
     [boundaryEditZoneId, onDataChanged, zones],
   )
+
+  const handleCreateZoneSubmit = useCallback(async () => {
+    if (!pendingNewZoneGeoJson) {
+      closeCreateZoneModal()
+      return
+    }
+
+    const trimmedZoneName = newZoneName.trim()
+    if (!trimmedZoneName) {
+      setError("Zone name cannot be empty.")
+      return
+    }
+
+    setIsSavingZone(true)
+    setError(null)
+
+    try {
+      const created = await createBranchCatchmentArea({
+        name: trimmedZoneName,
+        boundaries: pendingNewZoneGeoJson as any,
+      })
+
+      setZones((previous) => [created, ...previous])
+      setCreateZoneModalOpen(false)
+      setPendingNewZoneGeoJson(null)
+      setNewZoneName("")
+      setMessage(`Zone \"${created.name}\" saved successfully.`)
+      onDataChanged?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save catchment area.")
+    } finally {
+      setIsSavingZone(false)
+    }
+  }, [closeCreateZoneModal, newZoneName, onDataChanged, pendingNewZoneGeoJson])
 
   const handleDrawCreated = useCallback(
     async (event: L.DrawEvents.Created) => {
@@ -733,6 +758,61 @@ export default function CatchmentCommandCenter({
               </Button>
             </div>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={createZoneModalOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeCreateZoneModal()
+          }
+        }}
+      >
+        <DialogContent className="z-[1100] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Catchment Zone</DialogTitle>
+          </DialogHeader>
+
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void handleCreateZoneSubmit()
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="new-zone-name">Catchment zone name</Label>
+              <Input
+                id="new-zone-name"
+                placeholder="Enter catchment zone name"
+                value={newZoneName}
+                onChange={(event) => {
+                  setNewZoneName(event.target.value)
+                  if (error) {
+                    setError(null)
+                  }
+                }}
+                autoFocus
+                disabled={isSavingZone}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeCreateZoneModal}
+                disabled={isSavingZone}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSavingZone || !newZoneName.trim()} className="gap-2">
+                {isSavingZone ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {isSavingZone ? "Saving..." : "Save zone"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
