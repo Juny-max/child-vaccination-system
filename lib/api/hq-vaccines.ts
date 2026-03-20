@@ -10,8 +10,6 @@ export interface HqVaccine {
 
 export interface CreateHqVaccinePayload {
   name: string;
-  schedule?: string;
-  dueDays?: number;
   code: string;
   description?: string;
   manufacturer?: string;
@@ -19,8 +17,6 @@ export interface CreateHqVaccinePayload {
 
 export interface UpdateHqVaccinePayload {
   name?: string;
-  schedule?: string;
-  dueDays?: number;
   description?: string;
   manufacturer?: string;
   status?: string;
