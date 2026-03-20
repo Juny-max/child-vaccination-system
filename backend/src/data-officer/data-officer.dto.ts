@@ -2,6 +2,15 @@
  * Data Officer DTOs
  */
 
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateIf,
+} from 'class-validator';
+
 // ============================================================================
 // DASHBOARD DTOs
 // ============================================================================
@@ -74,10 +83,29 @@ export interface SyncConflictDto {
   recommended_action: string | null;
 }
 
+export enum ResolutionType {
+  RELINK = 'relink',
+  DISCARD = 'discard',
+  HOLD_FOR_HQ = 'hold-for-hq',
+}
+
 export class ResolveSyncConflictDto {
-  resolution_type: 'relink' | 'discard' | 'hold-for-hq';
+  @IsNotEmpty()
+  @IsEnum(ResolutionType)
+  resolution_type: ResolutionType;
+
+  /** Required when resolution_type is 'relink' */
+  @ValidateIf((o) => o.resolution_type === ResolutionType.RELINK)
+  @IsNotEmpty()
+  @IsUUID()
   related_child_id?: string;
+
+  @IsOptional()
+  @IsString()
   follow_up_action?: string;
+
+  @IsNotEmpty()
+  @IsString()
   resolution_note: string;
 }
 
