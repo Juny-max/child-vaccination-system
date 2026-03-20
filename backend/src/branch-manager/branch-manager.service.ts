@@ -2720,10 +2720,6 @@ export class BranchManagerService {
       scheduleMap.set(s.vaccine_id, list);
     }
 
-    return (data ?? []).map((v: any) => ({
-      ...v,
-      schedules: scheduleMap.get(v.id) ?? [],
-    }));
     return (data ?? []).map((v: any) => {
       const vaccineSchedules = scheduleMap.get(v.id) ?? [];
       const firstSchedule = vaccineSchedules[0];
