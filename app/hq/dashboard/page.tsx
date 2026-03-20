@@ -3503,18 +3503,14 @@ export default function HqDashboardPage() {
           {csvImportResult && (
             <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-4">
               <p className="font-medium text-sm">Import Summary</p>
-              <div className="grid gap-2 md:grid-cols-3">
+              <div className="grid gap-2 md:grid-cols-2">
                 <div>
                   <p className="text-xs text-muted-foreground">Successfully created</p>
-                  <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{csvImportResult.successCount}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Duplicates skipped</p>
-                  <p className="text-lg font-bold text-amber-600 dark:text-amber-400">{csvImportResult.skipCount}</p>
+                  <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{csvImportResult.success}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Failed to import</p>
-                  <p className="text-lg font-bold text-destructive">{csvImportResult.errorCount}</p>
+                  <p className="text-lg font-bold text-destructive">{csvImportResult.failed}</p>
                 </div>
               </div>
               {csvImportResult.errors && csvImportResult.errors.length > 0 && (
