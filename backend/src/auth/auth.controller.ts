@@ -39,7 +39,7 @@ export class AuthController {
    * Sets JWT in HttpOnly cookie for security
    */
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 900000 } })  // 5 attempts per 15 minutes
+  @Throttle({ default: { limit: 5, ttl: 900 } })  // 5 attempts per 15 minutes
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() loginDto: LoginDto,
