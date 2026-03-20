@@ -4,18 +4,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
 
 // Create a test HQ admin payload
 const payload = {
-  userId: 'test-user-001',
+  sub: 'test-user-001',
   email: 'admin@health.gov.gh',
   role: 'hq-admin',
-  name: 'Test Admin',
-  permissions: [
-    'create_user',
-    'edit_user',
-    'delete_user',
-    'manage_branches',
-    'view_analytics',
-    'trigger_backup',
-  ],
+  fullName: 'Test Admin',
   iat: Math.floor(Date.now() / 1000),
   exp: Math.floor(Date.now() / 1000) + 86400, // 24 hours
 };

@@ -44,18 +44,17 @@ function hmac(message, secret) {
 const header = { alg: 'HS256', typ: 'JWT' };
 const now = Math.floor(Date.now() / 1000);
 const payload = {
-  userId: 'test-admin-001',
+  sub: 'test-admin-001',
   email: 'admin@health.gov.gh',
   role: 'hq-admin',
-  name: 'Test Administrator',
-  permissions: ['create_user', 'edit_user', 'delete_user', 'manage_branches', 'view_analytics', 'trigger_backup'],
+  fullName: 'Test Administrator',
   iat: now,
   exp: now + 86400, // 24 hours
 };
 
 const headerEncoded = base64url(JSON.stringify(header));
 const payloadEncoded = base64url(JSON.stringify(payload));
-const signature = hmac(`${headerEncoded}.${payloadEncoded}`, process.argv[1]);
+const signature = hmac(`${headerEncoded}.${payloadEncoded}`, process.argv[2]);
 const token = `${headerEncoded}.${payloadEncoded}.${signature}`;
 
 console.log(token);
