@@ -102,6 +102,9 @@ Visit `http://localhost:3000`
 - `JWT_SECRET=<any strong string>`
 - `PORT=3001`
 - `CORS_ORIGIN=http://localhost:3000`
+- `BREVO_API_KEY=<Brevo API key for transactional email>`
+- `SMTP_FROM=<verified sender email in Brevo, e.g. no-reply@yourdomain.com>`
+- `FRONTEND_URL=http://localhost:3000`
 1. Install dependencies once: `pnpm install`
 2. Start the watcher: `pnpm run start:dev`
 3. The API boots on `http://localhost:3001` (all routes are under `/api`).

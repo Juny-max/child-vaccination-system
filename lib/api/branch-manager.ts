@@ -39,6 +39,7 @@ export interface StaffMember {
   id: string;
   name: string;
   role: 'Nurse' | 'CHW';
+  status: 'active' | 'suspended' | 'inactive';
   lastActive: string;
 }
 
@@ -65,6 +66,16 @@ export interface CoverageTrendPoint {
   vaccinations: number;
 }
 
+export interface RecentVisitLog {
+  id: string;
+  visitDate: string;
+  chwName: string;
+  childName: string;
+  status: string;
+  vaccinesAdministered: number;
+  notes: string;
+}
+
 export interface BranchDashboardData {
   branchMeta: BranchMeta;
   kpis: BranchKPIs;
@@ -77,8 +88,38 @@ export interface BranchDashboardData {
   notificationFailures: AlertItem[];
   staffRoster: StaffMember[];
   chwProductivity: CHWProductivity[];
+  recentVisitLogs: RecentVisitLog[];
   catchmentCoverage: CatchmentCoverage[];
   dropoutData: DropoutData[];
+}
+
+export interface GeoJsonGeometry {
+  type: 'Polygon' | 'MultiPolygon';
+  coordinates: any[];
+}
+
+export interface GeoJsonFeature {
+  type: 'Feature';
+  geometry: GeoJsonGeometry;
+  properties?: Record<string, unknown>;
+}
+
+export interface BranchCatchmentArea {
+  id: string;
+  branchId: string;
+  name: string;
+  code: string;
+  boundaries: GeoJsonFeature | null;
+  assignedChwId: string | null;
+  assignedChwName: string | null;
+  status: 'assigned' | 'unassigned';
+  stats?: {
+    activeChildren: number;
+    transferredIn: number;
+    transferredOut: number;
+  };
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ============================================================
@@ -178,6 +219,16 @@ export interface StaffListFilters {
   search?: string;
 }
 
+export interface CreateCatchmentAreaPayload {
+  name: string;
+  boundaries: GeoJsonFeature | GeoJsonGeometry;
+}
+
+export interface UpdateCatchmentAreaPayload {
+  name?: string;
+  boundaries?: GeoJsonFeature | GeoJsonGeometry;
+}
+
 // ============================================================
 // Staff management API functions
 // ============================================================
@@ -236,5 +287,76 @@ export async function updateStaffStatus(
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });
+}
+
+/**
+ * Save a newly drawn catchment polygon for the current manager branch.
+ */
+export async function createBranchCatchmentArea(
+  payload: CreateCatchmentAreaPayload,
+): Promise<BranchCatchmentArea> {
+  return apiRequest<BranchCatchmentArea>('/branch-manager/catchment-areas', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Fetch catchment zones for the manager's branch map.
+ */
+export async function getBranchCatchmentAreas(
+  branchId?: string,
+): Promise<BranchCatchmentArea[]> {
+  const query = branchId
+    ? `?${new URLSearchParams({ branchId }).toString()}`
+    : '';
+
+  return apiRequest<BranchCatchmentArea[]>(`/branch-manager/catchment-areas${query}`);
+}
+
+/**
+ * Update an existing catchment area name and/or polygon boundaries.
+ */
+export async function updateBranchCatchmentArea(
+  catchmentAreaId: string,
+  payload: UpdateCatchmentAreaPayload,
+): Promise<BranchCatchmentArea> {
+  return apiRequest<BranchCatchmentArea>(
+    `/branch-manager/catchment-areas/${catchmentAreaId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+/**
+ * Delete an existing catchment area.
+ */
+export async function deleteBranchCatchmentArea(
+  catchmentAreaId: string,
+): Promise<{ success: boolean; id: string; name: string }> {
+  return apiRequest<{ success: boolean; id: string; name: string }>(
+    `/branch-manager/catchment-areas/${catchmentAreaId}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+/**
+ * Assign a CHW to a catchment area.
+ */
+export async function assignCatchmentAreaChw(
+  catchmentAreaId: string,
+  chwId: string,
+): Promise<BranchCatchmentArea> {
+  return apiRequest<BranchCatchmentArea>(
+    `/branch-manager/catchment-areas/${catchmentAreaId}/assign`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ chwId }),
+    },
+  );
 }
 

@@ -61,6 +61,7 @@ import {
   getHqVaccines,
   createHqVaccine,
   updateHqVaccine,
+  deleteHqVaccine,
   getHqSchedules,
   createHqSchedule,
   updateHqSchedule,
@@ -538,6 +539,7 @@ export default function HqDashboardPage() {
   const [isVaccineDeleting, setIsVaccineDeleting] = useState(false)
   const [vaccineToDelete, setVaccineToDelete] = useState<VaccineConfig | null>(null)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [archivingVaccineId, setArchivingVaccineId] = useState<string | null>(null)
 
   const [systemStatus, setSystemStatus] = useState(initialSystemStatus)
@@ -2385,6 +2387,7 @@ export default function HqDashboardPage() {
   }
 
   const handleVaccineDelete = (vaccine: VaccineConfig) => {
+    setDeleteError(null)
     setVaccineToDelete(vaccine)
     setIsDeleteModalOpen(true)
   }
@@ -2397,21 +2400,34 @@ export default function HqDashboardPage() {
 
     setIsVaccineDeleting(true)
     try {
-      // Delete from database
-      if (dbId) {
-        await updateHqVaccine(dbId, { status: "discontinued" })
+      // Actually delete from database
+      if (!dbId) {
+        throw new Error("No database ID found for this vaccine. Cannot delete.")
       }
+
+      await deleteHqVaccine(dbId)
 
       // Remove from local state
       setVaccines((previous) => previous.filter((v) => v.id !== vaccineId))
 
-      setSystemMessage(`Vaccine "${vaccineToDelete.name}" permanently deleted.`)
-      appendAuditLog({ action: `Deleted vaccine ${vaccineToDelete.name}`, category: "Schedule" })
+      setSystemMessage(`Vaccine "${vaccineToDelete.name}" permanently deleted from database.`)
+      appendAuditLog({ action: `Permanently deleted vaccine ${vaccineToDelete.name}`, category: "Schedule" })
       setIsDeleteModalOpen(false)
       setVaccineToDelete(null)
     } catch (error) {
-      console.error("Failed to delete vaccine", error)
-      setSystemMessage("Failed to delete vaccine. Please try again.")
+      console.error("Failed to delete vaccine:", error)
+
+      // Show error in modal
+      let errorMessage = "Failed to delete vaccine. Please try again."
+      if (error && typeof error === 'object') {
+        if ('status' in error && error.status === 401) {
+          errorMessage = "Session expired. Please log in again to delete vaccines."
+        } else if ('message' in error) {
+          errorMessage = (error as { message: string }).message
+        }
+      }
+
+      setDeleteError(errorMessage)
     } finally {
       setIsVaccineDeleting(false)
     }
@@ -3865,12 +3881,28 @@ export default function HqDashboardPage() {
                   This will remove the vaccine from all schedules and cannot be undone.
                 </p>
               </div>
+              {deleteError && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                        Cannot Delete Vaccine
+                      </p>
+                      <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                        {deleteError}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-2">
                 <Button
                   variant="outline"
                   onClick={() => {
                     setIsDeleteModalOpen(false)
                     setVaccineToDelete(null)
+                    setDeleteError(null)
                   }}
                   disabled={isVaccineDeleting}
                 >
