@@ -963,38 +963,29 @@ export class BranchManagerService {
     let nationalCoverageRate = 0;
 
     if (childrenCount && childrenCount > 0) {
-      // Query for children who have completed their vaccination schedule
-      // A child has completed vaccination if they have all required vaccines from the schedule
-      const { count: fullyVaccinatedCount, error: vaccinationError } = await db
-        .rpc('get_fully_vaccinated_count', {}, { count: 'exact', head: true });
+      // Count children with completed vaccinations using existing tables
+      const { data: childrenWithVaccines } = await db
+        .from('children')
+        .select('id')
+        .eq('is_active', true);
 
-      if (!vaccinationError && fullyVaccinatedCount) {
-        nationalCoverageRate = Math.round(((fullyVaccinatedCount ?? 0) / childrenCount) * 100);
-      } else {
-        // Fallback: count vaccination_events where children have all doses
-        const { data: childrenWithVaccines } = await db
-          .from('children')
-          .select('id')
-          .eq('is_active', true);
+      if (childrenWithVaccines && childrenWithVaccines.length > 0) {
+        const childIds = childrenWithVaccines.map((c: any) => c.id);
 
-        if (childrenWithVaccines && childrenWithVaccines.length > 0) {
-          const childIds = childrenWithVaccines.map((c: any) => c.id);
-          
-          // Count children with at least 3 vaccinations (BCG, OPV/IPV, DPT/Penta)
-          const { data: vaccinationCounts } = await db
-            .from('vaccination_events')
-            .select('child_id')
-            .in('child_id', childIds)
-            .eq('status', 'completed');
+        // Count children with at least 3 vaccinations (BCG, OPV/IPV, DPT/Penta)
+        const { data: vaccinationCounts } = await db
+          .from('vaccination_events')
+          .select('child_id')
+          .in('child_id', childIds)
+          .eq('status', 'completed');
 
-          const uniqueChildrenWithVaccines = new Set(
-            (vaccinationCounts ?? []).map((v: any) => v.child_id)
-          ).size;
+        const uniqueChildrenWithVaccines = new Set(
+          (vaccinationCounts ?? []).map((v: any) => v.child_id)
+        ).size;
 
-          nationalCoverageRate = Math.round(
-            ((uniqueChildrenWithVaccines ?? 0) / childrenCount) * 100
-          );
-        }
+        nationalCoverageRate = Math.round(
+          ((uniqueChildrenWithVaccines ?? 0) / childrenCount) * 100
+        );
       }
     }
 
