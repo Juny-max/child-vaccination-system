@@ -57,7 +57,6 @@ export class BackupController {
           res.status(500).json({
             success: false,
             message: 'Failed to stream backup file',
-            error: error.message,
           });
         }
       });
@@ -66,7 +65,6 @@ export class BackupController {
       res.status(500).json({
         success: false,
         message: 'Failed to retrieve backup',
-        error: error.message,
       });
     }
   }
@@ -100,7 +98,6 @@ export class BackupController {
       res.status(500).json({
         success: false,
         message: 'Failed to trigger backup',
-        error: error.message,
       });
     }
   }
