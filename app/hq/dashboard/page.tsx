@@ -558,7 +558,7 @@ export default function HqDashboardPage() {
 
   // FEATURE 1: Catchment Area Management
   const [catchmentAreas, setCatchmentAreas] = useState<CatchmentArea[]>([])
-  const [selectedBranchForCatchment, setSelectedBranchForCatchment] = useState<string | null>(null)
+  const [selectedBranchForCatchment, setSelectedBranchForCatchment] = useState<Branch | null>(null)
   const [isEditingCatchment, setIsEditingCatchment] = useState(false)
   const [editingCatchmentId, setEditingCatchmentId] = useState<string | null>(null)
   const [catchmentForm, setCatchmentForm] = useState({ name: "", community: "", populationEstimate: "" })
@@ -1328,7 +1328,7 @@ export default function HqDashboardPage() {
         name: catchmentForm.name.trim(),
         community: catchmentForm.community.trim() || catchmentForm.name.trim(),
         populationEstimate: catchmentForm.populationEstimate ? parseInt(catchmentForm.populationEstimate) : undefined,
-        branchId: selectedBranchForCatchment,
+        branchId: selectedBranchForCatchment.id,
       }
       if (isEditingCatchment && editingCatchmentId) {
         await updateHqCatchmentArea(editingCatchmentId, payload)
@@ -2965,7 +2965,7 @@ export default function HqDashboardPage() {
                     className="h-auto justify-start"
                     onClick={() => {
                       setSelectedBranchForCatchment(branch)
-                      setCatchmentForm({ name: "", population: "", boundaries: "" })
+                      setCatchmentForm({ name: "", community: "", populationEstimate: "" })
                       setIsEditingCatchment(false)
                     }}
                   >
@@ -2985,62 +2985,65 @@ export default function HqDashboardPage() {
                 </h3>
               </div>
 
-              {!isEditingCatchment && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Current catchment areas:</p>
-                  {catchmentAreas.length > 0 ? (
-                    <div className="space-y-2">
-                      {catchmentAreas.map((area) => (
-                        <div key={area.id} className="flex items-start justify-between rounded-lg border border-border bg-muted/30 p-3">
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{area.name}</p>
-                            <p className="text-xs text-muted-foreground mt-1">Population: ~{area.population}</p>
-                            <p className="text-xs text-muted-foreground">Boundaries: {area.boundaries}</p>
+              {!isEditingCatchment && (() => {
+                const branchAreas = catchmentAreas.filter((area) => area.branchId === selectedBranchForCatchment.id)
+                return (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Current catchment areas:</p>
+                    {branchAreas.length > 0 ? (
+                      <div className="space-y-2">
+                        {branchAreas.map((area) => (
+                          <div key={area.id} className="flex items-start justify-between rounded-lg border border-border bg-muted/30 p-3">
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">{area.name}</p>
+                              <p className="text-xs text-muted-foreground mt-1">Population: ~{area.populationEstimate ?? "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Community: {area.community ?? "N/A"}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setIsEditingCatchment(true)
+                                  setEditingCatchmentId(area.id)
+                                  setCatchmentForm({
+                                    name: area.name,
+                                    community: area.community ?? "",
+                                    populationEstimate: area.populationEstimate?.toString() ?? "",
+                                  })
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => handleDeleteCatchment(area.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setIsEditingCatchment(true)
-                                setEditingCatchmentId(area.id)
-                                setCatchmentForm({
-                                  name: area.name,
-                                  population: area.population.toString(),
-                                  boundaries: area.boundaries,
-                                })
-                              }}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => handleDeleteCatchment(area.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground py-4 text-center">No catchment areas defined yet.</p>
-                  )}
-                  <Button
-                    size="sm"
-                    className="gap-2 w-full mt-4"
-                    onClick={() => {
-                      setIsEditingCatchment(true)
-                      setEditingCatchmentId(null)
-                      setCatchmentForm({ name: "", population: "", boundaries: "" })
-                    }}
-                  >
-                    <Plus className="h-4 w-4" /> Add new catchment area
-                  </Button>
-                </div>
-              )}
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground py-4 text-center">No catchment areas defined yet.</p>
+                    )}
+                    <Button
+                      size="sm"
+                      className="gap-2 w-full mt-4"
+                      onClick={() => {
+                        setIsEditingCatchment(true)
+                        setEditingCatchmentId(null)
+                        setCatchmentForm({ name: "", community: "", populationEstimate: "" })
+                      }}
+                    >
+                      <Plus className="h-4 w-4" /> Add new catchment area
+                    </Button>
+                  </div>
+                )
+              })()}
 
               {isEditingCatchment && (
                 <form onSubmit={(e) => { e.preventDefault(); handleSaveCatchment() }} className="space-y-3 p-3 rounded-lg border border-primary/40 bg-primary/5">
@@ -3061,17 +3064,17 @@ export default function HqDashboardPage() {
                       id="catchmentPop"
                       type="number"
                       placeholder="5000"
-                      value={catchmentForm.population}
-                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, population: e.target.value }))}
+                      value={catchmentForm.populationEstimate}
+                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, populationEstimate: e.target.value }))}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="catchmentBound">Boundaries</Label>
+                    <Label htmlFor="catchmentCommunity">Community</Label>
                     <Input
-                      id="catchmentBound"
-                      placeholder="e.g. From Main Street to Railway Road"
-                      value={catchmentForm.boundaries}
-                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, boundaries: e.target.value }))}
+                      id="catchmentCommunity"
+                      placeholder="e.g. Kasoa Central Community"
+                      value={catchmentForm.community}
+                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, community: e.target.value }))}
                     />
                   </div>
                   <div className="flex gap-2 pt-2">
