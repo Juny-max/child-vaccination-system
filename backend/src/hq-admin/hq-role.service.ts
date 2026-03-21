@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -37,7 +37,7 @@ export class HqRoleService {
     try {
       const roleId = uuidv4();
 
-      await this.db.supabase.from('roles').insert({
+      const { error: insertError } = await this.db.supabase.from('roles').insert({
         id: roleId,
         name: roleData.name,
         description: roleData.description,
@@ -46,6 +46,10 @@ export class HqRoleService {
         created_by: user.id,
         created_at: new Date().toISOString(),
       });
+
+      if (insertError) {
+        throw new InternalServerErrorException(`Failed to create role: ${insertError.message}`);
+      }
 
       // Log the action
       await this.db.createAuditLog(user.id, 'insert', 'role', roleId, { after: { name: roleData.name } });
@@ -68,7 +72,11 @@ export class HqRoleService {
       if (roleData.permissions) updatePayload.permissions = roleData.permissions;
       updatePayload.updated_at = new Date().toISOString();
 
-      await this.db.supabase.from('roles').update(updatePayload).eq('id', id);
+      const { error: updateError } = await this.db.supabase.from('roles').update(updatePayload).eq('id', id);
+
+      if (updateError) {
+        throw new InternalServerErrorException(`Failed to update role: ${updateError.message}`);
+      }
 
       // Log the action
       await this.db.createAuditLog(user.id, 'update', 'role', id, { after: updatePayload });
@@ -85,7 +93,11 @@ export class HqRoleService {
    */
   async deleteRole(id: string, user: any) {
     try {
-      await this.db.supabase.from('roles').delete().eq('id', id).eq('is_system', false);
+      const { error: deleteError } = await this.db.supabase.from('roles').delete().eq('id', id).eq('is_system', false);
+
+      if (deleteError) {
+        throw new InternalServerErrorException(`Failed to delete role: ${deleteError.message}`);
+      }
 
       // Log the action
       await this.db.createAuditLog(user.id, 'delete', 'role', id);
