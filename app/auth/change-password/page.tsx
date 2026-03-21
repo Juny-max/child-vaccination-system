@@ -85,26 +85,19 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-cyan-50 via-background to-emerald-50 dark:from-slate-950 dark:via-slate-900 dark:to-emerald-950/80">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-cyan-300/35 blur-3xl dark:bg-cyan-500/20" />
-        <div className="absolute -right-24 top-1/4 h-96 w-96 rounded-full bg-emerald-300/30 blur-3xl dark:bg-emerald-500/20" />
-        <div className="absolute bottom-0 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-600/20" />
-        <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(#64748b_1px,transparent_1px),linear-gradient(90deg,#64748b_1px,transparent_1px)] [background-size:28px_28px] dark:opacity-[0.14]" />
-      </div>
-
-      <div className="relative z-10 flex min-h-screen items-center justify-center p-4 md:p-6">
-        <Card className="w-full max-w-md border-border/70 bg-background/90 shadow-2xl backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto flex min-h-screen w-full max-w-md items-center justify-center p-4 md:p-6">
+        <Card className="w-full">
           <CardHeader className="space-y-2">
             <div className="mb-2 flex items-center justify-center">
-              <div className="rounded-full bg-primary/15 p-3 ring-8 ring-background/70">
+              <div className="rounded-full bg-muted p-3">
                 <Lock className="h-6 w-6 text-primary" />
               </div>
             </div>
-            <CardTitle className="text-center text-2xl font-bold text-foreground">
+            <CardTitle className="text-center text-2xl font-bold">
               Change Your Password
             </CardTitle>
-            <CardDescription className="text-center text-sm text-muted-foreground">
+            <CardDescription className="text-center">
               For security reasons, you must change your temporary password before continuing.
             </CardDescription>
           </CardHeader>
@@ -118,7 +111,7 @@ export default function ChangePasswordPage() {
 
               {/* Current Password */}
               <div className="space-y-2">
-                <Label htmlFor="currentPassword" className="text-foreground">Current Password</Label>
+                <Label htmlFor="currentPassword">Current Password</Label>
                 <div className="relative">
                   <Input
                     id="currentPassword"
@@ -126,7 +119,7 @@ export default function ChangePasswordPage() {
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Enter your temporary password"
-                    className="bg-background/70 pr-10"
+                    className="pr-10"
                     required
                   />
                   <button
@@ -142,7 +135,7 @@ export default function ChangePasswordPage() {
 
               {/* New Password */}
               <div className="space-y-2">
-                <Label htmlFor="newPassword" className="text-foreground">New Password</Label>
+                <Label htmlFor="newPassword">New Password</Label>
                 <div className="relative">
                   <Input
                     id="newPassword"
@@ -150,7 +143,7 @@ export default function ChangePasswordPage() {
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Enter your new password"
-                    className="bg-background/70 pr-10"
+                    className="pr-10"
                     required
                   />
                   <button
@@ -165,8 +158,8 @@ export default function ChangePasswordPage() {
               </div>
 
               {/* Password Requirements */}
-              <div className="space-y-2 rounded-lg border border-border/60 bg-muted/50 p-3">
-                <p className="text-sm font-medium text-foreground">Password Requirements:</p>
+              <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-3">
+                <p className="text-sm font-medium">Password Requirements:</p>
                 <ul className="space-y-1">
                   {requirements.map((req, index) => (
                     <li key={index} className="flex items-center gap-2 text-sm">
@@ -185,7 +178,7 @@ export default function ChangePasswordPage() {
 
               {/* Confirm Password */}
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-foreground">Confirm New Password</Label>
+                <Label htmlFor="confirmPassword">Confirm New Password</Label>
                 <div className="relative">
                   <Input
                     id="confirmPassword"
@@ -193,7 +186,7 @@ export default function ChangePasswordPage() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Confirm your new password"
-                    className="bg-background/70 pr-10"
+                    className="pr-10"
                     required
                   />
                   <button
@@ -217,7 +210,7 @@ export default function ChangePasswordPage() {
 
               <Button
                 type="submit"
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-primary/60"
+                className="w-full"
                 disabled={isLoading || !allRequirementsMet || !passwordsMatch}
               >
                 {isLoading ? 'Changing Password...' : 'Change Password'}
