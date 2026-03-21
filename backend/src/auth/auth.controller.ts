@@ -66,7 +66,7 @@ export class AuthController {
    * HQ admin login endpoint for admin dashboard
    */
   @Post('admin/login')
-  @Throttle({ default: { limit: 5, ttl: 900000 } })  // 5 attempts per 15 minutes
+  @Throttle({ default: { limit: 5, ttl: 900 } })  // 5 attempts per 15 minutes
   @HttpCode(HttpStatus.OK)
   async adminLogin(
     @Body() adminLoginDto: AdminLoginDto,
@@ -92,7 +92,7 @@ export class AuthController {
    * Sets JWT in HttpOnly cookie for security
    */
   @Post('register')
-  @Throttle({ default: { limit: 3, ttl: 3600000 } })  // 3 registrations per hour
+  @Throttle({ default: { limit: 3, ttl: 3600 } })  // 3 registrations per hour
   async register(
     @Body() registerDto: RegisterDto,
     @Request() req: ExpressRequest,
