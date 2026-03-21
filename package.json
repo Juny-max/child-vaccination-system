@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
-    "dev": "next dev",
+    "build": "next build --webpack",
+    "dev": "next dev --webpack",
     "dev:all": "zsh ./scripts/start-local-dev.zsh",
     "start:dev": "zsh ./scripts/start-backend-dev.zsh",
     "lint": "eslint .",
@@ -62,6 +62,7 @@
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.454.0",
     "next": "16.0.10",
+    "next-pwa": "^5.6.0",
     "next-themes": "latest",
     "qrcode.react": "^4.2.0",
     "react": "19.2.0",

@@ -191,17 +191,6 @@ export default function ChwDashboardPage() {
     chwBackgroundSync.start()
     loadTodayActivityCount()
 
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/chw-service-worker.js")
-        .then((registration) => {
-          console.log("[CHW Dashboard] Service Worker registered:", registration.scope)
-        })
-        .catch((error) => {
-          console.error("[CHW Dashboard] Service Worker registration failed:", error)
-        })
-    }
-
     return () => {
       chwBackgroundSync.stop()
       autoLogoutTimer.stop()
