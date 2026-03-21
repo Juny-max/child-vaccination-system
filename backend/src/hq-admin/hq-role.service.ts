@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -37,7 +41,7 @@ export class HqRoleService {
     try {
       const roleId = uuidv4();
 
-      await this.db.supabase.from('roles').insert({
+      const { error: insertError } = await this.db.supabase.from('roles').insert({
         id: roleId,
         name: roleData.name,
         description: roleData.description,
@@ -46,6 +50,12 @@ export class HqRoleService {
         created_by: user.id,
         created_at: new Date().toISOString(),
       });
+
+      if (insertError) {
+        throw new InternalServerErrorException(
+          `Failed to create role: ${insertError.message}`,
+        );
+      }
 
       // Log the action
       await this.db.createAuditLog(user.id, 'insert', 'role', roleId, { after: { name: roleData.name } });
