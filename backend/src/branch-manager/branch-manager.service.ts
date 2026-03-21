@@ -1020,7 +1020,27 @@ export class BranchManagerService {
 
     // Filter by priority/severity if specified
     if (params.priority && params.priority !== 'all') {
-      query = query.eq('severity', params.priority);
+      const priorityLower = params.priority.toLowerCase();
+      let severityFilter: string;
+
+      // Map human-readable priority labels to stored severity values
+      switch (priorityLower) {
+        case 'high':
+          severityFilter = 'severe';
+          break;
+        case 'medium':
+          severityFilter = 'moderate';
+          break;
+        case 'low':
+          severityFilter = 'mild';
+          break;
+        default:
+          // Assume the incoming value is already a valid severity
+          severityFilter = params.priority;
+          break;
+      }
+
+      query = query.eq('severity', severityFilter);
     }
 
     const { data, error } = await query;
@@ -1046,7 +1066,7 @@ export class BranchManagerService {
     if (childIds.length > 0) {
       const { data: children } = await db
         .from('children')
-        .select('id, name')
+        .select('id, full_name')
         .in('id', [...new Set(childIds)]);
       childMap = Object.fromEntries(
         (children ?? []).map((c: any) => [c.id, c])
@@ -1088,7 +1108,7 @@ export class BranchManagerService {
 
       return {
         id: report.id,
-        child: childMap[report.child_id]?.name || 'Unknown',
+        child: childMap[report.child_id]?.full_name || 'Unknown',
         vaccine: vaccineMap[vaccineId]?.name || 'Unknown vaccine',
         branch: 'Field Report',
         reportedAt: report.created_at,

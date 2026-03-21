@@ -21,43 +21,30 @@ JWT_SECRET="${JWT_SECRET:-super-secret-key}"
 
 # Create a Node.js script to generate JWT inline
 cat > /tmp/generate-jwt.js << 'ENDSCRIPT'
-const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 
-function base64url(str) {
-  return Buffer.from(str)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-}
-
-function hmac(message, secret) {
-  return crypto
-    .createHmac('sha256', secret)
-    .update(message)
-    .digest('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-}
-
-const header = { alg: 'HS256', typ: 'JWT' };
 const now = Math.floor(Date.now() / 1000);
+const secret = process.argv[2];
+
 const payload = {
-  userId: 'test-admin-001',
+  // Match backend TokenPayload / AuthService.validateUser expectations
+  sub: 'test-admin-001',
+  fullName: 'Test Administrator',
   email: 'admin@health.gov.gh',
   role: 'hq-admin',
-  name: 'Test Administrator',
-  permissions: ['create_user', 'edit_user', 'delete_user', 'manage_branches', 'view_analytics', 'trigger_backup'],
+  permissions: [
+    'create_user',
+    'edit_user',
+    'delete_user',
+    'manage_branches',
+    'view_analytics',
+    'trigger_backup',
+  ],
   iat: now,
   exp: now + 86400, // 24 hours
 };
 
-const headerEncoded = base64url(JSON.stringify(header));
-const payloadEncoded = base64url(JSON.stringify(payload));
-const signature = hmac(`${headerEncoded}.${payloadEncoded}`, process.argv[1]);
-const token = `${headerEncoded}.${payloadEncoded}.${signature}`;
-
+const token = jwt.sign(payload, secret, { algorithm: 'HS256' });
 console.log(token);
 ENDSCRIPT
 

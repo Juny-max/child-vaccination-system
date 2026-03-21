@@ -68,7 +68,11 @@ export class HqRoleService {
       if (roleData.permissions) updatePayload.permissions = roleData.permissions;
       updatePayload.updated_at = new Date().toISOString();
 
-      await this.db.supabase.from('roles').update(updatePayload).eq('id', id);
+      const { error: updateError } = await this.db.supabase.from('roles').update(updatePayload).eq('id', id);
+
+      if (updateError) {
+        throw new Error(`Failed to update role: ${updateError.message}`);
+      }
 
       // Log the action
       await this.db.createAuditLog(user.id, 'update', 'role', id, { after: updatePayload });
@@ -85,7 +89,11 @@ export class HqRoleService {
    */
   async deleteRole(id: string, user: any) {
     try {
-      await this.db.supabase.from('roles').delete().eq('id', id).eq('is_system', false);
+      const { error: deleteError } = await this.db.supabase.from('roles').delete().eq('id', id).eq('is_system', false);
+
+      if (deleteError) {
+        throw new Error(`Failed to delete role: ${deleteError.message}`);
+      }
 
       // Log the action
       await this.db.createAuditLog(user.id, 'delete', 'role', id);
