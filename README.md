@@ -145,6 +145,24 @@ npx ts-node scripts/list-users.ts
 
 The output groups users by role and shows their email, assigned facility (branch), status, and last login date. Useful for verifying which nurse belongs to which hospital.
 
+### Managing hospitals/facilities and assigning branch managers (terminal)
+
+To create hospitals first, view them, and assign a Branch Manager directly to a selected hospital:
+
+```powershell
+cd backend
+npx ts-node scripts/manage-facilities.ts
+```
+
+The tool opens an interactive menu to:
+- View all hospitals/facilities
+- Create a facility with name and district
+- Assign a Branch Manager to a selected facility
+- Delete a facility (with dependency checks)
+
+It updates both the facility record and manager assignment links so the Branch Manager is tied to the correct branch when they log in.
+When deleting, if a facility only has catchment areas (and no staff/children), the tool can remove those catchment areas and delete the facility in one flow.
+
 ### Testing SMTP email delivery (terminal)
 
 To verify the email service is working and messages can be delivered:

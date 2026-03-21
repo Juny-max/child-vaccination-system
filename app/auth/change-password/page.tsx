@@ -85,12 +85,20 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <Card className="w-full max-w-md">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-cyan-50 via-white to-emerald-50">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-24 -top-16 h-72 w-72 rounded-full bg-cyan-300/35 blur-3xl" />
+        <div className="absolute -right-24 top-1/4 h-80 w-80 rounded-full bg-emerald-300/30 blur-3xl" />
+        <div className="absolute bottom-0 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-sky-200/40 blur-3xl" />
+        <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(#0f766e_1px,transparent_1px),linear-gradient(90deg,#0f766e_1px,transparent_1px)] [background-size:28px_28px]" />
+      </div>
+
+      <div className="relative z-10 flex min-h-screen items-center justify-center p-4 md:p-6">
+      <Card className="w-full max-w-md border-white/70 bg-white/90 shadow-2xl backdrop-blur-sm">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
-            <div className="p-3 bg-blue-100 rounded-full">
-              <Lock className="h-6 w-6 text-blue-600" />
+            <div className="rounded-full bg-cyan-100 p-3 ring-8 ring-white/70">
+              <Lock className="h-6 w-6 text-cyan-700" />
             </div>
           </div>
           <CardTitle className="text-2xl font-bold text-center">
@@ -211,6 +219,7 @@ export default function ChangePasswordPage() {
           </form>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }
