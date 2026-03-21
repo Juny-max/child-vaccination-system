@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
 import * as os from 'os';
 
@@ -231,15 +231,35 @@ export class HqSystemService {
     config: { frequency: 'daily' | 'weekly' | 'monthly'; retentionDays: number },
     user: any,
   ) {
+    const MIN_RETENTION_DAYS = 1;
+    const MAX_RETENTION_DAYS = 365;
+
+    if (
+      !Number.isInteger(config.retentionDays) ||
+      config.retentionDays < MIN_RETENTION_DAYS ||
+      config.retentionDays > MAX_RETENTION_DAYS
+    ) {
+      throw new BadRequestException(
+        `retentionDays must be an integer between ${MIN_RETENTION_DAYS} and ${MAX_RETENTION_DAYS}`,
+      );
+    }
+
     try {
       // Save configuration to system settings
-      await this.db.supabase.from('system_settings').upsert(
+      const { error: upsertError } = await this.db.supabase.from('system_settings').upsert(
         [
           { key: 'backup_frequency', value: config.frequency, category: 'backup', updated_by: user.id },
           { key: 'backup_retention_days', value: config.retentionDays.toString(), category: 'backup', updated_by: user.id },
         ],
         { onConflict: 'key' },
       );
+
+      if (upsertError) {
+        throw new InternalServerErrorException({
+          message: `Failed to save backup configuration: ${upsertError.message}`,
+          code: 'BACKUP_CONFIG_SAVE_FAILED',
+        });
+      }
 
       // Log the configuration change
       await this.db.createAuditLog(
