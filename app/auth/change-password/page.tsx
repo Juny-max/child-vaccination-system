@@ -10,6 +10,17 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Eye, EyeOff, Lock, CheckCircle2, XCircle } from 'lucide-react';
 import { changePassword } from '@/lib/api/auth';
 
+const ROLE_ROUTES: Record<string, string> = {
+  parent: '/parent/dashboard',
+  'hq-admin': '/hq/dashboard',
+  'branch-manager': '/branch/dashboard',
+  'facility-nurse': '/facility/dashboard',
+  facility_nurse: '/facility/dashboard',
+  chw: '/chw/dashboard',
+  'data-officer': '/dashboard',
+  pha: '/pha/dashboard',
+};
+
 export default function ChangePasswordPage() {
   const router = useRouter();
   const [currentPassword, setCurrentPassword] = useState('');
@@ -57,22 +68,15 @@ export default function ChangePasswordPage() {
       if (response.success) {
         // Clear the must change password flag
         localStorage.removeItem('mustChangePassword');
-        
-        // Redirect to appropriate dashboard based on role
-        const role = localStorage.getItem('userRole');
-        switch (role) {
-          case 'parent':
-            router.push('/parent/dashboard');
-            break;
-          case 'facility_nurse':
-            router.push('/facility/dashboard');
-            break;
-          case 'chw':
-            router.push('/chw/dashboard');
-            break;
-          default:
-            router.push('/dashboard');
-        }
+
+        // Route directly to the precise role dashboard to avoid landing on /dashboard first.
+        const roleDetail = localStorage.getItem('userRoleDetail');
+        const coarseRole = localStorage.getItem('userRole');
+        const targetRoute =
+          (roleDetail ? ROLE_ROUTES[roleDetail] : undefined) ??
+          (coarseRole === 'parent' ? '/parent/dashboard' : '/dashboard');
+
+        router.replace(targetRoute);
       } else {
         setError(response.message || 'Failed to change password');
       }
