@@ -1,25 +1,49 @@
 import withPWAInit from "next-pwa"
 
-const isDev = process.env.NODE_ENV === "development"
-
-const APP_SHELL_ROUTES = [
-  "/",
-  "/auth/login",
-  "/offline",
-  "/chw/dashboard",
-  "/chw/find-child",
-  "/chw/register",
-  "/chw/register-child",
-]
-
 const runtimeCaching = [
+  // CHW pages - NetworkFirst so they work offline after first visit
+  {
+    urlPattern: ({ url }) =>
+      url.pathname.startsWith("/chw/") ||
+      url.pathname === "/chw",
+    handler: "NetworkFirst",
+    options: {
+      cacheName: "chw-pages",
+      networkTimeoutSeconds: 10,
+      expiration: {
+        maxEntries: 32,
+        maxAgeSeconds: 7 * 24 * 60 * 60,
+      },
+      cacheableResponse: {
+        statuses: [0, 200],
+      },
+    },
+  },
+  // CHW API responses - cache for offline use
+  {
+    urlPattern: ({ url }) => url.pathname.startsWith("/api/chw"),
+    handler: "NetworkFirst",
+    options: {
+      cacheName: "chw-api-cache",
+      networkTimeoutSeconds: 10,
+      expiration: {
+        maxEntries: 100,
+        maxAgeSeconds: 24 * 60 * 60,
+      },
+      cacheableResponse: {
+        statuses: [0, 200],
+      },
+    },
+  },
+  // Other navigation - with offline fallback
   {
     urlPattern: ({ request }) => request.mode === "navigate",
-    handler: "StaleWhileRevalidate",
+    handler: "NetworkFirst",
     options: {
-      cacheName: "app-shell-pages",
+      cacheName: "app-pages",
+      networkTimeoutSeconds: 10,
       precacheFallback: {
-        fallbackURL: "/offline",
+        fallbackURL: "/offline.html",
       },
       expiration: {
         maxEntries: 64,
@@ -84,15 +108,13 @@ const runtimeCaching = [
 
 const withPWA = withPWAInit({
   dest: "public",
-  disable: isDev,
+  disable: false,
   register: true,
   skipWaiting: true,
-  dynamicStartUrl: false,
+  fallbacks: {
+    document: "/offline.html",
+  },
   cacheOnFrontEndNav: true,
-  additionalManifestEntries: APP_SHELL_ROUTES.map((url) => ({
-    url,
-    revision: null,
-  })),
   runtimeCaching,
 })
 
