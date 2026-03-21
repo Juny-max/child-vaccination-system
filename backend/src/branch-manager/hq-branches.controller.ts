@@ -59,6 +59,11 @@ export class HqBranchesController {
     return this.branchManagerService.updateHqBranchChws(code, dto.assignedChws);
   }
 
+  @Post('maintenance/cleanup-duplicate-chws')
+  async cleanupDuplicateChws() {
+    return this.branchManagerService.cleanupDuplicateChwAssignments();
+  }
+
   @Delete(':code')
   async deleteBranch(@Param('code') code: string) {
     return this.branchManagerService.deleteHqBranch(code);

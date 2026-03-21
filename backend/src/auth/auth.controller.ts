@@ -1,4 +1,5 @@
 import { Controller, Post, Get, Body, UseGuards, Request, Response, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto, AuthResponseDto, UserProfileDto, ChangePasswordDto, AdminLoginDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
@@ -38,6 +39,7 @@ export class AuthController {
    * Sets JWT in HttpOnly cookie for security
    */
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 900 } })  // 5 attempts per 15 minutes
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() loginDto: LoginDto,
@@ -64,6 +66,7 @@ export class AuthController {
    * HQ admin login endpoint for admin dashboard
    */
   @Post('admin/login')
+  @Throttle({ default: { limit: 5, ttl: 900000 } })  // 5 attempts per 15 minutes
   @HttpCode(HttpStatus.OK)
   async adminLogin(
     @Body() adminLoginDto: AdminLoginDto,
@@ -89,6 +92,7 @@ export class AuthController {
    * Sets JWT in HttpOnly cookie for security
    */
   @Post('register')
+  @Throttle({ default: { limit: 3, ttl: 3600000 } })  // 3 registrations per hour
   async register(
     @Body() registerDto: RegisterDto,
     @Request() req: ExpressRequest,

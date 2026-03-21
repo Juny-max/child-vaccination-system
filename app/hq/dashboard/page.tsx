@@ -10,6 +10,7 @@ import {
   ArrowDownToLine,
   BellRing,
   Building2,
+  Check,
   CheckCircle2,
   FileText,
   Gauge,
@@ -17,16 +18,22 @@ import {
   Layers,
   ListChecks,
   Loader2,
+  MapPin,
   MapPinned,
   Megaphone,
+  Pencil,
+  Plus,
+  RefreshCw,
   ServerCog,
   Shield,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
+  Upload,
   X,
   Users as UsersIcon,
 } from "lucide-react"
-import { ResponsiveContainer, RadialBarChart, RadialBar, Legend, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, LineChart, Line, AreaChart, Area } from "recharts"
+import { ResponsiveContainer, RadialBarChart, RadialBar, Legend, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, ReferenceLine } from "recharts"
 
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -40,6 +47,7 @@ import {
   updateHqBranch,
   updateHqBranchChws,
   updateHqBranchStatus,
+  cleanupDuplicateChwAssignments,
 } from "@/lib/api/hq-branches"
 import {
   createHqUser,
@@ -48,7 +56,7 @@ import {
   updateHqUser,
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
-import { getHqAnalytics, getHqOverviewStats, HqOverviewStats } from "@/lib/api/hq-analytics"
+import { getHqAnalytics, getHqOverviewStats, HqOverviewStats, getHqAefiReports, getHqDeviceSyncStatus } from "@/lib/api/hq-analytics"
 import {
   getHqVaccines,
   createHqVaccine,
@@ -65,6 +73,25 @@ import {
   updateHqCatchmentArea,
   deleteHqCatchmentArea,
 } from "@/lib/api/hq-catchment-areas"
+import {
+  getSystemMetrics,
+  getDatabaseStats,
+  getBackupHistory,
+  configureBackup,
+  getAuditActivity,
+} from "@/lib/api/hq-system"
+import {
+  getNotificationDeliveryStatus,
+  retryFailedNotification,
+  getNotificationStats,
+} from "@/lib/api/hq-notifications"
+import {
+  getCustomRoles,
+  createCustomRole,
+  updateCustomRole,
+  deleteCustomRole,
+  getAvailablePermissions,
+} from "@/lib/api/hq-roles"
 import {
   getHqSystemSettings,
   createHqSystemSetting,
@@ -133,9 +160,64 @@ type SystemStatus = {
   detail: string
 }
 
+type SystemMetric = {
+  id: string
+  name: string
+  value: number | string
+  unit?: string
+  status: "normal" | "warning" | "critical"
+  timestamp: string
+}
+
+type BackupRecord = {
+  id: string
+  timestamp: string
+  size: string
+  status: "success" | "failed" | "pending"
+  downloadUrl?: string
+}
+
+type CatchmentArea = {
+  id: string
+  name: string
+  code: string
+  branchId: string
+  community?: string
+  populationEstimate?: number
+  assignedChwId?: string
+}
+
+type VaccineInventory = {
+  vaccineId: string
+  vaccineName: string
+  batchNumber: string
+  quantity: number
+  expiryDate: string
+  location: string
+  status: "in-stock" | "low-stock" | "expired"
+}
+
+type NotificationDelivery = {
+  id: string
+  templateId: string
+  recipient: string
+  channel: "sms" | "email"
+  status: "sent" | "failed" | "pending" | "read"
+  sentAt?: string
+  readAt?: string
+}
+
+type UserRole = {
+  id: string
+  name: string
+  permissions: string[]
+  description: string
+}
+
 type AuditLog = {
   id: string
   actor: string
+  actorName?: string
   action: string
   timestamp: string
   category: string
@@ -153,181 +235,119 @@ type ReviewQueueItem = {
   attachmentName: string | null
 }
 
-const initialBranches: Branch[] = [
-  {
-    id: "BR-001",
-    name: "Accra Central Hospital",
-    region: "Greater Accra",
-    manager: "Yaa Boakye",
-    catchmentAreas: ["Adabraka", "Osu", "Jamestown"],
-    status: "active",
-    assignedChws: ["Mabel Owusu", "Kwesi Antwi"],
-  },
-  {
-    id: "BR-014",
-    name: "Tamale Teaching Hospital",
-    region: "Northern",
-    manager: "Haruna Yakubu",
-    catchmentAreas: ["Tamale Central", "Sagnarigu", "Kumbungu"],
-    status: "active",
-    assignedChws: ["Zeinab Yakubu", "Haruna Adam"],
-  },
-]
+type BulkBranchOperation = {
+  id: string
+  name: string
+  description: string
+  operationType: "activate" | "deactivate" | "reassign-manager" | "add-chws"
+}
 
-const initialUsers: UserRecord[] = [
-  {
-    id: "USR-101",
-    name: "Akua Aidoo",
-    email: "akua.aidoo@health.gov.gh",
-    role: "Branch Manager",
-    branch: "Accra Central Hospital",
-    status: "active",
-  },
-  {
-    id: "USR-207",
-    name: "Kofi Antwi",
-    email: "kofi.antwi@health.gov.gh",
-    role: "Data Officer",
-    branch: "Tamale Teaching Hospital",
-    status: "active",
-  },
-  {
-    id: "USR-309",
-    name: "Akua Mensimah",
-    email: "akua.mensimah@health.gov.gh",
-    role: "HQ Admin",
-    status: "active",
-  },
-]
+type DatabaseStat = {
+  id: string
+  name: string
+  value: string | number
+  unit: string
+  status: "normal" | "warning" | "critical"
+  threshold?: number
+}
 
-const initialVaccines: VaccineConfig[] = [
-  { id: "VAC-BCG", name: "BCG", schedule: "At birth", dueDays: 0, status: "active" },
-  { id: "VAC-OPV1", name: "OPV-1", schedule: "6 weeks", dueDays: 42, status: "active" },
-  { id: "VAC-DPT3", name: "DPT-3", schedule: "14 weeks", dueDays: 98, status: "active" },
-]
+type UserActivity = {
+  id: string
+  userId: string
+  userName: string
+  action: string
+  resource: string
+  timestamp: string
+  ipAddress: string
+  status: "success" | "failed"
+}
 
-const initialTemplates: NotificationTemplate[] = [
-  {
-    id: "pre_due",
-    label: "Upcoming Dose Reminder",
-    description: "Sent 3 days before a scheduled vaccination",
-    sms: "Hello {guardianName}, {childName} is due for {vaccineName} on {scheduledDate}. Please visit {facilityName}.",
-    email:
-      "<p>Dear {guardianName},</p><p>This is a reminder that {childName} is due for {vaccineName} on {scheduledDate}.</p><p>Facility: {facilityName}</p>",
-  },
-  {
-    id: "overdue",
-    label: "Overdue Alert",
-    description: "Sent when a vaccine is 3 days overdue",
-    sms: "{childName} has missed the {vaccineName} dose scheduled for {scheduledDate}. Please contact {facilityName} immediately.",
-    email:
-      "<p>Dear {guardianName},</p><p>{childName} has missed the {vaccineName} dose scheduled for {scheduledDate}. Kindly reach out to {facilityName} to reschedule.</p>",
-  },
-  {
-    id: "certificate",
-    label: "Certificate Issued",
-    description: "Sent when a child completes the national schedule",
-    sms: "Congratulations! {childName}'s vaccination certificate is ready. Access it via the Parent Portal or visit {facilityName}.",
-    email:
-      "<p>Dear {guardianName},</p><p>Congratulations! {childName} has completed the national immunisation schedule. The digital certificate is now available.</p>",
-  },
-]
+type RolePermission = {
+  id: string
+  permission: string
+  category: "users" | "branches" | "vaccines" | "analytics" | "system"
+  description: string
+}
 
-const initialSystemStatus: SystemStatus[] = [
-  {
-    id: "db",
-    name: "Database",
-    status: "operational",
-    detail: "Primary cluster healthy · last backup 3h ago",
-  },
-  {
-    id: "queue",
-    name: "Redis / BullMQ",
-    status: "operational",
-    detail: "Job queue draining normally · avg latency 320ms",
-  },
-  {
-    id: "messaging",
-    name: "SMS & Email Gateway",
-    status: "degraded",
-    detail: "SMS delivery latency elevated (+1.2s)",
-  },
-]
+type CustomRole = {
+  id: string
+  name: string
+  description: string
+  permissions: string[]
+  createdAt: string
+  isSystem: boolean
+}
 
-const initialAuditLogs: AuditLog[] = [
-  {
-    id: "LOG-9921",
-    actor: "Akua Mensimah",
-    action: "Updated vaccine schedule for DPT-3",
-    timestamp: "2025-11-09 18:42",
-    category: "Schedule",
-  },
-  {
-    id: "LOG-9918",
-    actor: "Kofi Antwi",
-    action: "Exported national dropout report (CSV)",
-    timestamp: "2025-11-09 17:55",
-    category: "Reporting",
-  },
-  {
-    id: "LOG-9904",
-    actor: "Akua Aidoo",
-    action: "Created branch profile for Kasoa Polyclinic",
-    timestamp: "2025-11-09 15:21",
-    category: "Branch",
-  },
-]
+type VaccineStock = {
+  id: string
+  name: string
+  batchNumber: string
+  quantity: number
+  reorderLevel: number
+  expiryDate: string
+  supplier: string
+  totalUsed: number
+  daysUntilExpiry: number
+}
 
-const coverageGaugeData = [{ name: "Coverage", value: 86, fill: "#10b981" }]
+type NotificationDeliveryStatus = {
+  id: string
+  recipient: string
+  channel: "sms" | "email" | "push"
+  status: "sent" | "failed" | "pending" | "read"
+  sentAt: string
+  failureReason?: string
+  messageType: "reminder" | "alert" | "confirmation"
+}
 
-const coverageTrendData = [
-  { period: "Jan", measles: 78, dpt3: 72 },
-  { period: "Feb", measles: 80, dpt3: 74 },
-  { period: "Mar", measles: 82, dpt3: 76 },
-  { period: "Apr", measles: 84, dpt3: 78 },
-  { period: "May", measles: 85, dpt3: 79 },
-  { period: "Jun", measles: 86, dpt3: 81 },
-]
+type QuickAction = {
+  id: string
+  title: string
+  description: string
+  icon: string
+  action: () => void
+  color: "primary" | "emerald" | "amber" | "red"
+}
 
-const chwProductivityData = [
-  { label: "Week 1", registrations: 432, visits: 318 },
-  { label: "Week 2", registrations: 489, visits: 362 },
-  { label: "Week 3", registrations: 501, visits: 344 },
-  { label: "Week 4", registrations: 476, visits: 388 },
-]
+type SystemAlert = {
+  id: string
+  type: "info" | "warning" | "error" | "success"
+  title: string
+  message: string
+  timestamp: string
+  dismissed: boolean
+}
 
-const aefiFeed = [
-  {
-    id: "AEFI-221",
-    child: "Esi Asare",
-    vaccine: "DPT-2",
-    branch: "Tema Polyclinic",
-    reportedAt: "5 mins ago",
-    priority: "High",
-  },
-  {
-    id: "AEFI-219",
-    child: "Yaw Mensah",
-    vaccine: "MMR",
-    branch: "Kumasi South",
-    reportedAt: "28 mins ago",
-    priority: "High",
-  },
-  {
-    id: "AEFI-214",
-    child: "Abena Koomson",
-    vaccine: "BCG",
-    branch: "Bolga Regional",
-    reportedAt: "1 hr ago",
-    priority: "Medium",
-  },
-]
+// Branches loaded from API via getHqBranches()
+const initialBranches: Branch[] = []
 
-const pendingSyncDevices = [
-  { id: "CHW-045", name: "Mabel Owusu", branch: "Ho Municipal", lastSync: "3 hours ago", pending: 14 },
-  { id: "CHW-112", name: "Kwesi Adjei", branch: "Sekondi Takoradi", lastSync: "6 hours ago", pending: 29 },
-  { id: "CHW-304", name: "Zeinab Yakubu", branch: "Wa Central", lastSync: "22 hours ago", pending: 8 },
-]
+// Users loaded from API via getHqUsers()
+const initialUsers: UserRecord[] = []
+
+// Vaccines loaded from API via getHqVaccines()
+const initialVaccines: VaccineConfig[] = []
+
+// Notification templates loaded from localStorage with fallback to empty array
+const initialTemplates: NotificationTemplate[] = []
+
+// System status loaded from API via initializeSystemAlerts()
+const initialSystemStatus: SystemStatus[] = []
+
+// Audit logs are loaded from API in useEffect
+const initialAuditLogs: AuditLog[] = []
+
+// Coverage gauge data is computed from overview stats API response
+const coverageGaugeData: Array<{ name: string; value: number; fill: string }> = []
+
+// Coverage trend and CHW productivity data are loaded from API
+const coverageTrendData: Array<{ period: string; measles: number; dpt3: number }> = []
+const chwProductivityData: Array<{ label: string; registrations: number; visits: number }> = []
+
+// AEFI Feed is loaded from API via getHqAefiReports()
+const aefiFeed: any[] = []
+
+// Device sync data is loaded from API via getHqDeviceSyncStatus()
+const pendingSyncDevices: any[] = []
 
 const normalizeCommaSeparatedValues = (value: string): string[] => {
   const deduplicated = new Set(
@@ -500,6 +520,10 @@ export default function HqDashboardPage() {
   const [isUsingUsersFallback, setIsUsingUsersFallback] = useState(false)
   const [overviewStats, setOverviewStats] = useState<HqOverviewStats | null>(null)
   const [isOverviewLoading, setIsOverviewLoading] = useState(true)
+  const [aefiReports, setAefiReports] = useState(aefiFeed)
+  const [isAefiLoading, setIsAefiLoading] = useState(false)
+  const [deviceSyncStatus, setDeviceSyncStatus] = useState(pendingSyncDevices)
+  const [isDeviceSyncLoading, setIsDeviceSyncLoading] = useState(false)
 
   const [templates, setTemplates] = useState(initialTemplates)
   const [activeTemplateId, setActiveTemplateId] = useState(initialTemplates[0]?.id ?? "")
@@ -522,7 +546,8 @@ export default function HqDashboardPage() {
   const [auditLogs, setAuditLogs] = useState(initialAuditLogs)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [activeChwBranchId, setActiveChwBranchId] = useState<string | null>(null)
-  const [chwFormNames, setChwFormNames] = useState("")
+  const [chwSelectedIds, setChwSelectedIds] = useState<Set<string>>(new Set())
+  const [chwSearchFilter, setChwSearchFilter] = useState("")
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([])
   const [userResetStatusById, setUserResetStatusById] = useState<
     Record<string, { status: "sent" | "failed"; detail: string; time: string }>
@@ -530,10 +555,73 @@ export default function HqDashboardPage() {
   const [, setUserActionNotice] = useState<
     { tone: "success" | "warning" | "destructive"; title: string; detail: string } | null
   >(null)
+
+  // FEATURE 1: Catchment Area Management
+  const [catchmentAreas, setCatchmentAreas] = useState<CatchmentArea[]>([])
+  const [selectedBranchForCatchment, setSelectedBranchForCatchment] = useState<string | null>(null)
+  const [isEditingCatchment, setIsEditingCatchment] = useState(false)
+  const [editingCatchmentId, setEditingCatchmentId] = useState<string | null>(null)
+  const [catchmentForm, setCatchmentForm] = useState({ name: "", community: "", populationEstimate: "" })
+
+  // FEATURE 2: System Health Metrics
+  const [systemMetrics, setSystemMetrics] = useState<SystemMetric[]>([])
+  const [backupHistory, setBackupHistory] = useState<BackupRecord[]>([])
+  const [isMetricsLoading, setIsMetricsLoading] = useState(false)
+
+  // FEATURE 3: Bulk User CSV Import
+  const [csvImportFile, setCsvImportFile] = useState<File | null>(null)
+  const [isImportingCsv, setIsImportingCsv] = useState(false)
+  const [csvImportResult, setCsvImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
+
+  // FEATURE 4: Branch Bulk Operations
+  const [bulkBranchFile, setBulkBranchFile] = useState<File | null>(null)
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false)
+  const [bulkOperationResult, setBulkOperationResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
+  const [selectedBulkOperation, setSelectedBulkOperation] = useState<string>("activate")
+
+  // FEATURE 5: Database Stats
+  const [databaseStats, setDatabaseStats] = useState<DatabaseStat[]>([])
+  const [isDatabaseStatsLoading, setIsDatabaseStatsLoading] = useState(false)
+
+  // FEATURE 6: Backup Management Config
+  const [backupSchedule, setBackupSchedule] = useState<"daily" | "weekly" | "monthly">("weekly")
+  const [retentionDays, setRetentionDays] = useState(90)
+  const [isSchedulingBackup, setIsSchedulingBackup] = useState(false)
+
+  // FEATURE 7: User Roles & Permissions
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([])
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null)
+  const [roleForm, setRoleForm] = useState({ name: "", description: "", permissions: [] as string[] })
+  const [isEditingRole, setIsEditingRole] = useState(false)
+  const [allPermissions, setAllPermissions] = useState<RolePermission[]>([])
+
+  // FEATURE 8: User Activity Tracker
+  const [userActivities, setUserActivities] = useState<UserActivity[]>([])
+  const [isActivityLoading, setIsActivityLoading] = useState(false)
+  const [selectedUserForActivity, setSelectedUserForActivity] = useState<string | null>(null)
+
+  // FEATURE 9: Vaccine Inventory
+  const [vaccineInventory, setVaccineInventory] = useState<VaccineStock[]>([])
+  const [isInventoryLoading, setIsInventoryLoading] = useState(false)
+  const [vaccineReorderForm, setVaccineReorderForm] = useState({ reorderLevel: 0, supplier: "" })
+
+  // FEATURE 10: Notifications Delivery Status
+  const [notificationDeliveries, setNotificationDeliveries] = useState<NotificationDeliveryStatus[]>([])
+  const [isNotifLoading, setIsNotifLoading] = useState(false)
+  const [notifStatusFilter, setNotifStatusFilter] = useState<"all" | "sent" | "failed" | "pending">("all")
+
+  // FEATURE 11: Advanced Analytics
+  const [advancedCharts, setAdvancedCharts] = useState<Array<{ id: string; title: string; type: string; data: unknown[] }>>([])
+  const [selectedChartType, setSelectedChartType] = useState<string>("cohort")
+
+  // FEATURE 12: Quick Actions & Alerts
+  const [systemAlerts, setSystemAlerts] = useState<SystemAlert[]>([])
+  const [dismissedAlerts, setDismissedAlerts] = useState(new Set<string>())
+
   const branchEditPanelRef = useRef<HTMLDivElement | null>(null)
   const userFormPanelRef = useRef<HTMLDivElement | null>(null)
   const vaccineFormPanelRef = useRef<HTMLDivElement | null>(null)
-  const chwAssignmentPanelRef = useRef<HTMLDivElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const appendAuditLog = useCallback(
     ({ action, category }: { action: string; category: string }) => {
@@ -643,8 +731,6 @@ export default function HqDashboardPage() {
   }, [])
 
   useEffect(() => {
-    if (activeSection !== "analytics") return
-
     let isMounted = true
 
     const loadBranches = async () => {
@@ -700,7 +786,7 @@ export default function HqDashboardPage() {
     return () => {
       isMounted = false
     }
-  }, [activeSection, analyticsFilters.branch, analyticsFilters.region, analyticsFilters.window])
+  }, [analyticsFilters.branch, analyticsFilters.region, analyticsFilters.window])
 
   useEffect(() => {
     let isMounted = true
@@ -731,7 +817,7 @@ export default function HqDashboardPage() {
     return () => {
       isMounted = false
     }
-  }, [activeSection])
+  }, [])
 
   // Pull escalations staged by data officers via localStorage until the backend wiring is ready
   const ingestQueuedConflicts = useCallback(() => {
@@ -828,6 +914,64 @@ export default function HqDashboardPage() {
     }
   }, [])
 
+  // Load AEFI reports for overview
+  useEffect(() => {
+    let isMounted = true
+
+    const loadAefiReports = async () => {
+      try {
+        setIsAefiLoading(true)
+        const reports = await getHqAefiReports(5) // Get top 5 AEFI reports
+        if (!isMounted) return
+        
+        // AEFI data comes directly from backend with correct field names
+        setAefiReports(reports)
+      } catch (error) {
+        console.error("Failed to load AEFI reports", error)
+        if (!isMounted) return
+        // Keep using sample data as fallback
+      } finally {
+        if (isMounted) {
+          setIsAefiLoading(false)
+        }
+      }
+    }
+
+    loadAefiReports()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  // Load device sync status for overview
+  useEffect(() => {
+    let isMounted = true
+
+    const loadDeviceSyncStatus = async () => {
+      try {
+        setIsDeviceSyncLoading(true)
+        const devices = await getHqDeviceSyncStatus()
+        if (!isMounted) return
+        
+        // Device sync data comes directly from backend with correct field names
+        setDeviceSyncStatus(devices)
+      } catch (error) {
+        console.error("Failed to load device sync status", error)
+        if (!isMounted) return
+        // Keep using sample data as fallback
+      } finally {
+        if (isMounted) {
+          setIsDeviceSyncLoading(false)
+        }
+      }
+    }
+
+    loadDeviceSyncStatus()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   // Load system settings and audit logs on mount
   useEffect(() => {
     let isMounted = true
@@ -895,6 +1039,45 @@ export default function HqDashboardPage() {
     }
   }, [])
 
+  // FEATURE 1: Load catchment areas on mount
+  useEffect(() => {
+    let isMounted = true
+    ;(async () => {
+      try {
+        const areas = await getHqCatchmentAreas()
+        if (isMounted) setCatchmentAreas(areas)
+      } catch (error) {
+        console.error("Failed to load catchment areas", error)
+      }
+    })()
+    return () => { isMounted = false }
+  }, [])
+
+  // FEATURE 2: Load system metrics on mount
+  useEffect(() => {
+    loadSystemMetrics()
+  }, [])
+
+  // TIER 2: Load data on mount
+  useEffect(() => {
+    loadDatabaseStats()
+    loadUserActivity()
+    loadVaccineInventory()
+    loadNotificationDeliveries()
+    loadAdvancedAnalytics()
+    initializeSystemAlerts()
+    
+    // Load permissions from API
+    ;(async () => {
+      try {
+        const permissions = await getAvailablePermissions()
+        setAllPermissions(permissions)
+      } catch (error) {
+        console.error("Failed to load permissions", error)
+      }
+    })()
+  }, [])
+
   const activeTemplate = useMemo(() => templates.find((template) => template.id === activeTemplateId) ?? null, [activeTemplateId, templates])
   const messageTone = useMemo(() => {
     if (!systemMessage) return "neutral"
@@ -913,6 +1096,35 @@ export default function HqDashboardPage() {
     return branches.find((branch) => branch.id === activeChwBranchId) ?? null
   }, [activeChwBranchId, branches])
 
+  // Map each CHW name to branches they're assigned to
+  const chwBranchAssignments = useMemo(() => {
+    const assignments = new Map<string, string[]>()
+    branches.forEach((branch) => {
+      branch.assignedChws.forEach((chwName) => {
+        const existing = assignments.get(chwName) ?? []
+        assignments.set(chwName, [...existing, branch.name])
+      })
+    })
+    return assignments
+  }, [branches])
+
+  // Map user IDs to names for audit logs
+  const userNameMap = useMemo(() => {
+    const map = new Map<string, string>()
+    users.forEach((user) => {
+      map.set(user.id, user.name)
+    })
+    return map
+  }, [users])
+
+  // Enrich audit logs with user names
+  const enrichedAuditLogs = useMemo(() => {
+    return auditLogs.map((log) => ({
+      ...log,
+      actorName: userNameMap.get(log.actor) ?? log.actor,
+    }))
+  }, [auditLogs, userNameMap])
+
   const handleLogout = async () => {
     setIsLoggingOut(true)
     try {
@@ -928,6 +1140,23 @@ export default function HqDashboardPage() {
       router.push("/")
     } finally {
       // Note: setIsLoggingOut(false) not needed since we're navigating away
+    }
+  }
+
+  const handleCleanupDuplicateChws = async () => {
+    try {
+      const result = await cleanupDuplicateChwAssignments()
+      setSystemMessage(`✓ ${result.message}`)
+      appendAuditLog({ action: `Cleaned up ${result.cleaned} duplicate CHW assignments`, category: "Branch" })
+
+      // Refetch branches to reflect changes
+      const updatedBranches = await getHqBranches()
+      if (updatedBranches.length > 0) {
+        setBranches(updatedBranches)
+      }
+    } catch (error) {
+      console.error("Failed to cleanup duplicate CHWs", error)
+      setSystemMessage("No duplicate CHW assignments found or cleanup failed.")
     }
   }
 
@@ -978,30 +1207,34 @@ export default function HqDashboardPage() {
   const startChwAssignment = (branch: Branch) => {
     cancelBranchEditing()
     setActiveChwBranchId(branch.id)
-    setChwFormNames(branch.assignedChws.join(", "))
+    setChwSelectedIds(new Set(branch.assignedChws.map(name => {
+      const user = users.find(u => u.name === name)
+      return user?.id ?? name
+    })))
+    setChwSearchFilter("")
     setSystemMessage(`Managing CHW assignment for ${branch.name}.`)
-
-    window.setTimeout(() => {
-      chwAssignmentPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-    }, 80)
   }
 
   const cancelChwAssignment = () => {
     setActiveChwBranchId(null)
-    setChwFormNames("")
+    setChwSelectedIds(new Set())
+    setChwSearchFilter("")
   }
 
   const handleChwAssignmentSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!activeChwBranchId) return
 
-    const normalized = normalizeCommaSeparatedValues(chwFormNames)
+    const selectedChwNames = Array.from(chwSelectedIds).map(id => {
+      const user = users.find(u => u.id === id)
+      return user?.name ?? id
+    })
     const targetBranch = branches.find((branch) => branch.id === activeChwBranchId)
 
     try {
-      const updatedBranch = await updateHqBranchChws(activeChwBranchId, normalized)
+      const updatedBranch = await updateHqBranchChws(activeChwBranchId, selectedChwNames)
       setBranches((previous) => previous.map((branch) => (branch.id === updatedBranch.id ? updatedBranch : branch)))
-      setSystemMessage(`Assigned ${normalized.length} CHW${normalized.length === 1 ? "" : "s"} to ${updatedBranch.name}.`)
+      setSystemMessage(`Assigned ${selectedChwNames.length} CHW${selectedChwNames.length === 1 ? "" : "s"} to ${updatedBranch.name}.`)
       appendAuditLog({ action: `Updated CHW assignment for ${updatedBranch.name}`, category: "Branch" })
     } catch (error) {
       console.error("Failed to update CHW assignment", error)
@@ -1010,13 +1243,13 @@ export default function HqDashboardPage() {
         setBranches((previous) =>
           previous.map((branch) =>
             branch.id === targetBranch.id
-              ? { ...branch, assignedChws: normalized }
+              ? { ...branch, assignedChws: selectedChwNames }
               : branch,
           ),
         )
 
         setSystemMessage(
-          `Assigned ${normalized.length} CHW${normalized.length === 1 ? "" : "s"} to ${targetBranch.name} (saved locally).`,
+          `Assigned ${selectedChwNames.length} CHW${selectedChwNames.length === 1 ? "" : "s"} to ${targetBranch.name} (saved locally).`,
         )
         appendAuditLog({ action: `Updated CHW assignment for ${targetBranch.name} (local fallback)`, category: "Branch" })
       } else {
@@ -1063,6 +1296,16 @@ export default function HqDashboardPage() {
         setBranches((previous) => [createdBranch, ...previous])
         setSystemMessage(`Branch "${createdBranch.name}" registered.`)
         appendAuditLog({ action: `Registered branch ${createdBranch.name}`, category: "Branch" })
+
+        // Refetch branches after creation to ensure UI is in sync with database
+        try {
+          const updatedBranches = await getHqBranches()
+          if (updatedBranches.length > 0) {
+            setBranches(updatedBranches)
+          }
+        } catch {
+          // Branch already added to state, refetch failure is non-critical
+        }
       }
     } catch (error) {
       console.error("Failed to save branch", error)
@@ -1072,6 +1315,362 @@ export default function HqDashboardPage() {
 
     setBranchForm({ name: "", region: "", manager: "", catchmentAreas: "" })
     setEditingBranchId(null)
+  }
+
+  // ===== FEATURE 1: CATCHMENT AREA HANDLERS =====
+  const handleSaveCatchment = async () => {
+    if (!selectedBranchForCatchment || !catchmentForm.name.trim()) {
+      setSystemMessage("Please fill in all required fields.")
+      return
+    }
+    try {
+      const payload = {
+        name: catchmentForm.name.trim(),
+        community: catchmentForm.community.trim() || catchmentForm.name.trim(),
+        populationEstimate: catchmentForm.populationEstimate ? parseInt(catchmentForm.populationEstimate) : undefined,
+        branchId: selectedBranchForCatchment,
+      }
+      if (isEditingCatchment && editingCatchmentId) {
+        await updateHqCatchmentArea(editingCatchmentId, payload)
+        setSystemMessage(`✓ Catchment area updated.`)
+      } else {
+        await createHqCatchmentArea(payload)
+        setSystemMessage(`✓ Catchment area created.`)
+      }
+      const areas = await getHqCatchmentAreas()
+      setCatchmentAreas(areas)
+      setCatchmentForm({ name: "", community: "", populationEstimate: "" })
+      setIsEditingCatchment(false)
+      setEditingCatchmentId(null)
+      appendAuditLog({ action: `${isEditingCatchment ? "Updated" : "Created"} catchment area`, category: "Branch" })
+    } catch (error) {
+      console.error("Failed to save catchment area", error)
+      setSystemMessage("Could not save catchment area.")
+    }
+  }
+
+  const handleDeleteCatchment = async (areaId: string) => {
+    if (!confirm("Delete this catchment area?")) return
+    try {
+      await deleteHqCatchmentArea(areaId)
+      const areas = await getHqCatchmentAreas()
+      setCatchmentAreas(areas)
+      setSystemMessage("✓ Catchment area deleted.")
+      appendAuditLog({ action: `Deleted catchment area`, category: "Branch" })
+    } catch (error) {
+      console.error("Failed to delete catchment area", error)
+      setSystemMessage("Could not delete catchment area.")
+    }
+  }
+
+  // ===== FEATURE 2: SYSTEM METRICS HANDLER =====
+  const loadSystemMetrics = async () => {
+    setIsMetricsLoading(true)
+    try {
+      const metrics = await getSystemMetrics()
+      setSystemMetrics(metrics)
+      const backups = await getBackupHistory()
+      setBackupHistory(backups)
+    } catch (error) {
+      console.error("Failed to load metrics", error)
+      setSystemMessage("Could not load system metrics.")
+    } finally {
+      setIsMetricsLoading(false)
+    }
+  }
+
+  // ===== TIER 2 HANDLERS =====
+
+  // FEATURE 4: Branch Bulk Operations
+  const handleBulkBranchOperation = async () => {
+    if (!bulkBranchFile) {
+      setSystemMessage("Please select a CSV file.")
+      return
+    }
+    setIsBulkProcessing(true)
+    try {
+      const text = await bulkBranchFile.text()
+      const lines = text.split("\n").filter(l => l.trim())
+      let success = 0, failed = 0
+      const errors: string[] = []
+
+      for (const line of lines.slice(1)) {
+        try {
+          const [branchId, operation] = line.split(",").map(v => v.trim())
+          if (!branchId || !operation) continue
+          
+          const branch = branches.find(b => b.id === branchId)
+          if (!branch) {
+            failed++
+            errors.push(`Branch ${branchId} not found`)
+            continue
+          }
+
+          if (operation === "activate" || operation === "deactivate") {
+            await updateHqBranchStatus(branchId, operation === "activate" ? "active" : "inactive")
+          }
+          success++
+        } catch (error) {
+          failed++
+          errors.push(`Operation failed: ${error}`)
+        }
+      }
+
+      setBulkOperationResult({ success, failed, errors: errors.slice(0, 5) })
+      setSystemMessage(`✓ Bulk operation complete: ${success} succeeded, ${failed} failed.`)
+      appendAuditLog({ action: `Bulk operated on ${success} branches`, category: "Branch" })
+      setBulkBranchFile(null)
+    } catch (error) {
+      console.error("Bulk operation failed", error)
+      setSystemMessage("Bulk operation failed.")
+    } finally {
+      setIsBulkProcessing(false)
+    }
+  }
+
+  const handleExportBranches = () => {
+    const csv = [
+      ["ID", "Name", "Region", "Manager", "CHWs", "Status"],
+      ...branches.map(b => [b.id, b.name, b.region, b.manager, b.assignedChws.length, b.status])
+    ].map(row => row.join(",")).join("\n")
+
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `branches-export-${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    setSystemMessage("✓ Branches exported successfully.")
+  }
+
+  // FEATURE 5: Database Stats
+  const loadDatabaseStats = async () => {
+    setIsDatabaseStatsLoading(true)
+    try {
+      const stats = await getDatabaseStats()
+      setDatabaseStats(stats)
+    } catch (error) {
+      console.error("Failed to load database stats", error)
+    } finally {
+      setIsDatabaseStatsLoading(false)
+    }
+  }
+
+  // FEATURE 6: Backup Management Config
+  const configureBackupSchedule = async () => {
+    setIsSchedulingBackup(true)
+    try {
+      await configureBackup({ frequency: backupSchedule, retentionDays })
+      setSystemMessage(`✓ Backup schedule set to ${backupSchedule} with ${retentionDays} day retention.`)
+      appendAuditLog({ action: `Configured backup: ${backupSchedule}, retention: ${retentionDays}d`, category: "System" })
+    } catch (error) {
+      console.error("Failed to configure backup", error)
+      setSystemMessage("Failed to configure backup schedule.")
+    } finally {
+      setIsSchedulingBackup(false)
+    }
+  }
+
+  // FEATURE 7: User Roles & Permissions
+  const handleSaveCustomRole = async () => {
+    if (!roleForm.name.trim()) {
+      setSystemMessage("Role name is required.")
+      return
+    }
+    try {
+      if (editingRoleId) {
+        await updateCustomRole(editingRoleId, { name: roleForm.name, description: roleForm.description, permissions: roleForm.permissions })
+        const updatedRole = { ...roleForm, id: editingRoleId, createdAt: customRoles.find(r => r.id === editingRoleId)?.createdAt || new Date().toISOString(), isSystem: false }
+        setCustomRoles(prev => prev.map(r => r.id === editingRoleId ? updatedRole : r))
+        setSystemMessage(`✓ Role "${roleForm.name}" updated.`)
+      } else {
+        const result = await createCustomRole({ name: roleForm.name, description: roleForm.description, permissions: roleForm.permissions })
+        const newRole = { ...roleForm, id: result.roleId, createdAt: new Date().toISOString(), isSystem: false }
+        setCustomRoles(prev => [newRole, ...prev])
+        setSystemMessage(`✓ Role "${roleForm.name}" created.`)
+      }
+      appendAuditLog({ action: `${editingRoleId ? "Updated" : "Created"} role ${roleForm.name}`, category: "System" })
+      setIsEditingRole(false)
+      setEditingRoleId(null)
+      setRoleForm({ name: "", description: "", permissions: [] })
+    } catch (error) {
+      console.error("Failed to save role", error)
+      setSystemMessage("Failed to save role.")
+    }
+  }
+
+  const handleDeleteRole = async (roleId: string) => {
+    try {
+      await deleteCustomRole(roleId)
+      setCustomRoles(prev => prev.filter(r => r.id !== roleId))
+      setSystemMessage("✓ Role deleted.")
+      appendAuditLog({ action: `Deleted role`, category: "System" })
+    } catch (error) {
+      console.error("Failed to delete role", error)
+      setSystemMessage("Failed to delete role.")
+    }
+  }
+
+  // FEATURE 8: User Activity Tracker
+  const loadUserActivity = async () => {
+    setIsActivityLoading(true)
+    try {
+      const activities = await getAuditActivity()
+      setUserActivities(activities)
+    } catch (error) {
+      console.error("Failed to load activities", error)
+    } finally {
+      setIsActivityLoading(false)
+    }
+  }
+
+  // FEATURE 9: Vaccine Inventory
+  const loadVaccineInventory = async () => {
+    setIsInventoryLoading(true)
+    try {
+      const vaccines = await getHqVaccines()
+      const stocks: VaccineStock[] = (vaccines || []).map(v => ({
+        id: v.id,
+        name: v.name,
+        batchNumber: v.batchNumber || `${v.code}-2025-001`,
+        quantity: v.quantity || 0,
+        reorderLevel: v.reorderLevel || 150,
+        expiryDate: v.expiryDate || "2026-12-31",
+        supplier: v.supplier || "WHO",
+        totalUsed: v.totalUsed || 0,
+        daysUntilExpiry: v.daysUntilExpiry || 0,
+      }))
+      setVaccineInventory(stocks)
+    } catch (error) {
+      console.error("Failed to load inventory", error)
+    } finally {
+      setIsInventoryLoading(false)
+    }
+  }
+
+  const updateVaccineStock = async (vaccineId: string) => {
+    try {
+      setVaccineInventory(prev => prev.map(v => 
+        v.id === vaccineId ? { ...v, reorderLevel: vaccineReorderForm.reorderLevel, supplier: vaccineReorderForm.supplier } : v
+      ))
+      setSystemMessage("✓ Vaccine configuration updated.")
+      setEditingVaccineId(null)
+      appendAuditLog({ action: `Updated vaccine stock settings`, category: "Vaccine" })
+    } catch (error) {
+      console.error("Failed to update stock", error)
+      setSystemMessage("Failed to update vaccine.")
+    }
+  }
+
+  // FEATURE 10: Notifications Delivery
+  const loadNotificationDeliveries = async () => {
+    setIsNotifLoading(true)
+    try {
+      const deliveries = await getNotificationDeliveryStatus()
+      setNotificationDeliveries(deliveries)
+    } catch (error) {
+      console.error("Failed to load deliveries", error)
+    } finally {
+      setIsNotifLoading(false)
+    }
+  }
+
+  const retryFailedNotificationHandler = async (notifId: string) => {
+    try {
+      await retryFailedNotification(notifId)
+      setNotificationDeliveries(prev => prev.map(n => 
+        n.id === notifId ? { ...n, status: "pending" } : n
+      ))
+      setSystemMessage("✓ Notification queued for retry.")
+      appendAuditLog({ action: `Retried notification delivery`, category: "Notification" })
+    } catch (error) {
+      console.error("Failed to retry notification", error)
+    }
+  }
+
+  // FEATURE 11: Advanced Analytics
+  const loadAdvancedAnalytics = async () => {
+    try {
+      const response = await getHqAnalytics({ region: "All", branch: "All", window: "3-months" })
+      const charts = [
+        {
+          id: "cohort",
+          title: "Immunization Cohort Analysis",
+          type: "cohort",
+          data: response.trend || []
+        },
+      ]
+      setAdvancedCharts(charts)
+    } catch (error) {
+      console.error("Failed to load advanced analytics", error)
+    }
+  }
+
+  // FEATURE 12: Quick Actions & System Alerts
+  const dismissAlert = (alertId: string) => {
+    setDismissedAlerts(prev => new Set([...prev, alertId]))
+  }
+
+  const initializeSystemAlerts = () => {
+    // System alerts are loaded from real system state or API in the future
+    // For now, initialize as empty - alerts will be populated by monitoring
+    setSystemAlerts([])
+  }
+
+  // ===== FEATURE 3: BULK USER CSV IMPORT HANDLER =====
+  const handleCsvImport = async () => {
+    if (!csvImportFile) {
+      setSystemMessage("Please select a CSV file.")
+      return
+    }
+    setIsImportingCsv(true)
+    try {
+      const text = await csvImportFile.text()
+      const lines = text.split("\n").filter(l => l.trim())
+      const header = lines[0].split(",").map(h => h.trim().toLowerCase())
+      const records = lines.slice(1).map(line => {
+        const values = line.split(",").map(v => v.trim())
+        return Object.fromEntries(header.map((k, i) => [k, values[i]]))
+      })
+
+      let success = 0, failed = 0
+      const errors: string[] = []
+
+      for (const record of records) {
+        try {
+          if (!record.name || !record.email || !record.role) {
+            failed++
+            errors.push(`Row missing required fields: ${record.name}`)
+            continue
+          }
+          await createHqUser({
+            name: record.name,
+            email: record.email,
+            role: record.role,
+          })
+          success++
+        } catch (error) {
+          failed++
+          errors.push(`Failed to create ${record.name}: ${error}`)
+        }
+      }
+
+      setCsvImportResult({ success, failed, errors: errors.slice(0, 5) })
+      setSystemMessage(`✓ Import complete: ${success} created, ${failed} failed.`)
+      appendAuditLog({ action: `Bulk imported ${success} users via CSV`, category: "User" })
+
+      const updatedUsers = await getHqUsers()
+      setUsers(updatedUsers)
+      setCsvImportFile(null)
+    } catch (error) {
+      console.error("Failed to import CSV", error)
+      setSystemMessage("CSV import failed.")
+    } finally {
+      setIsImportingCsv(false)
+    }
   }
 
   const handleAddUser = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1185,6 +1784,10 @@ export default function HqDashboardPage() {
         name: vaccineForm.name.trim(),
         code: generatedCode,
       })
+
+      setVaccines((previous) => [newVaccine as any, ...previous])
+      setVaccineForm({ name: "", schedule: "", dueDays: "" })
+      setSystemMessage(`Vaccine "${newVaccine.name}" added to master list.`)
 
       // Create schedule entry for the new vaccine
       const vaccineId = (newVaccine as any).id
@@ -1450,10 +2053,10 @@ export default function HqDashboardPage() {
       const headers = ["Timestamp", "Action", "Actor", "Category"]
       
       // Prepare CSV rows
-      const rows = auditLogs.map((log) => [
+      const rows = enrichedAuditLogs.map((log) => [
         log.timestamp,
         log.action,
-        log.actor,
+        log.actorName,
         log.category,
       ])
 
@@ -1500,7 +2103,7 @@ export default function HqDashboardPage() {
         doc.setFontSize(10)
         doc.text(`Generated: ${new Date().toLocaleString()}`, 20, yPosition)
         yPosition += 5
-        doc.text(`Total Records: ${auditLogs.length}`, 20, yPosition)
+        doc.text(`Total Records: ${enrichedAuditLogs.length}`, 20, yPosition)
         yPosition += 10
 
         // Add divider
@@ -1527,7 +2130,7 @@ export default function HqDashboardPage() {
         doc.setFont("helvetica", "normal")
         doc.setFontSize(9)
 
-        auditLogs.forEach((log) => {
+        enrichedAuditLogs.forEach((log) => {
           // Check if we need a new page
           if (yPosition > pageHeight - 20) {
             doc.addPage()
@@ -1549,7 +2152,7 @@ export default function HqDashboardPage() {
           const actionLines = doc.splitTextToSize(log.action, 65)
           doc.text(actionLines, 70, yPosition)
           
-          doc.text(log.actor.substring(0, 35), 140, yPosition)
+          doc.text(log.actorName.substring(0, 35), 140, yPosition)
           doc.text(log.category, 180, yPosition)
           
           yPosition += actionLines.length > 1 ? actionLines.length * 4 + 3 : 7
@@ -1909,6 +2512,63 @@ export default function HqDashboardPage() {
         </Card>
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Megaphone className="h-5 w-5 text-primary" /> Quick Actions
+          </CardTitle>
+          <CardDescription>Frequently used system operations.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <button 
+              onClick={() => {
+                setActiveSection("branches")
+                branchEditPanelRef.current?.scrollIntoView({ behavior: "smooth" })
+              }}
+              className="rounded-lg border border-border bg-muted/30 p-4 hover:bg-muted/50 hover:border-primary transition text-left"
+            >
+              <div className="text-2xl mb-2">🏥</div>
+              <p className="font-medium text-sm">Register Branch</p>
+              <p className="text-xs text-muted-foreground mt-1">Add new health facility</p>
+            </button>
+            
+            <button
+              onClick={() => {
+                setActiveSection("users")
+                userFormPanelRef.current?.scrollIntoView({ behavior: "smooth" })
+              }}
+              className="rounded-lg border border-border bg-muted/30 p-4 hover:bg-muted/50 hover:border-primary transition text-left"
+            >
+              <div className="text-2xl mb-2">👤</div>
+              <p className="font-medium text-sm">Create User</p>
+              <p className="text-xs text-muted-foreground mt-1">Provision new account</p>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveSection("vaccines")
+                vaccineFormPanelRef.current?.scrollIntoView({ behavior: "smooth" })
+              }}
+              className="rounded-lg border border-border bg-muted/30 p-4 hover:bg-muted/50 hover:border-primary transition text-left"
+            >
+              <div className="text-2xl mb-2">💉</div>
+              <p className="font-medium text-sm">Add Vaccine</p>
+              <p className="text-xs text-muted-foreground mt-1">Register new antigen</p>
+            </button>
+
+            <button
+              onClick={handleBackup}
+              className="rounded-lg border border-border bg-muted/30 p-4 hover:bg-muted/50 hover:border-primary transition text-left"
+            >
+              <div className="text-2xl mb-2">💾</div>
+              <p className="font-medium text-sm">Backup Now</p>
+              <p className="text-xs text-muted-foreground mt-1">Trigger system backup</p>
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-[1fr,1.2fr]">
         <Card className="flex flex-col">
           <CardHeader>
@@ -1918,19 +2578,39 @@ export default function HqDashboardPage() {
             <CardDescription>Percentage of children fully vaccinated for the national core schedule.</CardDescription>
           </CardHeader>
           <CardContent className="flex-1">
-            <ResponsiveContainer width="100%" height={280}>
-              <RadialBarChart innerRadius="60%" outerRadius="110%" data={coverageGaugeData} startAngle={90} endAngle={-270}>
-                <RadialBar background cornerRadius={18} dataKey="value" />
-                <Legend
-                  iconSize={12}
-                  layout="vertical"
-                  verticalAlign="middle"
-                  align="right"
-                  formatter={() => "National coverage"}
-                />
-              </RadialBarChart>
-            </ResponsiveContainer>
-            <p className="mt-4 text-center text-sm text-muted-foreground">Target: 92% · Last month: 84%</p>
+            {isOverviewLoading ? (
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/30">
+                <span className="text-sm text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading coverage data...
+                </span>
+              </div>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: "Coverage", value: overviewStats?.nationalCoverageRate ?? 86 },
+                        { name: "Gap", value: 100 - (overviewStats?.nationalCoverageRate ?? 86) }
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={70}
+                      outerRadius={110}
+                      paddingAngle={0}
+                      dataKey="value"
+                      label={({ name, value }) => `${value}%`}
+                      labelLine={false}
+                    >
+                      <Cell fill="#10b981" />
+                      <Cell fill="#e5e7eb" />
+                    </Pie>
+                    <Tooltip formatter={(value) => `${value}%`} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <p className="mt-4 text-center text-sm text-muted-foreground">Target: 92% · Current: {overviewStats?.nationalCoverageRate ?? 0}%</p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -1942,16 +2622,30 @@ export default function HqDashboardPage() {
             <CardDescription>Month-on-month national view of critical vaccine completion.</CardDescription>
           </CardHeader>
           <CardContent className="h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={coverageTrendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="period" />
-                <YAxis domain={[70, 90]} />
-                <Tooltip />
-                <Line type="monotone" dataKey="measles" stroke="#2563eb" strokeWidth={2} />
-                <Line type="monotone" dataKey="dpt3" stroke="#10b981" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+            {isOverviewLoading ? (
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/30">
+                <span className="text-sm text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading trend data...
+                </span>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={analyticsTrendData && analyticsTrendData.length > 0 ? analyticsTrendData : coverageTrendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis dataKey="period" stroke="#9ca3af" style={{ fontSize: '12px' }} />
+                  <YAxis domain={[70, 90]} stroke="#9ca3af" style={{ fontSize: '12px' }} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                    formatter={(value) => [`${value}%`, '']}
+                    labelFormatter={(label) => `${label}`}
+                  />
+                  <ReferenceLine y={92} stroke="#f59e0b" strokeDasharray="5 5" label={{ value: 'Target: 92%', position: 'right', fill: '#f59e0b', fontSize: 12 }} />
+                  <Area type="monotone" dataKey="measles" stroke="#2563eb" strokeWidth={2.5} fill="#2563eb" fillOpacity={0.15} name="Measles" />
+                  <Area type="monotone" dataKey="dpt3" stroke="#10b981" strokeWidth={2.5} fill="#10b981" fillOpacity={0.15} name="DPT-3" />
+                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -1965,18 +2659,29 @@ export default function HqDashboardPage() {
             <CardDescription>Highest priority notifications surfaced from branches.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {aefiFeed.map((item) => (
-              <div key={item.id} className="rounded-lg border border-border bg-background p-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-foreground">{item.child}</span>
-                  <Badge variant="destructive">{item.priority}</Badge>
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {item.vaccine} • {item.branch}
-                </p>
-                <p className="text-xs text-muted-foreground/80 mt-2">Reported {item.reportedAt}</p>
+            {isAefiLoading ? (
+              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading AEFI feed...
               </div>
-            ))}
+            ) : aefiReports.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <CheckCircle2 className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p>No adverse events reported</p>
+              </div>
+            ) : (
+              aefiReports.map((item) => (
+                <div key={item.id} className="rounded-lg border border-border bg-background p-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-semibold text-foreground">{item.child}</span>
+                    <Badge variant="destructive">{item.priority}</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {item.vaccine} • {item.branch}
+                  </p>
+                  <p className="text-xs text-muted-foreground/80 mt-2">Reported {item.reportedAt}</p>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -1988,16 +2693,27 @@ export default function HqDashboardPage() {
             <CardDescription>Monitor field data lag before it becomes a reporting gap.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {pendingSyncDevices.map((device) => (
-              <div key={device.id} className="rounded-lg border border-border bg-background p-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-foreground">{device.name}</span>
-                  <Badge variant="secondary">{device.pending} forms</Badge>
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">{device.branch}</p>
-                <p className="text-xs text-muted-foreground/80 mt-2">Last sync {device.lastSync}</p>
+            {isDeviceSyncLoading ? (
+              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading device status...
               </div>
-            ))}
+            ) : deviceSyncStatus.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <CheckCircle2 className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p>All devices synced</p>
+              </div>
+            ) : (
+              deviceSyncStatus.map((device) => (
+                <div key={device.id} className="rounded-lg border border-border bg-background p-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-semibold text-foreground">{device.name}</span>
+                    <Badge variant="secondary">{device.pending} forms</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{device.branch}</p>
+                  <p className="text-xs text-muted-foreground/80 mt-2">Last sync {device.lastSync}</p>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
       </div>
@@ -2050,6 +2766,37 @@ export default function HqDashboardPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      {systemAlerts.length > 0 && (
+        <Card className="border-l-4 border-l-amber-500 bg-amber-50/50 dark:bg-amber-900/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <AlertCircle className="h-5 w-5 text-amber-600" /> System Alerts
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {systemAlerts
+              .filter(a => !dismissedAlerts.has(a.id))
+              .map(alert => (
+                <div key={alert.id} className={`rounded-lg border p-3 flex items-start justify-between gap-3 ${
+                  alert.type === "error" ? "border-destructive bg-destructive/5" :
+                  alert.type === "warning" ? "border-amber-300 bg-amber-50 dark:bg-amber-900/30" :
+                  alert.type === "success" ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-900/30" :
+                  "border-blue-300 bg-blue-50 dark:bg-blue-900/30"
+                }`}>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{alert.title}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{alert.message}</p>
+                    <p className="text-xs text-muted-foreground mt-2">{alert.timestamp}</p>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => dismissAlert(alert.id)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 
@@ -2118,8 +2865,20 @@ export default function HqDashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Branch Directory</CardTitle>
-          <CardDescription>Review existing facilities and their assigned territories.</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Branch Directory</CardTitle>
+              <CardDescription>Review existing facilities and their assigned territories.</CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCleanupDuplicateChws}
+              className="gap-2"
+            >
+              <Layers className="h-4 w-4" /> Clean up duplicates
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {branches.map((branch) => {
@@ -2174,46 +2933,347 @@ export default function HqDashboardPage() {
         </CardContent>
       </Card>
 
-      {activeChwBranch ? (
-        <div ref={chwAssignmentPanelRef} className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-base font-semibold text-foreground">Assign Community Health Workers</p>
-              <p className="text-sm text-muted-foreground">
-                {activeChwBranch.name} • {activeChwBranch.region}
-              </p>
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-primary" /> Catchment Area Management
+              </CardTitle>
+              <CardDescription>Define and manage geographical service areas for branches.</CardDescription>
             </div>
-            <Button variant="ghost" size="sm" onClick={cancelChwAssignment}>
-              Close
-            </Button>
+            {selectedBranchForCatchment && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedBranchForCatchment(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </div>
-          <form className="mt-4 space-y-4" onSubmit={handleChwAssignmentSubmit}>
-            <div className="space-y-2">
-              <Label htmlFor="chwNames">CHW names (comma separated)</Label>
-              <textarea
-                id="chwNames"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                rows={4}
-                value={chwFormNames}
-                onChange={(event) => setChwFormNames(event.target.value)}
-                placeholder="e.g. Akua Aidoo, Kofi Antwi"
-              />
-              <p className="text-xs text-muted-foreground">These names will appear in branch dashboards and sync rosters.</p>
+        </CardHeader>
+        <CardContent>
+          {!selectedBranchForCatchment ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground mb-4">Select a branch to manage its catchment areas:</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                {branches.map((branch) => (
+                  <Button
+                    key={branch.id}
+                    variant="outline"
+                    className="h-auto justify-start"
+                    onClick={() => {
+                      setSelectedBranchForCatchment(branch)
+                      setCatchmentForm({ name: "", population: "", boundaries: "" })
+                      setIsEditingCatchment(false)
+                    }}
+                  >
+                    <div className="text-left">
+                      <p className="font-medium">{branch.name}</p>
+                      <p className="text-xs text-muted-foreground">{branch.region}</p>
+                    </div>
+                  </Button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={cancelChwAssignment}>
-                Cancel
-              </Button>
-              <Button type="submit" className="gap-2">
-                <ListChecks className="h-4 w-4" /> Save assignments
-              </Button>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Building2 className="h-4 w-4" /> {selectedBranchForCatchment.name} - Catchment Areas
+                </h3>
+              </div>
+
+              {!isEditingCatchment && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Current catchment areas:</p>
+                  {catchmentAreas.length > 0 ? (
+                    <div className="space-y-2">
+                      {catchmentAreas.map((area) => (
+                        <div key={area.id} className="flex items-start justify-between rounded-lg border border-border bg-muted/30 p-3">
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{area.name}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Population: ~{area.population}</p>
+                            <p className="text-xs text-muted-foreground">Boundaries: {area.boundaries}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setIsEditingCatchment(true)
+                                setEditingCatchmentId(area.id)
+                                setCatchmentForm({
+                                  name: area.name,
+                                  population: area.population.toString(),
+                                  boundaries: area.boundaries,
+                                })
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteCatchment(area.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground py-4 text-center">No catchment areas defined yet.</p>
+                  )}
+                  <Button
+                    size="sm"
+                    className="gap-2 w-full mt-4"
+                    onClick={() => {
+                      setIsEditingCatchment(true)
+                      setEditingCatchmentId(null)
+                      setCatchmentForm({ name: "", population: "", boundaries: "" })
+                    }}
+                  >
+                    <Plus className="h-4 w-4" /> Add new catchment area
+                  </Button>
+                </div>
+              )}
+
+              {isEditingCatchment && (
+                <form onSubmit={(e) => { e.preventDefault(); handleSaveCatchment() }} className="space-y-3 p-3 rounded-lg border border-primary/40 bg-primary/5">
+                  <p className="font-medium text-sm">{editingCatchmentId ? "Edit" : "New"} catchment area</p>
+                  <div className="space-y-2">
+                    <Label htmlFor="catchmentName">Area name</Label>
+                    <Input
+                      id="catchmentName"
+                      placeholder="e.g. Kasoa Central"
+                      value={catchmentForm.name}
+                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, name: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="catchmentPop">Population (estimated)</Label>
+                    <Input
+                      id="catchmentPop"
+                      type="number"
+                      placeholder="5000"
+                      value={catchmentForm.population}
+                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, population: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="catchmentBound">Boundaries</Label>
+                    <Input
+                      id="catchmentBound"
+                      placeholder="e.g. From Main Street to Railway Road"
+                      value={catchmentForm.boundaries}
+                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, boundaries: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setIsEditingCatchment(false)
+                        setEditingCatchmentId(null)
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" size="sm" className="gap-2">
+                      <Check className="h-3.5 w-3.5" /> Save area
+                    </Button>
+                  </div>
+                </form>
+              )}
             </div>
-          </form>
+          )}
+        </CardContent>
+      </Card>
+
+      {activeChwBranch ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div>
+                  <CardTitle>Assign Community Health Workers</CardTitle>
+                  <CardDescription className="mt-1">{activeChwBranch.name} • {activeChwBranch.region}</CardDescription>
+                </div>
+                <Button variant="ghost" size="sm" onClick={cancelChwAssignment}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleChwAssignmentSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="chwSearch">Search CHWs</Label>
+                  <Input
+                    id="chwSearch"
+                    placeholder="Search by name..."
+                    value={chwSearchFilter}
+                    onChange={(e) => setChwSearchFilter(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Available CHWs</Label>
+                  <div className="max-h-60 space-y-2 overflow-y-auto rounded-md border border-border bg-muted/30 p-3">
+                    {users
+                      .filter((user) => user.role === "Community Health Worker" || user.role === "chw")
+                      .filter((user) => user.name.toLowerCase().includes(chwSearchFilter.toLowerCase()))
+                      .map((chw) => {
+                        const assignments = chwBranchAssignments.get(chw.name) ?? []
+                        const assignedToOtherBranch = assignments.length > 0 && !assignments.includes(activeChwBranch?.name ?? "")
+                        const isCurrentlySelected = chwSelectedIds.has(chw.id)
+
+                        return (
+                          <div key={chw.id} className={`flex items-start space-x-2 p-2 rounded ${assignedToOtherBranch ? "bg-red-50 dark:bg-red-900/20" : ""}`}>
+                            <input
+                              type="checkbox"
+                              id={`chw-${chw.id}`}
+                              checked={isCurrentlySelected}
+                              disabled={assignedToOtherBranch && !isCurrentlySelected}
+                              onChange={(e) => {
+                                const newSelected = new Set(chwSelectedIds)
+                                if (e.target.checked) {
+                                  newSelected.add(chw.id)
+                                } else {
+                                  newSelected.delete(chw.id)
+                                }
+                                setChwSelectedIds(newSelected)
+                              }}
+                              className="h-4 w-4 rounded border-border mt-1"
+                            />
+                            <div className="flex-1">
+                              <Label htmlFor={`chw-${chw.id}`} className={`cursor-pointer ${assignedToOtherBranch && !isCurrentlySelected ? "opacity-50" : ""}`}>
+                                {chw.name}
+                                <span className="text-xs text-muted-foreground ml-1">({chw.email})</span>
+                              </Label>
+                              {assignedToOtherBranch && (
+                                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
+                                  ⚠ Already assigned to {assignments.join(", ")}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    {users.filter((user) => user.role === "Community Health Worker" || user.role === "chw").length === 0 && (
+                      <p className="text-sm text-muted-foreground py-4 text-center">No CHWs found in the system</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={cancelChwAssignment}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="gap-2">
+                    <ListChecks className="h-4 w-4" /> Save ({chwSelectedIds.size})
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
         </div>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Layers className="h-5 w-5 text-primary" /> Bulk Branch Operations
+          </CardTitle>
+          <CardDescription>Perform batch operations on multiple branches.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="operationType">Operation type</Label>
+            <select
+              id="operationType"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              value={selectedBulkOperation}
+              onChange={(e) => setSelectedBulkOperation(e.target.value)}
+            >
+              <option value="activate">Activate branches</option>
+              <option value="deactivate">Deactivate branches</option>
+              <option value="reassign-manager">Reassign managers</option>
+              <option value="add-chws">Add CHWs to branches</option>
+            </select>
+          </div>
+
+          <div className="rounded-lg border-2 border-dashed border-border bg-muted/30 p-8 text-center">
+            <input
+              type="file"
+              accept=".csv"
+              onChange={(e) => setBulkBranchFile(e.target.files?.[0] ?? null)}
+              className="hidden"
+              ref={fileInputRef}
+            />
+            <Button
+              variant="outline"
+              onClick={() => {const input = document.createElement('input'); input.type = 'file'; input.accept = '.csv'; input.onchange = () => {if(input.files?.[0]) setBulkBranchFile(input.files[0])}; input.click()}}
+              className="gap-2"
+            >
+              <Upload className="h-4 w-4" /> {bulkBranchFile ? bulkBranchFile.name : "Choose CSV file"}
+            </Button>
+            <p className="text-xs text-muted-foreground mt-2">Format: branch_id, operation</p>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              onClick={handleBulkBranchOperation}
+              disabled={!bulkBranchFile || isBulkProcessing}
+              className="gap-2 flex-1"
+            >
+              {isBulkProcessing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Processing...
+                </>
+              ) : (
+                <>
+                  <Layers className="h-4 w-4" /> Execute bulk operation
+                </>
+              )}
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={handleExportBranches}>
+              <ArrowDownToLine className="h-4 w-4" /> Export all branches
+            </Button>
+          </div>
+
+          {bulkOperationResult && (
+            <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-4">
+              <p className="font-medium text-sm">Operation Summary</p>
+              <div className="grid gap-2 md:grid-cols-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Succeeded</p>
+                  <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{bulkOperationResult.success}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Failed</p>
+                  <p className="text-lg font-bold text-destructive">{bulkOperationResult.failed}</p>
+                </div>
+              </div>
+              {bulkOperationResult.errors.length > 0 && (
+                <div className="mt-2 space-y-1 max-h-[150px] overflow-y-auto">
+                  <p className="text-xs font-medium text-muted-foreground">Errors:</p>
+                  {bulkOperationResult.errors.map((err, idx) => (
+                    <p key={idx} className="text-xs text-destructive">{err}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
-
   const renderUsers = () => (
     <div className="space-y-6">
       {(() => {
@@ -2376,6 +3436,208 @@ export default function HqDashboardPage() {
               })()}
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5 text-primary" /> Bulk User Import
+          </CardTitle>
+          <CardDescription>Upload a CSV file to create multiple users at once.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              CSV format: <code className="bg-muted px-2 py-1 rounded text-xs font-mono">name, email, role, branch</code>
+            </p>
+            <div className="rounded-lg border-2 border-dashed border-border bg-muted/30 p-8 text-center">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                onChange={(e) => setCsvImportFile(e.target.files?.[0] ?? null)}
+                className="hidden"
+              />
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                className="gap-2"
+              >
+                <Upload className="h-4 w-4" /> {csvImportFile ? csvImportFile.name : "Choose CSV file"}
+              </Button>
+              <p className="text-xs text-muted-foreground mt-2">
+                {csvImportFile ? `${csvImportFile.size} bytes` : "Max 5MB"}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleCsvImport}
+                disabled={!csvImportFile || isImportingCsv}
+                className="gap-2 flex-1"
+              >
+                {isImportingCsv ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Importing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" /> Import users
+                  </>
+                )}
+              </Button>
+              {csvImportFile && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCsvImportFile(null)
+                    setCsvImportResult(null)
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {csvImportResult && (
+            <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-4">
+              <p className="font-medium text-sm">Import Summary</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                <div>
+                  <p className="text-xs text-muted-foreground">Successfully created</p>
+                  <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{csvImportResult.success}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Failed to import</p>
+                  <p className="text-lg font-bold text-destructive">{csvImportResult.failed}</p>
+                </div>
+              </div>
+              {csvImportResult.errors && csvImportResult.errors.length > 0 && (
+                <div className="mt-3 space-y-1 max-h-[200px] overflow-y-auto">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Errors:</p>
+                  {csvImportResult.errors.map((error, idx) => (
+                    <p key={idx} className="text-xs text-destructive">{error}</p>
+                  ))}
+                </div>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCsvImportResult(null)}
+                className="w-full mt-2"
+              >
+                Dismiss
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" /> Custom Roles & Permissions
+          </CardTitle>
+          <CardDescription>Define role-based access control for your organization.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!isEditingRole ? (
+            <div className="space-y-3">
+              <Button onClick={() => setIsEditingRole(true)} className="gap-2 w-full">
+                <Plus className="h-4 w-4" /> Create new role
+              </Button>
+              {customRoles.length > 0 ? (
+                <div className="space-y-2">
+                  {customRoles.map(role => (
+                    <div key={role.id} className="flex items-start justify-between rounded-lg border border-border bg-muted/30 p-3">
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">{role.name}</p>
+                        <p className="text-xs text-muted-foreground">{role.permissions.length} permissions</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => {setEditingRoleId(role.id); setRoleForm(role); setIsEditingRole(true)}}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDeleteRole(role.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">No custom roles created yet.</p>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={(e) => {e.preventDefault(); handleSaveCustomRole()}} className="space-y-3 p-3 rounded-lg border border-primary/40 bg-primary/5">
+              <p className="font-medium text-sm">{editingRoleId ? "Edit" : "New"} role</p>
+              <div className="space-y-2">
+                <Label htmlFor="roleName">Role name</Label>
+                <Input
+                  id="roleName"
+                  placeholder="e.g. Data Analyst"
+                  value={roleForm.name}
+                  onChange={(e) => setRoleForm(prev => ({...prev, name: e.target.value}))}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Permissions</Label>
+                <div className="max-h-[150px] space-y-2 overflow-y-auto rounded-md border border-border bg-background p-2">
+                  {allPermissions.map(perm => (
+                    <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={roleForm.permissions.includes(perm.permission)} onChange={(e) => {
+                        setRoleForm(prev => ({
+                          ...prev,
+                          permissions: e.target.checked ?
+                            [...prev.permissions, perm.permission] :
+                            prev.permissions.filter(p => p !== perm.permission)
+                        }))
+                      }} className="w-4 h-4" />
+                      <span className="text-sm">{perm.permission}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => {setIsEditingRole(false); setEditingRoleId(null)}}>Cancel</Button>
+                <Button type="submit" size="sm">Save role</Button>
+              </div>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" /> User Activity Tracker
+          </CardTitle>
+          <CardDescription>Monitor user actions and access patterns across the system.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isActivityLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[400px] overflow-y-auto">
+              {userActivities.map(activity => (
+                <div key={activity.id} className="flex items-start justify-between rounded-lg border border-border bg-muted/30 p-3">
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{activity.userName}</p>
+                    <p className="text-xs text-muted-foreground">{activity.action} • {activity.resource}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{activity.timestamp} • {activity.ipAddress}</p>
+                  </div>
+                  <Badge variant={activity.status === "success" ? "secondary" : "destructive"}>
+                    {activity.status}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -2662,6 +3924,99 @@ export default function HqDashboardPage() {
           </Card>
         </div>
       )}
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Gauge className="h-5 w-5 text-primary" /> Vaccine Inventory Management
+              </CardTitle>
+              <CardDescription>Track stock levels and manage reorder points.</CardDescription>
+            </div>
+            <Button size="sm" variant="outline" onClick={loadVaccineInventory} disabled={isInventoryLoading} className="gap-2">
+              <RefreshCw className={`h-4 w-4 ${isInventoryLoading ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isInventoryLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 border-b border-border">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium">Vaccine</th>
+                      <th className="px-4 py-2 text-center font-medium">Quantity</th>
+                      <th className="px-4 py-2 text-center font-medium">Reorder Level</th>
+                      <th className="px-4 py-2 text-center font-medium">Days to Expiry</th>
+                      <th className="px-4 py-2 text-center font-medium">Status</th>
+                      <th className="px-4 py-2 text-center font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vaccineInventory.map(stock => {
+                      const isLowStock = stock.quantity < stock.reorderLevel
+                      const isExpiringSoon = stock.daysUntilExpiry < 60
+                      return (
+                        <tr key={stock.id} className={`border-b border-border hover:bg-muted/30 transition ${isExpiringSoon ? "bg-amber-50 dark:bg-amber-900/20" : isLowStock ? "bg-red-50 dark:bg-red-900/20" : ""}`}>
+                          <td className="px-4 py-3 font-medium">{stock.name}</td>
+                          <td className="px-4 py-3 text-center">{stock.quantity}</td>
+                          <td className="px-4 py-3 text-center">{stock.reorderLevel}</td>
+                          <td className="px-4 py-3 text-center">{stock.daysUntilExpiry}</td>
+                          <td className="px-4 py-3 text-center">
+                            <Badge variant={isExpiringSoon ? "destructive" : isLowStock ? "secondary" : "outline"}>
+                              {isExpiringSoon ? "Expiring Soon" : isLowStock ? "Low Stock" : "In Stock"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <Button size="sm" variant="ghost" onClick={() => {setEditingVaccineId(stock.id); setVaccineReorderForm({reorderLevel: stock.reorderLevel, supplier: stock.supplier})}}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {editingVaccineId && (
+                <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3">
+                  <p className="font-medium text-sm">Edit vaccine configuration</p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="reorderLevel">Reorder level</Label>
+                      <Input
+                        id="reorderLevel"
+                        type="number"
+                        value={vaccineReorderForm.reorderLevel}
+                        onChange={(e) => setVaccineReorderForm(prev => ({...prev, reorderLevel: parseInt(e.target.value)}))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="supplier">Supplier</Label>
+                      <Input
+                        id="supplier"
+                        value={vaccineReorderForm.supplier}
+                        onChange={(e) => setVaccineReorderForm(prev => ({...prev, supplier: e.target.value}))}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setEditingVaccineId(null)}>Cancel</Button>
+                    <Button size="sm" onClick={() => updateVaccineStock(editingVaccineId)}>Save</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 
@@ -2784,6 +4139,81 @@ export default function HqDashboardPage() {
               Productivity trending upward after refresher training.
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Globe2 className="h-5 w-5 text-primary" /> Advanced Analytics
+          </CardTitle>
+          <CardDescription>Deep-dive insights into immunization patterns and program performance.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="chartType">Analysis type</Label>
+            <select
+              id="chartType"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              value={selectedChartType}
+              onChange={(e) => setSelectedChartType(e.target.value)}
+            >
+              <option value="cohort">Immunization Cohort Analysis</option>
+              <option value="dropout">Dropout Prevention Timeline</option>
+              <option value="supply">Supply Chain Optimization</option>
+              <option value="equity">Equity & Coverage Disparity</option>
+            </select>
+          </div>
+
+          {selectedChartType === "cohort" && (
+            <div className="space-y-2">
+              <p className="font-medium text-sm">Cohort Performance 2024</p>
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-3 py-2 text-left">Cohort</th>
+                      <th className="px-3 py-2 text-center">On-Time %</th>
+                      <th className="px-3 py-2 text-center">Delayed %</th>
+                      <th className="px-3 py-2 text-center">Defaulted %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-border hover:bg-muted/50">
+                      <td className="px-3 py-2">Jan 2024</td>
+                      <td className="px-3 py-2 text-center text-emerald-600">92%</td>
+                      <td className="px-3 py-2 text-center text-amber-600">6%</td>
+                      <td className="px-3 py-2 text-center text-red-600">2%</td>
+                    </tr>
+                    <tr className="border-b border-border hover:bg-muted/50">
+                      <td className="px-3 py-2">Feb 2024</td>
+                      <td className="px-3 py-2 text-center text-emerald-600">94%</td>
+                      <td className="px-3 py-2 text-center text-amber-600">4%</td>
+                      <td className="px-3 py-2 text-center text-red-600">2%</td>
+                    </tr>
+                    <tr className="border-b border-border hover:bg-muted/50">
+                      <td className="px-3 py-2">Mar 2024</td>
+                      <td className="px-3 py-2 text-center text-emerald-600">91%</td>
+                      <td className="px-3 py-2 text-center text-amber-600">7%</td>
+                      <td className="px-3 py-2 text-center text-red-600">2%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {selectedChartType === "dropout" && (
+            <div className="rounded-lg border border-border bg-amber-50 dark:bg-amber-900/20 p-4 text-sm">
+              <p className="font-medium mb-2">Dropout Risk Indicators</p>
+              <ul className="space-y-2 text-muted-foreground">
+                <li>• DPT-3 dropout rates peaked at 8% in Q2 (seasonal pattern)</li>
+                <li>• Remote areas show 15% higher default rates</li>
+                <li>• SMS reminders reduce dropout by 23%</li>
+                <li>• CHW follow-up effectiveness: 89% recall rate</li>
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -2933,6 +4363,101 @@ export default function HqDashboardPage() {
           </Card>
         </div>
       )}
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <BellRing className="h-5 w-5 text-primary" /> Notification Delivery Status
+              </CardTitle>
+              <CardDescription>Monitor SMS and email delivery success rates.</CardDescription>
+            </div>
+            <Button size="sm" variant="outline" onClick={loadNotificationDeliveries} disabled={isNotifLoading} className="gap-2">
+              <RefreshCw className={`h-4 w-4 ${isNotifLoading ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              {(["all", "sent", "failed", "pending"] as const).map(status => (
+                <Button
+                  key={status}
+                  variant={notifStatusFilter === status ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setNotifStatusFilter(status)}
+                >
+                  {status.charAt(0).toUpperCase() + status.slice(1)}
+                </Button>
+              ))}
+            </div>
+
+            <div className="rounded-lg border border-border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 border-b border-border">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Recipient</th>
+                    <th className="px-4 py-2 text-center">Channel</th>
+                    <th className="px-4 py-2 text-center">Type</th>
+                    <th className="px-4 py-2 text-center">Status</th>
+                    <th className="px-4 py-2 text-center">Time</th>
+                    <th className="px-4 py-2 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {notificationDeliveries
+                    .filter(n => notifStatusFilter === "all" || n.status === notifStatusFilter)
+                    .map(notif => (
+                    <tr key={notif.id} className={`border-b border-border hover:bg-muted/30 transition ${notif.status === "failed" ? "bg-red-50 dark:bg-red-900/20" : ""}`}>
+                      <td className="px-4 py-3">{notif.recipient}</td>
+                      <td className="px-4 py-3 text-center">
+                        <Badge variant="outline">{notif.channel.toUpperCase()}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-center text-sm">{notif.messageType}</td>
+                      <td className="px-4 py-3 text-center">
+                        <Badge variant={notif.status === "sent" ? "secondary" : notif.status === "failed" ? "destructive" : "outline"}>
+                          {notif.status}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs text-muted-foreground">{notif.sentAt}</td>
+                      <td className="px-4 py-3 text-center">
+                        {notif.status === "failed" && (
+                          <Button size="sm" variant="ghost" onClick={() => retryFailedNotificationHandler(notif.id)}>
+                            <RefreshCw className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid gap-2 md:grid-cols-4">
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Total Sent</p>
+                <p className="text-xl font-bold text-emerald-600">{notificationDeliveries.filter(n => n.status === "sent").length}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Failed</p>
+                <p className="text-xl font-bold text-destructive">{notificationDeliveries.filter(n => n.status === "failed").length}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Pending</p>
+                <p className="text-xl font-bold text-amber-600">{notificationDeliveries.filter(n => n.status === "pending").length}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Success Rate</p>
+                <p className="text-xl font-bold text-primary">
+                  {notificationDeliveries.length > 0 ? 
+                    Math.round((notificationDeliveries.filter(n => n.status === "sent").length / notificationDeliveries.length) * 100) : 0}%
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 
@@ -2967,19 +4492,23 @@ export default function HqDashboardPage() {
           <CardDescription>Trace critical actions for accountability.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {auditLogs.map((log) => (
-            <div key={log.id} className="rounded-lg border border-border bg-background p-4">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{log.action}</p>
-                  <p className="text-xs text-muted-foreground">By {log.actor}</p>
+          {enrichedAuditLogs.map((log) => (
+            <div key={log.id} className="rounded-lg border border-border bg-background p-4 hover:bg-muted/50 transition">
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-foreground">{log.action}</p>
+                    <p className="text-xs text-muted-foreground mt-1">By <span className="font-medium text-foreground">{log.actorName}</span></p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Badge variant="secondary" className="text-xs">{log.category}</Badge>
+                  </div>
                 </div>
-                <Badge variant="outline">{log.category}</Badge>
+                <p className="text-xs text-muted-foreground leading-relaxed">{log.timestamp}</p>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">{log.timestamp}</p>
             </div>
           ))}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 pt-2">
             <Button variant="outline" className="gap-2" onClick={exportAuditLogCSV}>
               <ArrowDownToLine className="h-4 w-4" /> Export as CSV
             </Button>
@@ -3007,6 +4536,227 @@ export default function HqDashboardPage() {
               <ShieldCheck className="h-4 w-4" /> Trigger new backup
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-primary" /> System Health Metrics
+              </CardTitle>
+              <CardDescription>Real-time performance and resource monitoring.</CardDescription>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={loadSystemMetrics}
+              disabled={isMetricsLoading}
+              className="gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${isMetricsLoading ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {isMetricsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">Loading metrics...</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div>
+                <p className="text-sm font-semibold mb-3">Resource Utilization</p>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {systemMetrics.map((metric) => {
+                    const isWarning = metric.value >= 70 && metric.value < 85
+                    const isCritical = metric.value >= 85
+                    return (
+                      <div key={metric.id} className={`rounded-lg border p-4 ${
+                        isCritical ? "border-destructive bg-destructive/5" :
+                        isWarning ? "border-yellow-400 bg-yellow-50 dark:bg-yellow-900/20" :
+                        "border-border bg-muted/30"
+                      }`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-medium text-foreground">{metric.name}</p>
+                          <span className={`text-lg font-bold ${
+                            isCritical ? "text-destructive" :
+                            isWarning ? "text-yellow-600 dark:text-yellow-400" :
+                            "text-green-600 dark:text-green-400"
+                          }`}>
+                            {metric.value}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700">
+                          <div
+                            className={`h-2 rounded-full transition-all ${
+                              isCritical ? "bg-destructive" :
+                              isWarning ? "bg-yellow-400" :
+                              "bg-green-500"
+                            }`}
+                            style={{ width: `${metric.value}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">{metric.detail}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold mb-3">Performance Indicators</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <p className="text-sm text-muted-foreground">API Response Time (avg)</p>
+                    <p className="text-2xl font-bold text-primary mt-1">145ms</p>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-2">✓ within SLA target</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <p className="text-sm text-muted-foreground">Database Connections</p>
+                    <p className="text-2xl font-bold text-primary mt-1">24/50</p>
+                    <p className="text-xs text-muted-foreground mt-2">Active connections</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <p className="text-sm text-muted-foreground">Error Rate (24h)</p>
+                    <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">0.02%</p>
+                    <p className="text-xs text-muted-foreground mt-2">Excellent system stability</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <p className="text-sm text-muted-foreground">Active Users (now)</p>
+                    <p className="text-2xl font-bold text-primary mt-1">42</p>
+                    <p className="text-xs text-muted-foreground mt-2">Peak: 68 (today)</p>
+                  </div>
+                </div>
+              </div>
+
+              {backupHistory.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold mb-3">Recent Backups</p>
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50 border-b border-border">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium text-muted-foreground">Time</th>
+                          <th className="px-4 py-2 text-left font-medium text-muted-foreground">Size</th>
+                          <th className="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {backupHistory.slice(0, 5).map((backup, idx) => (
+                          <tr key={idx} className="border-b border-border hover:bg-muted/30 transition">
+                            <td className="px-4 py-3 text-muted-foreground">{backup.timestamp}</td>
+                            <td className="px-4 py-3 text-foreground font-medium">{backup.size}</td>
+                            <td className="px-4 py-3">
+                              <Badge variant={backup.status === "completed" ? "secondary" : "outline"}>
+                                {backup.status}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <ServerCog className="h-5 w-5 text-primary" /> Database Statistics
+              </CardTitle>
+              <CardDescription>Monitor database performance and capacity.</CardDescription>
+            </div>
+            <Button size="sm" variant="outline" onClick={loadDatabaseStats} disabled={isDatabaseStatsLoading} className="gap-2">
+              <RefreshCw className={`h-4 w-4 ${isDatabaseStatsLoading ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isDatabaseStatsLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-3">
+              {databaseStats.map(stat => (
+                <div key={stat.id} className={`rounded-lg border p-4 ${
+                  stat.status === "critical" ? "border-destructive bg-destructive/5" :
+                  stat.status === "warning" ? "border-amber-400 bg-amber-50 dark:bg-amber-900/20" :
+                  "border-border bg-muted/30"
+                }`}>
+                  <p className="text-sm text-muted-foreground">{stat.name}</p>
+                  <p className="text-2xl font-bold text-foreground mt-1">{stat.value} <span className="text-sm text-muted-foreground font-normal">{stat.unit}</span></p>
+                  <Badge variant={stat.status === "normal" ? "secondary" : "destructive"} className="mt-2">
+                    {stat.status}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-primary" /> Backup Schedule & Retention
+          </CardTitle>
+          <CardDescription>Configure automated backup policies for data protection.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="backupFreq">Backup frequency</Label>
+              <select
+                id="backupFreq"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                value={backupSchedule}
+                onChange={(e) => setBackupSchedule(e.target.value as "daily" | "weekly" | "monthly")}
+              >
+                <option value="daily">Every 24 hours</option>
+                <option value="weekly">Weekly (Sunday 2 AM)</option>
+                <option value="monthly">Monthly (1st of month)</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="retentionDays">Retention period (days)</Label>
+              <Input
+                id="retentionDays"
+                type="number"
+                value={retentionDays}
+                onChange={(e) => setRetentionDays(parseInt(e.target.value))}
+                min={7}
+                max={365}
+              />
+            </div>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-sm text-muted-foreground">
+              <strong>Policy:</strong> Backups will be retained for {retentionDays} days, older backups will be automatically deleted. Schedule: {backupSchedule}.
+            </p>
+          </div>
+          <Button onClick={configureBackupSchedule} disabled={isSchedulingBackup} className="gap-2 w-full">
+            {isSchedulingBackup ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Saving schedule...
+              </>
+            ) : (
+              <>
+                <Check className="h-4 w-4" /> Save backup configuration
+              </>
+            )}
+          </Button>
         </CardContent>
       </Card>
     </div>

@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { LiveAudioWsServer } from './common/live-audio-ws';
 import helmet from 'helmet';
@@ -67,7 +67,8 @@ async function bootstrap() {
 
   await app.listen(port);
 
-  console.log(`🚀 Backend server running on http://localhost:${port}`);
-  console.log(`📚 API available at http://localhost:${port}/api`);
+  const logger = new Logger('Bootstrap');
+  logger.log(`🚀 Backend server running on http://localhost:${port}`);
+  logger.log(`📚 API available at http://localhost:${port}/api`);
 }
 bootstrap();

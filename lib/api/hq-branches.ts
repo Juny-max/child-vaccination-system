@@ -55,3 +55,13 @@ export async function deleteHqBranch(code: string): Promise<{ success: boolean; 
     method: 'DELETE',
   });
 }
+
+export async function cleanupDuplicateChwAssignments(): Promise<{
+  message: string;
+  cleaned: number;
+  details: Array<{ chwName: string; keptIn: string; removedFrom: string[] }>;
+}> {
+  return apiRequest(`/hq-admin/branches/maintenance/cleanup-duplicate-chws`, {
+    method: 'POST',
+  });
+}

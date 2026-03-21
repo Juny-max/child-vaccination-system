@@ -21,6 +21,18 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
 
 @Module({
   imports: [
+    // Rate limiting
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60,        // 60 seconds
+        limit: 10,      // 10 requests per minute default
+      },
+      {
+        ttl: 3600,      // 1 hour
+        limit: 100,     // 100 requests per hour
+      },
+    ]),
+
     // Load environment variables
     ConfigModule.forRoot({
       isGlobal: true,
@@ -51,6 +63,16 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
     // HqAdminModule,       // Julius will implement
   ],
   controllers: [ChatbotController, HealthController, BackupController],
-  providers: [ChatbotService, BackupService, EmailService, SmsService, VaccinationSchedulerService],
+  providers: [
+    ChatbotService,
+    BackupService,
+    EmailService,
+    SmsService,
+    VaccinationSchedulerService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

@@ -23,4 +23,17 @@ export class HqAnalyticsController {
   async getOverviewStats() {
     return this.branchManagerService.getHqOverviewStats();
   }
+
+  @Get('aefi')
+  async getAefiReports(
+    @Query('limit') limit?: number,
+    @Query('priority') priority?: string,
+  ) {
+    return this.branchManagerService.getHqAefiReports({ limit: limit || 10, priority });
+  }
+
+  @Get('device-sync-status')
+  async getDeviceSyncStatus() {
+    return this.branchManagerService.getHqDeviceSyncStatus();
+  }
 }
