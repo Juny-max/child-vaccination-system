@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { resolve } from 'path';
 import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './auth/auth.module';
@@ -10,6 +12,7 @@ import { ChwModule } from './chw/chw.module';
 import { PhaModule } from './pha/pha.module';
 import { BranchManagerModule } from './branch-manager/branch-manager.module';
 import { DataOfficerModule } from './data-officer/data-officer.module';
+import { HqAdminModule } from './hq-admin/hq-admin.module';
 import { ChatbotController } from './common/chatbot.controller';
 import { ChatbotService } from './common/chatbot.service';
 import { HealthController } from './common/health.controller';
@@ -60,7 +63,7 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
     // Julius's Modules (Juny taking over Branch Manager)
     BranchManagerModule,
     DataOfficerModule,
-    // HqAdminModule,       // Julius will implement
+    HqAdminModule,
   ],
   controllers: [ChatbotController, HealthController, BackupController],
   providers: [

@@ -963,30 +963,32 @@ export class BranchManagerService {
     let nationalCoverageRate = 0;
 
     if (childrenCount && childrenCount > 0) {
-      // Count children with completed vaccinations using existing tables
-      const { data: childrenWithVaccines } = await db
-        .from('children')
-        .select('id')
-        .eq('is_active', true);
+      // Use a server-side join to avoid building a large childIds array and IN (...) filter
+      const { data: vaccinationCounts } = await db
+        .from('vaccination_events')
+        .select('child_id, children!inner(is_active)')
+        .eq('status', 'completed')
+        .eq('children.is_active', true);
 
-      if (childrenWithVaccines && childrenWithVaccines.length > 0) {
-        const childIds = childrenWithVaccines.map((c: any) => c.id);
-
-        // Count children with at least 3 vaccinations (BCG, OPV/IPV, DPT/Penta)
-        const { data: vaccinationCounts } = await db
-          .from('vaccination_events')
-          .select('child_id')
-          .in('child_id', childIds)
-          .eq('status', 'completed');
-
-        const uniqueChildrenWithVaccines = new Set(
-          (vaccinationCounts ?? []).map((v: any) => v.child_id)
-        ).size;
-
-        nationalCoverageRate = Math.round(
-          ((uniqueChildrenWithVaccines ?? 0) / childrenCount) * 100
-        );
+      // Compute per-child counts and only count those meeting the completion threshold
+      const REQUIRED_COMPLETED_VACCINATIONS = 3;
+      const vaccinationsPerChild = new Map<string, number>();
+      for (const v of vaccinationCounts ?? []) {
+        const childId = (v as any).child_id;
+        if (!childId) continue;
+        vaccinationsPerChild.set(childId, (vaccinationsPerChild.get(childId) ?? 0) + 1);
       }
+
+      let childrenWithCompletedSchedule = 0;
+      for (const count of vaccinationsPerChild.values()) {
+        if (count >= REQUIRED_COMPLETED_VACCINATIONS) {
+          childrenWithCompletedSchedule++;
+        }
+      }
+
+      nationalCoverageRate = Math.round(
+        (childrenWithCompletedSchedule / childrenCount) * 100
+      );
     }
 
     return {

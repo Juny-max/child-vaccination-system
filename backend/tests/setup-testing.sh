@@ -44,10 +44,10 @@ function hmac(message, secret) {
 const header = { alg: 'HS256', typ: 'JWT' };
 const now = Math.floor(Date.now() / 1000);
 const payload = {
-  userId: 'test-admin-001',
+  sub: 'test-admin-001',
   email: 'admin@health.gov.gh',
   role: 'hq-admin',
-  name: 'Test Administrator',
+  fullName: 'Test Administrator',
   permissions: ['create_user', 'edit_user', 'delete_user', 'manage_branches', 'view_analytics', 'trigger_backup'],
   iat: now,
   exp: now + 86400, // 24 hours
