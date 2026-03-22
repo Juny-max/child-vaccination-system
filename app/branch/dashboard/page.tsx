@@ -95,6 +95,7 @@ export default function BranchDashboardPage() {
   // Stock delivery modal state
   const [stockModalOpen, setStockModalOpen] = useState(false)
   const [stockVaccines, setStockVaccines] = useState<VaccineOption[]>([])
+  const [stockVaccinesLoading, setStockVaccinesLoading] = useState(false)
   const [stockForm, setStockForm] = useState({
     vaccineId: "",
     batchNumber: "",
@@ -203,11 +204,14 @@ export default function BranchDashboardPage() {
     setStockModalOpen(true)
     setStockFormError(null)
     if (stockVaccines.length === 0) {
+      setStockVaccinesLoading(true)
       try {
         const list = await getVaccineOptions()
         setStockVaccines(list)
       } catch {
         // Dropdown will be empty — user can still submit if they type manually via select
+      } finally {
+        setStockVaccinesLoading(false)
       }
     }
   }
@@ -1101,18 +1105,26 @@ export default function BranchDashboardPage() {
             {/* Vaccine */}
             <div className="space-y-1">
               <Label htmlFor="stock-vaccine">Vaccine *</Label>
-              <select
-                id="stock-vaccine"
-                value={stockForm.vaccineId}
-                onChange={(e) => setStockForm((f) => ({ ...f, vaccineId: e.target.value }))}
-                required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              >
-                <option value="">Select vaccine…</option>
-                {stockVaccines.map((v) => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="stock-vaccine"
+                  value={stockForm.vaccineId}
+                  onChange={(e) => setStockForm((f) => ({ ...f, vaccineId: e.target.value }))}
+                  required
+                  disabled={stockVaccinesLoading}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">
+                    {stockVaccinesLoading ? "Loading vaccines..." : "Select vaccine…"}
+                  </option>
+                  {stockVaccines.map((v) => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </select>
+                {stockVaccinesLoading && (
+                  <Loader2 className="absolute right-8 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                )}
+              </div>
             </div>
 
             {/* Batch / Lot */}
