@@ -307,38 +307,75 @@ export class ChwService {
     }
 
     // Strategy 2: Search guardians by phone, then get their children
-    const phoneNormalized = normalized.replace(/\s+/g, '').replace(/[^\d+]/g, '');
-    this.logger.debug('[CHW Search All] Searching by phone');
-    
-    const { data: guardiansByPhone, error: phoneError } = await this.db.supabase
-      .from('guardians')
-      .select(`
-        id,
-        full_name,
-        phone_primary,
-        community,
-        city,
-        catchment_area_id,
-        child_guardian!inner (
-          is_primary,
-          children (
-            id,
-            cvcc_id,
-            full_name,
-            date_of_birth,
-            gender,
-            primary_facility_id
-          )
-        )
-      `)
-      .ilike('phone_primary', `%${phoneNormalized}%`)
-      .limit(20);
+    // Handle Ghana phone formats: 0XX, 233XX, +233XX
+    let phoneNormalized = normalized.replace(/\s+/g, '').replace(/[^\d+]/g, '');
 
-    if (phoneError) {
-      console.error('[CHW Search All] Phone search error:', phoneError);
-    } else {
-      // Debug logging disabled for security (no phone number logging)
-      // const guardianCount = (guardiansByPhone || []).length;
+    // Build phone search variants for Ghana numbers
+    const phoneVariants: string[] = [];
+
+    if (phoneNormalized.length >= 6) {
+      // Add the original normalized phone
+      phoneVariants.push(phoneNormalized);
+
+      // If starts with 0, also try 233 and +233 variants
+      if (phoneNormalized.startsWith('0')) {
+        const withoutZero = phoneNormalized.substring(1);
+        phoneVariants.push(`233${withoutZero}`);
+        phoneVariants.push(`+233${withoutZero}`);
+      }
+      // If starts with 233, also try 0 and +233 variants
+      else if (phoneNormalized.startsWith('233')) {
+        const withoutCode = phoneNormalized.substring(3);
+        phoneVariants.push(`0${withoutCode}`);
+        phoneVariants.push(`+233${withoutCode}`);
+      }
+      // If starts with +233, also try 0 and 233 variants
+      else if (phoneNormalized.startsWith('+233')) {
+        const withoutCode = phoneNormalized.substring(4);
+        phoneVariants.push(`0${withoutCode}`);
+        phoneVariants.push(`233${withoutCode}`);
+      }
+    }
+
+    this.logger.debug(`[CHW Search All] Searching by phone variants: ${phoneVariants.join(', ')}`);
+
+    // Search with all phone variants
+    let guardiansByPhone: any[] = [];
+
+    if (phoneVariants.length > 0) {
+      // Build OR conditions for all phone variants
+      const phoneConditions = phoneVariants.map(p => `phone_primary.ilike.%${p}%`).join(',');
+
+      const { data, error: phoneError } = await this.db.supabase
+        .from('guardians')
+        .select(`
+          id,
+          full_name,
+          phone_primary,
+          community,
+          city,
+          catchment_area_id,
+          child_guardian!inner (
+            is_primary,
+            children (
+              id,
+              cvcc_id,
+              full_name,
+              date_of_birth,
+              gender,
+              primary_facility_id
+            )
+          )
+        `)
+        .or(phoneConditions)
+        .limit(20);
+
+      if (phoneError) {
+        console.error('[CHW Search All] Phone search error:', phoneError);
+      } else {
+        guardiansByPhone = data || [];
+        this.logger.debug(`[CHW Search All] Found ${guardiansByPhone.length} guardians by phone`);
+      }
     }
 
     // Combine results and deduplicate by child ID
