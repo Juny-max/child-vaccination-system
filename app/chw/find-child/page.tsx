@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { Camera, ChevronLeft, Loader2, Phone, QrCode, Search, UserPlus } from "lucide-react"
 import { Html5Qrcode } from "html5-qrcode"
 import { searchChwChildren, type ChwSearchResult } from "@/lib/api/chw"
-import { chwOfflineDb, upsertChildren } from "@/lib/chw-offline/db"
+import { chwOfflineDb, getChildren, upsertChildren } from "@/lib/chw-offline/db"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -142,16 +142,17 @@ export default function ChwFindChildPage() {
       // OFFLINE MODE: Search only catchment-filtered IndexedDB
       // Shows only children synced for this CHW's area
       const normalized = query.trim().toLowerCase()
-      const local = await chwOfflineDb.children
-        .filter((child) => {
-          if (searchMode === "name") {
-            return child.fullName.toLowerCase().includes(normalized)
-          }
-          return (child.guardianPhone || "")
-            .replace(/\s+/g, "")
-            .includes(normalized.replace(/\s+/g, ""))
-        })
-        .toArray()
+      const normalizedPhone = normalized.replace(/\s+/g, "")
+      const localChildren = await getChildren()
+      const local = localChildren.filter((child) => {
+        if (searchMode === "name") {
+          return child.fullName.toLowerCase().includes(normalized)
+        }
+
+        return (child.guardianPhone || "")
+          .replace(/\s+/g, "")
+          .includes(normalizedPhone)
+      })
 
       const matches = local.map((child) => ({
         id: child.id,

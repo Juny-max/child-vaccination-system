@@ -14,6 +14,7 @@ import { Type } from 'class-transformer';
 
 // Export transfer DTOs
 export * from './transfer.dto';
+export * from './search.dto';
 
 // ============================================================================
 // REQUEST DTOs

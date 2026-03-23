@@ -18,7 +18,7 @@ import {
 } from "lucide-react"
 import * as chwStorage from "@/lib/chw-offline-storage"
 import { getChwChildChart, syncChwVaccinations, type ChwChildChart } from "@/lib/api/chw"
-import { chwOfflineDb } from "@/lib/chw-offline/db"
+import { getChildById } from "@/lib/chw-offline/db"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -182,7 +182,7 @@ export default function ChwChildChartPage() {
         }
 
         // OFFLINE FALLBACK: Load from IndexedDB
-        const localChild = await chwOfflineDb.children.get(childId)
+        const localChild = await getChildById(childId)
         if (localChild) {
           setRemoteSnapshot({
             id: localChild.id,

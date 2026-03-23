@@ -30,6 +30,17 @@ export type ChwSearchResult = {
   catchmentAreaId?: string | null
   currentZoneName?: string | null
   currentBranchId?: string | null
+  requiresPull?: boolean
+}
+
+export type TransferInSearchResult = ChwSearchResult & {
+  requiresPull: boolean
+}
+
+export type AdvancedTransferInSearchInput = {
+  childName: string
+  motherName: string
+  dob: string
 }
 
 export type ChwChildChart = {
@@ -74,6 +85,30 @@ export async function searchChwChildren(query: string): Promise<ChwSearchResult[
  */
 export async function searchAllChwChildren(query: string): Promise<ChwSearchResult[]> {
   return apiRequest<ChwSearchResult[]>(`/chw/children/search-all?query=${encodeURIComponent(query)}`)
+}
+
+/**
+ * Quick transfer-in search by exact child UUID or exact mother phone number.
+ */
+export async function quickSearchTransferInChildren(identifier: string): Promise<TransferInSearchResult[]> {
+  return apiRequest<TransferInSearchResult[]>(
+    `/children/search?identifier=${encodeURIComponent(identifier)}`,
+  )
+}
+
+/**
+ * Advanced fallback transfer-in search by child name, mother name, and date of birth.
+ */
+export async function advancedSearchTransferInChildren(
+  input: AdvancedTransferInSearchInput,
+): Promise<TransferInSearchResult[]> {
+  const params = new URLSearchParams({
+    childName: input.childName,
+    motherName: input.motherName,
+    dob: input.dob,
+  })
+
+  return apiRequest<TransferInSearchResult[]>(`/children/advanced-search?${params.toString()}`)
 }
 
 export async function searchChwMothers(query: string): Promise<ChwMotherSearchResult[]> {

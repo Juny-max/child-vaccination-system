@@ -91,6 +91,53 @@ export class ChwService {
     return `${years} year${years === 1 ? '' : 's'}`;
   }
 
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    );
+  }
+
+  private buildPhoneExactVariants(identifier: string): string[] {
+    const raw = (identifier || '').trim();
+
+    // Keep quick search strict: do not treat free text as a phone number.
+    if (!raw || !/^[\d+\s()-]+$/.test(raw)) {
+      return [];
+    }
+
+    const compact = raw.replace(/\s+/g, '').replace(/[()\-]/g, '');
+    if (compact.length > 20) {
+      return [];
+    }
+
+    if (!compact) {
+      return [];
+    }
+
+    const variants = new Set<string>();
+    variants.add(compact);
+
+    if (compact.startsWith('0') && compact.length > 1) {
+      const withoutZero = compact.slice(1);
+      variants.add(`233${withoutZero}`);
+      variants.add(`+233${withoutZero}`);
+    } else if (compact.startsWith('233') && compact.length > 3) {
+      const withoutCode = compact.slice(3);
+      variants.add(`0${withoutCode}`);
+      variants.add(`+233${withoutCode}`);
+    } else if (compact.startsWith('+233') && compact.length > 4) {
+      const withoutCode = compact.slice(4);
+      variants.add(`0${withoutCode}`);
+      variants.add(`233${withoutCode}`);
+    }
+
+    return Array.from(variants);
+  }
+
+  private escapeIlikePattern(value: string): string {
+    return value.replace(/([\\%_])/g, '\\$1');
+  }
+
   private async getAssignedChildren(chwUserId: string): Promise<AssignedChild[]> {
     this.logger.debug('[CHW getAssignedChildren] Fetching assigned catchments');
     
@@ -518,6 +565,300 @@ export class ChwService {
       name: guardian.full_name,
       phone: guardian.phone_primary || '',
     }));
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TRANSFER IN SEARCH - Dual search methods for child lookup
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Quick Search by Identifier (child UUID or mother phone)
+   * Primary, fast search method for transfer-in lookup
+   *
+   * Searches for:
+   * 1. Children by UUID (exact match against children.id)
+   * 2. Guardians by phone number (exact match), then their children
+   */
+  async searchByIdentifier(identifier: string, chwUserId: string) {
+    const trimmedIdentifier = (identifier || '').trim();
+    if (!trimmedIdentifier) {
+      return [];
+    }
+
+    if (trimmedIdentifier.length > 64) {
+      throw new BadRequestException('Identifier is too long');
+    }
+
+    this.logger.debug('[Quick Search] Running exact identifier lookup');
+
+    const dedupedChildren = new Map<string, any>();
+
+    // Strategy 1: Exact child UUID lookup
+    if (this.isUuid(trimmedIdentifier)) {
+      const { data: childByUuid, error: childError } = await this.db.supabase
+        .from('children')
+        .select(`
+          id,
+          cvcc_id,
+          full_name,
+          date_of_birth,
+          gender,
+          catchment_area_id,
+          child_guardian!inner (
+            is_primary,
+            guardians (
+              id,
+              full_name,
+              phone_primary,
+              community,
+              city
+            )
+          )
+        `)
+        .eq('id', trimmedIdentifier)
+        .limit(1);
+
+      if (childError) {
+        throw new BadRequestException(`Search failed: ${childError.message}`);
+      }
+
+      (childByUuid || []).forEach((child: any) => {
+        if (child?.id) {
+          dedupedChildren.set(child.id, child);
+        }
+      });
+    }
+
+    // Strategy 2: Exact mother phone lookup (with exact Ghana variants)
+    const phoneVariants = this.buildPhoneExactVariants(trimmedIdentifier);
+    if (phoneVariants.length > 0) {
+      const { data: guardiansByPhone, error: phoneError } = await this.db.supabase
+        .from('guardians')
+        .select(`
+          id,
+          full_name,
+          phone_primary,
+          community,
+          city,
+          child_guardian!inner (
+            is_primary,
+            children (
+              id,
+              cvcc_id,
+              full_name,
+              date_of_birth,
+              gender,
+              catchment_area_id
+            )
+          )
+        `)
+        .in('phone_primary', phoneVariants)
+        .limit(10);
+
+      if (phoneError) {
+        throw new BadRequestException(`Search failed: ${phoneError.message}`);
+      }
+
+      (guardiansByPhone || []).forEach((guardian: any) => {
+        const guardianLinks = Array.isArray(guardian.child_guardian)
+          ? guardian.child_guardian
+          : [];
+
+        guardianLinks.forEach((link: any) => {
+          const child = Array.isArray(link.children) ? link.children[0] : link.children;
+          if (!child?.id) {
+            return;
+          }
+
+          dedupedChildren.set(child.id, {
+            ...child,
+            child_guardian: [
+              {
+                is_primary: link.is_primary,
+                guardians: {
+                  id: guardian.id,
+                  full_name: guardian.full_name,
+                  phone_primary: guardian.phone_primary,
+                  community: guardian.community,
+                  city: guardian.city,
+                },
+              },
+            ],
+          });
+        });
+      });
+    }
+
+    return this.formatSearchResults(Array.from(dedupedChildren.values()), chwUserId);
+  }
+
+  /**
+   * Advanced Search by Child Name, Mother Name, and Date of Birth
+   * Fallback search method when quick search fails
+   *
+   * All three parameters are required (validated by DTO)
+   * Uses case-insensitive ILIKE search, limited to 10 results
+   */
+  async advancedSearch(
+    childName: string,
+    motherName: string,
+    dob: string,
+    chwUserId: string,
+  ) {
+    const childNormalized = (childName || '').trim();
+    const motherNormalized = (motherName || '').trim().toLowerCase();
+    const normalizedDob = (dob || '').trim();
+
+    if (!childNormalized || !motherNormalized || !normalizedDob) {
+      throw new BadRequestException(
+        'childName, motherName, and dob are required for advanced search',
+      );
+    }
+
+    if (childNormalized.length > 80 || motherNormalized.length > 120) {
+      throw new BadRequestException('Search fields exceed allowed length');
+    }
+
+    const safeChildPattern = `%${this.escapeIlikePattern(childNormalized)}%`;
+
+    this.logger.debug(
+      `[Advanced Search] Searching for child: ${childNormalized}, mother: ${motherNormalized}, DOB: ${normalizedDob}`,
+    );
+
+    // Search children by name and DOB, then filter by mother name
+    const { data: children, error } = await this.db.supabase
+      .from('children')
+      .select(`
+        id,
+        cvcc_id,
+        full_name,
+        date_of_birth,
+        gender,
+        catchment_area_id,
+        child_guardian!inner (
+          is_primary,
+          guardians!inner (
+            id,
+            full_name,
+            phone_primary,
+            community,
+            city
+          )
+        )
+      `)
+      .ilike('full_name', safeChildPattern)
+      .eq('date_of_birth', normalizedDob)
+      .limit(50);
+
+    if (error) {
+      this.logger.error('[Advanced Search] Query error:', error);
+      throw new BadRequestException(`Search failed: ${error.message}`);
+    }
+
+    if (!children || children.length === 0) {
+      this.logger.debug('[Advanced Search] No children found');
+      return [];
+    }
+
+    // Filter by mother name
+    const filtered = children.filter((child: any) => {
+      const guardianLinks = Array.isArray(child.child_guardian) ? child.child_guardian : [];
+      return guardianLinks.some((link: any) => {
+        const guardian = Array.isArray(link.guardians) ? link.guardians[0] : link.guardians;
+        return (
+          guardian?.full_name &&
+          guardian.full_name.toLowerCase().includes(motherNormalized)
+        );
+      });
+    });
+
+    this.logger.debug(`[Advanced Search] Found ${filtered.length} matching children`);
+
+    return this.formatSearchResults(filtered.slice(0, 10), chwUserId);
+  }
+
+  /**
+   * Format search results with catchment information
+   * Determines if child requires pull transfer
+   */
+  private async formatSearchResults(children: any[], chwUserId: string) {
+    if (children.length === 0) return [];
+
+    // Get CHW's catchment areas
+    const { data: chwCatchments } = await this.db.supabase
+      .from('catchment_areas')
+      .select('id')
+      .eq('assigned_chw_id', chwUserId);
+
+    const chwCatchmentIds = new Set((chwCatchments || []).map((c: any) => c.id));
+
+    // Get child catchment info
+    const childIds = children.map((c) => c.id);
+    const { data: childrenWithCatchment } = await this.db.supabase
+      .from('children')
+      .select('id, catchment_area_id')
+      .in('id', childIds);
+
+    const childCatchmentMap = new Map(
+      (childrenWithCatchment || []).map((c: any) => [c.id, c.catchment_area_id]),
+    );
+
+    // Get catchment names
+    const catchmentIds = [
+      ...new Set(
+        (childrenWithCatchment || [])
+          .map((c: any) => c.catchment_area_id)
+          .filter(Boolean),
+      ),
+    ];
+
+    let catchmentNameMap = new Map<string, { name: string; branchId: string }>();
+    if (catchmentIds.length > 0) {
+      const { data: catchments } = await this.db.supabase
+        .from('catchment_areas')
+        .select('id, name, branch_id')
+        .in('id', catchmentIds);
+      catchmentNameMap = new Map(
+        (catchments || []).map((c: any) => [c.id, { name: c.name, branchId: c.branch_id }]),
+      );
+    }
+
+    // Format results
+    return Promise.all(
+      children.map(async (child: any) => {
+        const guardianLinks = Array.isArray(child.child_guardian) ? child.child_guardian : [];
+        const primaryLink = guardianLinks.find((link: any) => link.is_primary);
+        const guardianData = Array.isArray(primaryLink?.guardians)
+          ? primaryLink.guardians[0]
+          : primaryLink?.guardians;
+
+        const upcoming = await this.db.getUpcomingVaccinations(child.id, child.date_of_birth);
+        const next: any = (upcoming || [])[0];
+        const nextVaccineName = this.readVaccineName(next?.vaccine);
+
+        const childCatchmentId = childCatchmentMap.get(child.id);
+        const catchmentInfo = childCatchmentId ? catchmentNameMap.get(childCatchmentId) : null;
+
+        // Determine if pull is required (child is in another CHW's catchment)
+        const requiresPull = !!childCatchmentId && !chwCatchmentIds.has(childCatchmentId);
+
+        return {
+          id: child.id,
+          childId: child.cvcc_id || child.id,
+          childName: child.full_name,
+          dateOfBirth: child.date_of_birth,
+          gender: child.gender,
+          motherName: guardianData?.full_name || 'Unknown',
+          motherPhone: guardianData?.phone_primary || 'N/A',
+          village: guardianData?.community || guardianData?.city || 'Unknown',
+          nextVaccine: nextVaccineName || 'Review chart',
+          catchmentAreaId: childCatchmentId || null,
+          currentZoneName: catchmentInfo?.name || null,
+          currentBranchId: catchmentInfo?.branchId || null,
+          requiresPull,
+        };
+      }),
+    );
   }
 
   async getChildChart(childId: string, chwUserId: string) {

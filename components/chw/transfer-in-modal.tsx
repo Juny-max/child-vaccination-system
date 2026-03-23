@@ -1,17 +1,17 @@
 "use client"
 
 import { useState } from "react"
-import { Search, UserPlus, Loader2, AlertCircle, CheckCircle2, AlertTriangle, ArrowRightLeft } from "lucide-react"
+import { UserPlus, Loader2, AlertCircle, CheckCircle2, AlertTriangle, ArrowRightLeft } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { TransferInSearch } from "@/components/chw/transfer-in-search"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 import { queueTransferIn, upsertChildren } from "@/lib/chw-offline/db"
-import { searchAllChwChildren, transferPullChild, type ChwSearchResult } from "@/lib/api/chw"
+import { transferPullChild, type TransferInSearchResult } from "@/lib/api/chw"
 import { API_BASE_URL } from "@/lib/api/config"
 import type { OfflineChild } from "@/lib/chw-offline/db"
 
@@ -23,10 +23,7 @@ type TransferInModalProps = {
 
 export function TransferInModal({ open, onClose, onSuccess }: TransferInModalProps) {
   const { isOnline } = useNetworkStatus()
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searching, setSearching] = useState(false)
-  const [searchResults, setSearchResults] = useState<ChwSearchResult[]>([])
-  const [selectedChild, setSelectedChild] = useState<ChwSearchResult | null>(null)
+  const [selectedChild, setSelectedChild] = useState<TransferInSearchResult | null>(null)
   const [notes, setNotes] = useState("")
   const [transferring, setTransferring] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,48 +31,21 @@ export function TransferInModal({ open, onClose, onSuccess }: TransferInModalPro
   // Force pull confirmation state
   const [showPullConfirmation, setShowPullConfirmation] = useState(false)
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      setError("Please enter a name, CVCC ID, or phone number")
-      return
-    }
+  // Requires force pull only when child belongs to a different zone.
+  const childRequiresPull = Boolean(selectedChild?.requiresPull)
 
-    if (!isOnline) {
-      setError("You must be online to search for children globally")
-      return
-    }
-
-    setSearching(true)
-    setError(null)
-    setSearchResults([])
-
-    try {
-      const results = await searchAllChwChildren(searchQuery)
-      setSearchResults(results)
-
-      if (results.length === 0) {
-        setError("No children found matching your search")
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed")
-    } finally {
-      setSearching(false)
-    }
-  }
-
-  // Check if child is already in another catchment (requires force pull)
-  const childHasExistingCatchment = selectedChild?.catchmentAreaId && selectedChild?.currentZoneName
-
-  const handleSelectChild = (child: ChwSearchResult) => {
+  const handleSelectChild = (child: TransferInSearchResult, initiatePull: boolean) => {
     setSelectedChild(child)
-    setShowPullConfirmation(false)
+    setShowPullConfirmation(initiatePull)
+    setError(null)
+    setSuccess(null)
   }
 
   const handleInitiateTransfer = () => {
     if (!selectedChild) return
 
-    // If child has an existing catchment, show force pull confirmation
-    if (childHasExistingCatchment) {
+    // If child is in another catchment, show force pull confirmation
+    if (childRequiresPull) {
       setShowPullConfirmation(true)
     } else {
       // No existing catchment, proceed with normal transfer
@@ -95,7 +65,7 @@ export function TransferInModal({ open, onClose, onSuccess }: TransferInModalPro
       if (isOnline) {
         let result: any
 
-        if (forcePull && childHasExistingCatchment) {
+        if (forcePull && childRequiresPull) {
           // Use the force pull endpoint
           result = await transferPullChild(
             selectedChild.id,
@@ -169,8 +139,6 @@ export function TransferInModal({ open, onClose, onSuccess }: TransferInModalPro
   }
 
   const handleClose = () => {
-    setSearchQuery("")
-    setSearchResults([])
     setSelectedChild(null)
     setNotes("")
     setError(null)
@@ -203,88 +171,7 @@ export function TransferInModal({ open, onClose, onSuccess }: TransferInModalPro
         )}
 
         {!selectedChild ? (
-          <>
-            {/* Search Section */}
-            <div className="space-y-4">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Search by name, CVCC ID, or phone number..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                  disabled={!isOnline || searching}
-                />
-                <Button onClick={handleSearch} disabled={!isOnline || searching}>
-                  {searching ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Searching...
-                    </>
-                  ) : (
-                    <>
-                      <Search className="mr-2 h-4 w-4" />
-                      Search
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              {/* Search Results */}
-              {searchResults.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">
-                    Found {searchResults.length} child{searchResults.length !== 1 ? "ren" : ""}
-                  </p>
-                  <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                    {searchResults.map((child) => (
-                      <div
-                        key={child.id}
-                        className="border rounded-lg p-3 hover:bg-primary/5 hover:border-primary/50 cursor-pointer transition-colors"
-                        onClick={() => handleSelectChild(child)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold">{child.childName}</p>
-                              {/* Show badge if child is in another catchment */}
-                              {child.catchmentAreaId && child.currentZoneName && (
-                                <Badge variant="secondary" className="text-xs">
-                                  <ArrowRightLeft className="mr-1 h-3 w-3" />
-                                  {child.currentZoneName}
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              CVCC ID: {child.childId}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              Mother: {child.motherName} ({child.motherPhone})
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              Village: {child.village}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              Next Vaccine: {child.nextVaccine}
-                            </p>
-                          </div>
-                          <Button size="sm" variant="outline">
-                            Select
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
+          <TransferInSearch disabled={!isOnline} onSelectChild={handleSelectChild} />
         ) : showPullConfirmation ? (
           <>
             {/* Force Pull Confirmation */}
@@ -375,11 +262,11 @@ export function TransferInModal({ open, onClose, onSuccess }: TransferInModalPro
           <>
             {/* Transfer Confirmation Section */}
             <div className="space-y-4">
-              <Alert className={childHasExistingCatchment ? "border-amber-200 bg-amber-50" : ""}>
-                <CheckCircle2 className={`h-4 w-4 ${childHasExistingCatchment ? "text-amber-600" : ""}`} />
-                <AlertDescription className={childHasExistingCatchment ? "text-amber-900" : ""}>
+              <Alert className={childRequiresPull ? "border-amber-200 bg-amber-50" : ""}>
+                <CheckCircle2 className={`h-4 w-4 ${childRequiresPull ? "text-amber-600" : ""}`} />
+                <AlertDescription className={childRequiresPull ? "text-amber-900" : ""}>
                   <strong>{selectedChild.childName}</strong> will be added to your local register.
-                  {childHasExistingCatchment && (
+                  {childRequiresPull && (
                     <span className="block mt-1 text-amber-700">
                       Note: This child is currently in <strong>{selectedChild.currentZoneName}</strong>.
                       You will need to confirm a force pull.
@@ -404,7 +291,7 @@ export function TransferInModal({ open, onClose, onSuccess }: TransferInModalPro
                 <p className="text-sm">
                   <span className="font-semibold">Previous Village:</span> {selectedChild.village}
                 </p>
-                {childHasExistingCatchment && (
+                {childRequiresPull && (
                   <p className="text-sm">
                     <span className="font-semibold">Current Zone:</span>{" "}
                     <Badge variant="secondary">{selectedChild.currentZoneName}</Badge>
@@ -450,14 +337,14 @@ export function TransferInModal({ open, onClose, onSuccess }: TransferInModalPro
                   onClick={handleInitiateTransfer}
                   disabled={transferring || !isOnline}
                   className="flex-1"
-                  variant={childHasExistingCatchment ? "default" : "default"}
+                  variant="default"
                 >
                   {transferring ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Transferring...
                     </>
-                  ) : childHasExistingCatchment ? (
+                  ) : childRequiresPull ? (
                     <>
                       <ArrowRightLeft className="mr-2 h-4 w-4" />
                       Initiate Pull Transfer

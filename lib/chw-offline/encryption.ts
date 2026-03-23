@@ -7,6 +7,7 @@
 import { encryptData, decryptData } from "@/lib/secure-storage"
 
 const ENCRYPTION_KEY_STORAGE = "chw_encryption_key"
+const STABLE_ENCRYPTION_KEY_PREFIX = "chw_encryption_stable_key:"
 
 /**
  * Get or generate encryption key for current session
@@ -19,19 +20,34 @@ function getEncryptionKey(): string {
 
   // Try to get existing key from sessionStorage (cleared on browser close)
   let key = sessionStorage.getItem(ENCRYPTION_KEY_STORAGE)
+  if (key) {
+    return key
+  }
+
+  const userId = localStorage.getItem("userId")
+  if (!userId) {
+    throw new Error("Cannot generate encryption key - user not authenticated")
+  }
+
+  const stableKeyStorageName = `${STABLE_ENCRYPTION_KEY_PREFIX}${userId}`
+  const stableKey = localStorage.getItem(stableKeyStorageName)
+  if (stableKey) {
+    sessionStorage.setItem(ENCRYPTION_KEY_STORAGE, stableKey)
+    return stableKey
+  }
 
   if (!key) {
-    // Generate new key from user session
-    const userId = localStorage.getItem("userId")
-    const accessToken = localStorage.getItem("accessToken")
+    // Keep backward compatibility with previously encrypted records by seeding
+    // the stable key using the same legacy token-derived format when possible.
+    const token = localStorage.getItem("accessToken") || localStorage.getItem("authToken")
 
-    if (!userId || !accessToken) {
-      throw new Error("Cannot generate encryption key - user not authenticated")
+    if (token) {
+      key = `${userId}:${token.substring(0, 32)}`
+    } else {
+      key = `${userId}:cvcc-offline`
     }
 
-    // Combine userId and first 32 chars of access token as key material
-    // This ensures key is unique per user and session
-    key = `${userId}:${accessToken.substring(0, 32)}`
+    localStorage.setItem(stableKeyStorageName, key)
     sessionStorage.setItem(ENCRYPTION_KEY_STORAGE, key)
   }
 
