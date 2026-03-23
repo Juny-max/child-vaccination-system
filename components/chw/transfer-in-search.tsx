@@ -115,7 +115,7 @@ export function TransferInSearch({ disabled = false, onSelectChild }: TransferIn
               <Label htmlFor="quick-identifier">Phone or Child ID</Label>
               <Input
                 id="quick-identifier"
-                placeholder="Enter mother phone number or child UUID"
+                placeholder="Enter mother phone number or child ID (UUID/CVCC)"
                 disabled={disabled || searching}
                 {...quickForm.register("identifier")}
               />

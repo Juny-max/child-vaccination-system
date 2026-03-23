@@ -133,6 +133,20 @@ describe('Children Search Endpoints (e2e)', () => {
     );
   });
 
+  it('accepts CVCC-style child ID identifiers for quick search', async () => {
+    mockChwService.searchByIdentifier.mockResolvedValue([]);
+
+    await request(app.getHttpServer())
+      .get('/api/children/search')
+      .query({ identifier: 'CVCC-000123' })
+      .expect(200);
+
+    expect(mockChwService.searchByIdentifier).toHaveBeenCalledWith(
+      'CVCC-000123',
+      'test-chw-user',
+    );
+  });
+
   it('returns 400 when advanced search is missing required fields', async () => {
     await request(app.getHttpServer())
       .get('/api/children/advanced-search')

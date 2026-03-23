@@ -572,12 +572,13 @@ export class ChwService {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Quick Search by Identifier (child UUID or mother phone)
+   * Quick Search by Identifier (child UUID/CVCC ID or mother phone)
    * Primary, fast search method for transfer-in lookup
    *
    * Searches for:
    * 1. Children by UUID (exact match against children.id)
-   * 2. Guardians by phone number (exact match), then their children
+   * 2. Children by CVCC ID (exact match against children.cvcc_id)
+   * 3. Guardians by phone number (exact match), then their children
    */
   async searchByIdentifier(identifier: string, chwUserId: string) {
     const trimmedIdentifier = (identifier || '').trim();
@@ -592,6 +593,14 @@ export class ChwService {
     this.logger.debug('[Quick Search] Running exact identifier lookup');
 
     const dedupedChildren = new Map<string, any>();
+    const compactIdentifier = trimmedIdentifier.replace(/\s+/g, '');
+    const cvccCandidates = Array.from(
+      new Set([
+        trimmedIdentifier,
+        compactIdentifier,
+        compactIdentifier.toUpperCase(),
+      ].filter(Boolean)),
+    );
 
     // Strategy 1: Exact child UUID lookup
     if (this.isUuid(trimmedIdentifier)) {
@@ -629,7 +638,43 @@ export class ChwService {
       });
     }
 
-    // Strategy 2: Exact mother phone lookup (with exact Ghana variants)
+    // Strategy 2: Exact child CVCC ID lookup
+    if (cvccCandidates.length > 0) {
+      const { data: childByCvcc, error: cvccError } = await this.db.supabase
+        .from('children')
+        .select(`
+          id,
+          cvcc_id,
+          full_name,
+          date_of_birth,
+          gender,
+          catchment_area_id,
+          child_guardian!inner (
+            is_primary,
+            guardians (
+              id,
+              full_name,
+              phone_primary,
+              community,
+              city
+            )
+          )
+        `)
+        .in('cvcc_id', cvccCandidates)
+        .limit(3);
+
+      if (cvccError) {
+        throw new BadRequestException(`Search failed: ${cvccError.message}`);
+      }
+
+      (childByCvcc || []).forEach((child: any) => {
+        if (child?.id) {
+          dedupedChildren.set(child.id, child);
+        }
+      });
+    }
+
+    // Strategy 3: Exact mother phone lookup (with exact Ghana variants)
     const phoneVariants = this.buildPhoneExactVariants(trimmedIdentifier);
     if (phoneVariants.length > 0) {
       const { data: guardiansByPhone, error: phoneError } = await this.db.supabase

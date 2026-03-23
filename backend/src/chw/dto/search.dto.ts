@@ -9,15 +9,15 @@ import {
 
 /**
  * Quick Search DTO
- * Search by exact match on child UUID or mother's phone number
+ * Search by exact match on child UUID/CVCC ID or mother's phone number
  */
 export class QuickSearchDto {
   @IsString()
-  @IsNotEmpty({ message: 'Identifier (Child UUID or Mother Phone) is required' })
+  @IsNotEmpty({ message: 'Identifier (Child ID or Mother Phone) is required' })
   @MinLength(3, { message: 'Identifier must be at least 3 characters' })
   @MaxLength(64, { message: 'Identifier must not exceed 64 characters' })
-  @Matches(/^[0-9a-fA-F+()\-\s]+$/, {
-    message: 'Identifier can only contain UUID or phone characters',
+  @Matches(/^[A-Za-z0-9+()_\-\s]+$/, {
+    message: 'Identifier can only contain child ID or phone characters',
   })
   identifier: string;
 }
