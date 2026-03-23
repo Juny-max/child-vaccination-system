@@ -26,6 +26,10 @@ export type ChwSearchResult = {
   village: string
   dateOfBirth: string
   gender: string
+  // Added for pull transfer support
+  catchmentAreaId?: string | null
+  currentZoneName?: string | null
+  currentBranchId?: string | null
 }
 
 export type ChwChildChart = {
@@ -155,4 +159,40 @@ export type ChwRegisterChild = {
  */
 export async function getChwLocalRegister(): Promise<ChwRegisterChild[]> {
   return apiRequest<ChwRegisterChild[]>("/chw/register")
+}
+
+// ============================================================================
+// TRANSFER OPERATIONS
+// ============================================================================
+
+export type TransferPullResult = {
+  success: boolean
+  message: string
+  childId: string
+  childName: string
+  previousCatchment: string
+  newCatchment: string
+  newCatchmentId?: string
+  wasPulled: boolean
+  timestamp: string
+}
+
+/**
+ * Transfer Pull: Forcefully pull a child from another catchment area
+ *
+ * This is the "Pull Mechanism" - allows a CHW to pull a child's record from
+ * another CHW's catchment area, even if the old CHW hasn't transferred them out.
+ *
+ * Creates dual audit logs:
+ * - transfer_out for the OLD catchment/branch
+ * - transfer_in for the NEW catchment/branch
+ */
+export async function transferPullChild(
+  childId: string,
+  notes?: string,
+): Promise<TransferPullResult> {
+  return apiRequest<TransferPullResult>(`/chw/children/${encodeURIComponent(childId)}/transfer-pull`, {
+    method: "POST",
+    body: JSON.stringify({ childId, notes }),
+  })
 }

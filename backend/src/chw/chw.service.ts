@@ -382,6 +382,35 @@ export class ChwService {
 
     this.logger.debug(`[CHW Search All] Search returned ${childrenWithGuardians.length} results`);
 
+    // Pre-fetch child catchment info for all children at once
+    const childIds = Array.from(childrenMap.keys());
+    const { data: childrenWithCatchment } = await this.db.supabase
+      .from('children')
+      .select('id, catchment_area_id')
+      .in('id', childIds);
+
+    const childCatchmentMap = new Map(
+      (childrenWithCatchment || []).map((c: any) => [c.id, c.catchment_area_id])
+    );
+
+    // Pre-fetch all catchment area names
+    const catchmentIds = [...new Set(
+      (childrenWithCatchment || [])
+        .map((c: any) => c.catchment_area_id)
+        .filter(Boolean)
+    )];
+
+    let catchmentNameMap = new Map<string, { name: string; branchId: string }>();
+    if (catchmentIds.length > 0) {
+      const { data: catchments } = await this.db.supabase
+        .from('catchment_areas')
+        .select('id, name, branch_id')
+        .in('id', catchmentIds);
+      catchmentNameMap = new Map(
+        (catchments || []).map((c: any) => [c.id, { name: c.name, branchId: c.branch_id }])
+      );
+    }
+
     const results = await Promise.all(
       (childrenWithGuardians || []).map(async (child: any) => {
         // Find primary guardian
@@ -400,6 +429,10 @@ export class ChwService {
         const next: any = (upcoming || [])[0];
         const nextVaccineName = this.readVaccineName(next?.vaccine);
 
+        // Get child's direct catchment_area_id (for pull transfer)
+        const childCatchmentId = childCatchmentMap.get(child.id);
+        const catchmentInfo = childCatchmentId ? catchmentNameMap.get(childCatchmentId) : null;
+
         return {
           id: child.id,
           childId: child.cvcc_id,
@@ -410,7 +443,10 @@ export class ChwService {
           village: guardianData?.community || guardianData?.city || 'Unknown',
           dateOfBirth: child.date_of_birth,
           gender: child.gender,
-          catchmentAreaId: guardianData?.catchment_area_id,
+          // Include child's direct catchment info for pull transfer decision
+          catchmentAreaId: childCatchmentId || null,
+          currentZoneName: catchmentInfo?.name || null,
+          currentBranchId: catchmentInfo?.branchId || null,
         };
       }),
     );
@@ -934,6 +970,151 @@ export class ChwService {
       previousCatchment: previousCatchmentName,
       newCatchment: chwCatchment.name,
       timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Transfer Pull: Forcefully pull a child from another catchment area
+   *
+   * This is the "Pull Mechanism" - a CHW can pull a child's record from
+   * another CHW's catchment area, even if the old CHW hasn't transferred them out.
+   *
+   * Creates dual audit logs:
+   * 1. transfer_out for the OLD catchment (logs +1 Transfer Out for old branch)
+   * 2. transfer_in for the NEW catchment (logs +1 Transfer In for new branch)
+   */
+  async transferPull(childId: string, chwUserId: string, notes?: string) {
+    this.logger.debug('[CHW TransferPull] Processing forceful pull transfer');
+
+    // 1. Get new CHW's primary catchment area
+    const { data: chwCatchments, error: chwError } = await this.db.supabase
+      .from('catchment_areas')
+      .select('id, name, community, branch_id')
+      .eq('assigned_chw_id', chwUserId)
+      .limit(1);
+
+    if (chwError || !chwCatchments || chwCatchments.length === 0) {
+      throw new ForbiddenException('CHW has no assigned catchment areas');
+    }
+
+    const newCatchment = chwCatchments[0];
+
+    // 2. Get child's current info including existing catchment
+    const { data: child, error: childError } = await this.db.supabase
+      .from('children')
+      .select('id, full_name, catchment_area_id')
+      .eq('id', childId)
+      .single();
+
+    if (childError || !child) {
+      throw new NotFoundException(`Child with ID ${childId} not found`);
+    }
+
+    // Check if child is already in this CHW's catchment
+    if (child.catchment_area_id === newCatchment.id) {
+      return {
+        success: true,
+        message: `${child.full_name} is already in your catchment area`,
+        childId: child.id,
+        childName: child.full_name,
+        previousCatchment: newCatchment.name,
+        newCatchment: newCatchment.name,
+        wasPulled: false,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    // 3. Get old catchment info (for audit logging)
+    let oldCatchmentName = 'None (unassigned)';
+    let oldCatchmentBranchId: string | null = null;
+    let oldCatchmentId: string | null = child.catchment_area_id;
+
+    if (child.catchment_area_id) {
+      const { data: oldCatchment } = await this.db.supabase
+        .from('catchment_areas')
+        .select('id, name, branch_id, assigned_chw_id')
+        .eq('id', child.catchment_area_id)
+        .single();
+
+      if (oldCatchment) {
+        oldCatchmentName = oldCatchment.name;
+        oldCatchmentBranchId = oldCatchment.branch_id;
+      }
+    }
+
+    // 4. Update child's catchment_area_id to new CHW's catchment
+    const { error: updateError } = await this.db.supabase
+      .from('children')
+      .update({
+        catchment_area_id: newCatchment.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', childId);
+
+    if (updateError) {
+      throw new BadRequestException(`Transfer pull failed: ${updateError.message}`);
+    }
+
+    const timestamp = new Date().toISOString();
+
+    // 5. Log TRANSFER OUT for the OLD catchment's branch
+    // This creates a +1 Transfer Out record for the old branch manager's stats
+    if (oldCatchmentId) {
+      await this.db.supabase.from('audit_logs').insert({
+        user_id: chwUserId, // The CHW who initiated the pull
+        action: 'transfer_out',
+        resource_type: 'child',
+        resource_id: childId,
+        details: {
+          childName: child.full_name,
+          fromCatchment: oldCatchmentName,
+          fromCatchmentId: oldCatchmentId,
+          fromBranchId: oldCatchmentBranchId,
+          toCatchment: newCatchment.name,
+          toCatchmentId: newCatchment.id,
+          toBranchId: newCatchment.branch_id,
+          transferType: 'pull', // Marks this as a pull transfer (not manual release)
+          notes: notes || 'Child pulled to new catchment area',
+          timestamp,
+        },
+      });
+    }
+
+    // 6. Log TRANSFER IN for the NEW catchment's branch
+    // This creates a +1 Transfer In record for the new branch manager's stats
+    await this.db.supabase.from('audit_logs').insert({
+      user_id: chwUserId,
+      action: 'transfer_in',
+      resource_type: 'child',
+      resource_id: childId,
+      details: {
+        childName: child.full_name,
+        fromCatchment: oldCatchmentName,
+        fromCatchmentId: oldCatchmentId,
+        fromBranchId: oldCatchmentBranchId,
+        toCatchment: newCatchment.name,
+        toCatchmentId: newCatchment.id,
+        toBranchId: newCatchment.branch_id,
+        transferType: 'pull', // Marks this as a pull transfer
+        notes: notes || 'Child pulled via global search',
+        timestamp,
+      },
+    });
+
+    this.logger.log(
+      `[CHW TransferPull] Child ${child.full_name} pulled from ${oldCatchmentName} to ${newCatchment.name}`,
+    );
+
+    return {
+      success: true,
+      message: `${child.full_name} has been transferred to your catchment area.`,
+      childId: child.id,
+      childName: child.full_name,
+      previousCatchment: oldCatchmentName,
+      newCatchment: newCatchment.name,
+      newCatchmentId: newCatchment.id,
+      wasPulled: true,
+      timestamp,
     };
   }
 

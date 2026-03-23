@@ -13,7 +13,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ChwService } from './chw.service';
-import { SyncCHWVaccinationsDto, TransferOutDto, TransferInDto } from './dto';
+import { SyncCHWVaccinationsDto, TransferOutDto, TransferInDto, TransferPullDto } from './dto';
 
 @Controller('chw')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -144,5 +144,28 @@ export class ChwController {
     @Request() req: any,
   ) {
     return this.chwService.transferIn(childId, req.user.id, dto.notes);
+  }
+
+  /**
+   * POST /api/chw/children/:childId/transfer-pull
+   * Transfer Pull (Pull Mechanism): Forcefully pull a child from another catchment area
+   *
+   * This endpoint allows a CHW to "pull" a child's record from another CHW's
+   * catchment area, even if the old CHW hasn't manually transferred them out.
+   *
+   * Creates dual audit logs:
+   * - transfer_out for the OLD catchment/branch (+1 Transfer Out)
+   * - transfer_in for the NEW catchment/branch (+1 Transfer In)
+   *
+   * Use case: Mother moves to a new area but old CHW hasn't released the child.
+   * New CHW can forcefully pull the child to their register.
+   */
+  @Post('children/:childId/transfer-pull')
+  async transferPull(
+    @Param('childId') childId: string,
+    @Body() dto: TransferPullDto,
+    @Request() req: any,
+  ) {
+    return this.chwService.transferPull(childId, req.user.id, dto.notes);
   }
 }
