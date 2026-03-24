@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useParentDashboard } from "../dashboard-context"
@@ -399,7 +400,7 @@ export default function MotherDetailsPage() {
             <CardDescription>Keep your contact and emergency information up to date.</CardDescription>
           </div>
           <Button variant="secondary" size="sm" className="gap-2" onClick={isEditing ? cancelEditing : startEditing}>
-            <Edit3 className="size-4" /> {isEditing ? "Close form" : "Update details"}
+            <Edit3 className="size-4" /> {isEditing ? "Close form" : "Update mother details"}
           </Button>
         </CardHeader>
       </Card>
@@ -412,16 +413,24 @@ export default function MotherDetailsPage() {
         </Alert>
       ) : null}
 
-      {isEditing ? (
-        <Card className="border-primary/40">
-          <CardHeader>
-            <CardTitle className="text-lg">Update contact details</CardTitle>
-            <CardDescription>
+      <Dialog
+        open={isEditing}
+        onOpenChange={(open) => {
+          if (!open && !isSaving) {
+            cancelEditing()
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Update contact details</DialogTitle>
+            <p className="text-sm text-muted-foreground">
               You can update your primary mobile number and email anytime. Facility staff manage the rest of your profile details
               to keep records consistent across systems.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-5">
             {Object.keys(formErrors).length > 0 ? (
               <Alert variant="destructive">
                 <AlertTriangle />
@@ -471,6 +480,9 @@ export default function MotherDetailsPage() {
                   error={formErrors.primaryPhone}
                   placeholder="+233 24 123 4567"
                   icon={<Phone className="size-4 text-primary" />}
+                  disabled
+                  readOnly
+                  helperText="Contact the facility to request primary phone number changes."
                 />
                 <Field
                   id="secondaryPhone"
@@ -482,9 +494,6 @@ export default function MotherDetailsPage() {
                   error={formErrors.secondaryPhone}
                   placeholder="+233 20 765 4321"
                   icon={<Phone className="size-4 text-primary" />}
-                  disabled
-                  readOnly
-                  helperText="Facility staff maintain alternate contact numbers."
                 />
               </div>
 
@@ -545,9 +554,9 @@ export default function MotherDetailsPage() {
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
-      ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid gap-6">
         <Card>

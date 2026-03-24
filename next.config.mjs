@@ -3,13 +3,16 @@ import withPWAInit from "next-pwa"
 const runtimeCaching = [
   // CHW pages - NetworkFirst so they work offline after first visit
   {
-    urlPattern: ({ url }) =>
-      url.pathname.startsWith("/chw/") ||
-      url.pathname === "/chw",
+    urlPattern: ({ url, request }) =>
+      request.mode === "navigate" &&
+      (url.pathname.startsWith("/chw/") || url.pathname === "/chw"),
     handler: "NetworkFirst",
     options: {
       cacheName: "chw-pages",
       networkTimeoutSeconds: 10,
+      precacheFallback: {
+        fallbackURL: "/offline.html",
+      },
       expiration: {
         maxEntries: 32,
         maxAgeSeconds: 7 * 24 * 60 * 60,
@@ -108,7 +111,7 @@ const runtimeCaching = [
 
 const withPWA = withPWAInit({
   dest: "public",
-  disable: false,
+  disable: process.env.NODE_ENV === "development",
   register: true,
   skipWaiting: true,
   fallbacks: {

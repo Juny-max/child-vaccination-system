@@ -559,7 +559,7 @@ export default function SupportPage() {
               <Sparkles className="size-3" /> AI-powered assistant
             </Badge>
             <CardTitle className="flex items-center gap-2 text-2xl">
-              <Bot className="size-6" /> Vaccination Assistant
+              <Bot className="size-6" /> Virtual Assistant
             </CardTitle>
             <CardDescription>
               Ask questions about your children&apos;s vaccinations, get personalized advice, and learn about post-care guidance.
@@ -773,67 +773,6 @@ export default function SupportPage() {
         </Card>
       )}
 
-      {/* Info Cards */}
-      <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">What the assistant can help with</CardTitle>
-            <CardDescription>Get personalized guidance for your child&apos;s health needs.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <div className="rounded-lg border border-border bg-background p-4">
-              <p className="font-semibold text-foreground">📊 Vaccination status</p>
-              <p>Check which vaccines your children have completed and what&apos;s coming next.</p>
-            </div>
-            <div className="rounded-lg border border-border bg-background p-4">
-              <p className="font-semibold text-foreground">💉 Post-vaccination care</p>
-              <p>Get advice on managing fever, swelling, or other common side effects.</p>
-            </div>
-            <div className="rounded-lg border border-border bg-background p-4">
-              <p className="font-semibold text-foreground">📅 Appointments &amp; reminders</p>
-              <p>Ask about upcoming appointments and what to bring to the clinic.</p>
-            </div>
-            <div className="rounded-lg border border-border bg-background p-4">
-              <p className="font-semibold text-foreground">📚 Vaccine information</p>
-              <p>Learn about Ghana&apos;s immunization schedule and why each vaccine matters.</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-primary/30">
-          <CardHeader>
-            <CardTitle className="text-lg">Your children&apos;s summary</CardTitle>
-            <CardDescription>Quick overview of vaccination status.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {chatContext.children.length > 0 ? (
-              chatContext.children.map((child) => (
-                <div key={child.id} className="rounded-lg border border-border bg-background p-3">
-                  <p className="font-semibold text-foreground">{child.name}</p>
-                  <p className="text-xs text-muted-foreground">{child.age}</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <div className="h-2 flex-1 rounded-full bg-muted">
-                      <div 
-                        className="h-2 rounded-full bg-primary transition-all"
-                        style={{ width: `${child.completionPercentage}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-medium">{child.completionPercentage}%</span>
-                  </div>
-                  {child.hasMissedVaccinations && (
-                    <Badge variant="destructive" className="mt-2 text-xs">
-                      Has missed doses
-                    </Badge>
-                  )}
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">No children registered yet.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Human Support Card */}
       <Card>
         <CardHeader>
@@ -847,9 +786,9 @@ export default function SupportPage() {
             <p className="text-base font-semibold text-foreground">Accra Central Health Center</p>
             <p>Support line: +233 30 123 4567 (Mon – Fri, 8:00 AM – 5:00 PM)</p>
           </div>
-          <Button asChild variant="outline" className="gap-2">
+          <Button asChild variant="secondary" className="gap-2">
             <a href="tel:+233301234567" aria-label="Call the clinic">
-              <PhoneCall className="size-4" /> Call the clinic
+              <PhoneCall className="size-4" /> Call nurse
             </a>
           </Button>
         </CardContent>

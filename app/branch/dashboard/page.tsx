@@ -52,13 +52,17 @@ import {
   getBranchDashboard,
   getVaccineOptions,
   recordStockDelivery,
+  resetExpiringStock,
   registerStaff,
   updateStaffStatus,
   type BranchDashboardData,
+  type StockAlert,
   type VaccineOption,
   type RegisterStaffPayload,
   type StaffRole,
 } from "@/lib/api/branch-manager"
+
+const STOCK_RESET_EXPIRY_WINDOW_DAYS = 90
 
 const SECTIONS = [
   { id: "overview", label: "Branch Overview", icon: Activity },
@@ -107,6 +111,9 @@ export default function BranchDashboardPage() {
   })
   const [stockSubmitting, setStockSubmitting] = useState(false)
   const [stockFormError, setStockFormError] = useState<string | null>(null)
+  const [resettingStockVaccineId, setResettingStockVaccineId] = useState<string | null>(null)
+  const [resetStockModalOpen, setResetStockModalOpen] = useState(false)
+  const [resetStockTarget, setResetStockTarget] = useState<StockAlert | null>(null)
 
   // Stock warning modal — auto-opens on load when vaccines are expired or out of stock
   const [stockWarningModalOpen, setStockWarningModalOpen] = useState(false)
@@ -250,6 +257,39 @@ export default function BranchDashboardPage() {
       setStockFormError(err instanceof Error ? err.message : "Failed to log delivery. Please try again.")
     } finally {
       setStockSubmitting(false)
+    }
+  }
+
+  const canResetAlertStock = (alert: StockAlert) => alert.daysToExpiry <= STOCK_RESET_EXPIRY_WINDOW_DAYS
+
+  const handleOpenResetStockModal = (alert: StockAlert) => {
+    if (!canResetAlertStock(alert)) return
+    setResetStockTarget(alert)
+    setResetStockModalOpen(true)
+  }
+
+  const handleResetExpiringAndRestock = async (alert: StockAlert) => {
+    if (!canResetAlertStock(alert)) {
+      return
+    }
+
+    setResettingStockVaccineId(alert.vaccineId)
+    try {
+      const result = await resetExpiringStock({
+        vaccineId: alert.vaccineId,
+        expiryWindowDays: STOCK_RESET_EXPIRY_WINDOW_DAYS,
+      })
+
+      await handleOpenStockModal()
+      setStockForm((prev) => ({ ...prev, vaccineId: alert.vaccineId }))
+      setSystemMessage(`${result.message} Continue by logging the new replacement delivery.`)
+      loadDashboard()
+    } catch (err: unknown) {
+      setSystemMessage(err instanceof Error ? err.message : "Failed to reset expiring stock.")
+    } finally {
+      setResettingStockVaccineId(null)
+      setResetStockModalOpen(false)
+      setResetStockTarget(null)
     }
   }
 
@@ -511,8 +551,10 @@ export default function BranchDashboardPage() {
             }
             const cfg = statusConfig[alert.status] ?? statusConfig.adequate
             const expiryWarning = alert.daysToExpiry <= 90
+            const canReset = canResetAlertStock(alert)
+            const resetInProgress = resettingStockVaccineId === alert.vaccineId
             return (
-              <div key={alert.vaccine} className="rounded-lg border border-border bg-background p-4 flex flex-col gap-2">
+              <div key={alert.vaccineId} className="rounded-lg border border-border bg-background p-4 flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm font-semibold text-foreground leading-tight">{alert.vaccine}</p>
                   <Badge variant={cfg.badgeVariant} className="shrink-0 text-xs">{cfg.label}</Badge>
@@ -533,6 +575,24 @@ export default function BranchDashboardPage() {
                     Exp: {alert.expiryDate} {expiryWarning && `(${alert.daysToExpiry}d)`}
                   </p>
                 </div>
+                {canReset ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="group mt-1 h-8 w-8 self-end p-0"
+                    disabled={resetInProgress}
+                    aria-label="Reset expiring stock and restock"
+                    title="Reset expiring stock and restock"
+                    onClick={() => handleOpenResetStockModal(alert)}
+                  >
+                    {resetInProgress ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5 transition-transform duration-300 group-hover:rotate-180" />
+                    )}
+                  </Button>
+                ) : null}
               </div>
             )
           })}
@@ -1218,6 +1278,53 @@ export default function BranchDashboardPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Stock Reset Confirmation Modal ─────────────────────────────────── */}
+      <Dialog
+        open={resetStockModalOpen}
+        onOpenChange={(open) => {
+          setResetStockModalOpen(open)
+          if (!open && !resettingStockVaccineId) {
+            setResetStockTarget(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-primary" /> Reset expiring stock
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Reset expiring stock for {resetStockTarget?.vaccine ?? "this vaccine"}? This will clear current quantities that expire within {STOCK_RESET_EXPIRY_WINDOW_DAYS} days before you log the new delivery.
+          </p>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(resettingStockVaccineId)}
+              onClick={() => {
+                setResetStockModalOpen(false)
+                setResetStockTarget(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="gap-2"
+              disabled={!resetStockTarget || Boolean(resettingStockVaccineId)}
+              onClick={() => {
+                if (!resetStockTarget) return
+                void handleResetExpiringAndRestock(resetStockTarget)
+              }}
+            >
+              {resettingStockVaccineId ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {resettingStockVaccineId ? "Resetting..." : "Confirm reset"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

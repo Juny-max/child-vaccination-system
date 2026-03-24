@@ -19,6 +19,7 @@ export interface BranchKPIs {
 }
 
 export interface StockAlert {
+  vaccineId: string;
   vaccine: string;
   remaining: number;
   status: string;
@@ -141,6 +142,17 @@ export interface LogStockPayload {
   receivedDate: string;
 }
 
+export interface ResetExpiringStockPayload {
+  vaccineId: string;
+  expiryWindowDays?: number;
+}
+
+export interface ResetExpiringStockResponse {
+  resetRows: number;
+  resetDoses: number;
+  message: string;
+}
+
 // ============================================================
 // API functions
 // ============================================================
@@ -165,6 +177,18 @@ export async function getVaccineOptions(): Promise<VaccineOption[]> {
  */
 export async function recordStockDelivery(payload: LogStockPayload): Promise<void> {
   return apiRequest<void>('/branch-manager/stock', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Reset expiring/expired stock quantities for a vaccine before restocking.
+ */
+export async function resetExpiringStock(
+  payload: ResetExpiringStockPayload,
+): Promise<ResetExpiringStockResponse> {
+  return apiRequest<ResetExpiringStockResponse>('/branch-manager/stock/reset-expiring', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

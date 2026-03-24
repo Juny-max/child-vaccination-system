@@ -21,7 +21,7 @@ import {
   CreateBranchCatchmentAreaDto,
   UpdateBranchCatchmentAreaDto,
 } from './catchment-areas.dto';
-import { LogStockDto } from './log-stock.dto';
+import { LogStockDto, ResetExpiringStockDto } from './log-stock.dto';
 import { RegisterStaffDto } from './register-staff.dto';
 import { UpdateStaffDto, UpdateStaffStatusDto } from './update-staff.dto';
 
@@ -95,6 +95,26 @@ export class BranchManagerController {
     return this.branchManagerService.logStockDelivery(
       user.branchId,
       user.id,
+      dto,
+    );
+  }
+
+  /**
+   * POST /api/branch-manager/stock/reset-expiring
+   * Clears quantity_remaining for expiring/expired stock so replacement stock starts fresh.
+   */
+  @Post('stock/reset-expiring')
+  async resetExpiringStock(
+    @CurrentUser() user: any,
+    @Body() dto: ResetExpiringStockDto,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+    return this.branchManagerService.resetExpiringStock(
+      user.branchId,
       dto,
     );
   }

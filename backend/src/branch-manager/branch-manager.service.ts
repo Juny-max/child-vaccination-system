@@ -248,7 +248,7 @@ export class BranchManagerService {
       // ── Step 6: Stock alerts from stock_inventory table ──────────────
       const { data: stockRows } = await db
         .from('stock_inventory')
-        .select('quantity_remaining, expiry_date, vaccines(name)')
+        .select('vaccine_id, quantity_remaining, expiry_date, vaccines(name)')
         .eq('facility_id', branchId)
         .order('expiry_date', { ascending: true });
 
@@ -257,23 +257,47 @@ export class BranchManagerService {
       ninetyDaysOut.setDate(ninetyDaysOut.getDate() + 90);
 
       // Aggregate quantities per vaccine name (there may be multiple batches)
-      const stockMap = new Map<string, { remaining: number; earliestExpiry: Date }>();
+      const stockMap = new Map<
+        string,
+        {
+          vaccineId: string;
+          vaccine: string;
+          remaining: number;
+          earliestExpiryAll: Date;
+          earliestExpiryWithStock: Date | null;
+        }
+      >();
       (stockRows ?? []).forEach((row: any) => {
+        const vaccineId: string = row.vaccine_id;
         const vaccineName: string = (row.vaccines as any)?.name ?? 'Unknown';
         const remaining: number = row.quantity_remaining ?? 0;
         const expiry = new Date(row.expiry_date);
-        const existing = stockMap.get(vaccineName);
+        const key = `${vaccineId}::${vaccineName}`;
+        const existing = stockMap.get(key);
         if (existing) {
           existing.remaining += remaining;
-          if (expiry < existing.earliestExpiry) existing.earliestExpiry = expiry;
+          if (expiry < existing.earliestExpiryAll) existing.earliestExpiryAll = expiry;
+          if (remaining > 0) {
+            if (!existing.earliestExpiryWithStock || expiry < existing.earliestExpiryWithStock) {
+              existing.earliestExpiryWithStock = expiry;
+            }
+          }
         } else {
-          stockMap.set(vaccineName, { remaining, earliestExpiry: expiry });
+          stockMap.set(key, {
+            vaccineId,
+            vaccine: vaccineName,
+            remaining,
+            earliestExpiryAll: expiry,
+            earliestExpiryWithStock: remaining > 0 ? expiry : null,
+          });
         }
       });
 
-      const stockAlerts = Array.from(stockMap.entries()).map(([vaccine, { remaining, earliestExpiry }]) => {
-        const daysToExpiry = Math.ceil((earliestExpiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        const isExpiringSoon = earliestExpiry <= ninetyDaysOut;
+      const stockAlerts = Array.from(stockMap.values()).map(({ vaccineId, vaccine, remaining, earliestExpiryAll, earliestExpiryWithStock }) => {
+        // Use the earliest expiry among batches that still have doses; fallback to any batch date when fully out of stock.
+        const effectiveExpiry = earliestExpiryWithStock ?? earliestExpiryAll;
+        const daysToExpiry = Math.ceil((effectiveExpiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const isExpiringSoon = effectiveExpiry <= ninetyDaysOut;
 
         let status: string;
         if (daysToExpiry <= 0) {
@@ -291,11 +315,12 @@ export class BranchManagerService {
         }
 
         return {
+          vaccineId,
           vaccine,
           remaining,
           status,
           daysToExpiry,
-          expiryDate: earliestExpiry.toISOString().split('T')[0],
+          expiryDate: effectiveExpiry.toISOString().split('T')[0],
         };
       });
 
@@ -675,6 +700,69 @@ export class BranchManagerService {
       throw new Error(`Failed to log delivery: ${error.message}`);
     }
     return data;
+  }
+
+  async resetExpiringStock(
+    branchId: string,
+    dto: {
+      vaccineId: string;
+      expiryWindowDays?: number;
+    },
+  ) {
+    const db = this.databaseService.supabase;
+    const expiryWindowDays = dto.expiryWindowDays ?? 90;
+    const today = new Date();
+    const cutoff = new Date(today);
+    cutoff.setDate(cutoff.getDate() + expiryWindowDays);
+    const cutoffDate = cutoff.toISOString().split('T')[0];
+
+    const { data: matchingRows, error: matchingError } = await db
+      .from('stock_inventory')
+      .select('id, quantity_remaining, quantity_used, quantity_received')
+      .eq('facility_id', branchId)
+      .eq('vaccine_id', dto.vaccineId)
+      .lte('expiry_date', cutoffDate)
+      .gt('quantity_remaining', 0);
+
+    if (matchingError) {
+      this.logger.error('Failed to fetch expiring stock rows for reset', matchingError);
+      throw new Error(`Failed to reset stock: ${matchingError.message}`);
+    }
+
+    if (!matchingRows || matchingRows.length === 0) {
+      return {
+        resetRows: 0,
+        resetDoses: 0,
+        message: 'No expiring stock rows were eligible for reset.',
+      };
+    }
+
+    const rowIds = matchingRows.map((r: any) => r.id);
+    const resetDoses = matchingRows.reduce(
+      (sum: number, row: any) => sum + (row.quantity_remaining ?? 0),
+      0,
+    );
+
+    for (const row of matchingRows) {
+      const { error } = await db
+        .from('stock_inventory')
+        .update({
+          quantity_used: (row.quantity_used ?? 0) + (row.quantity_remaining ?? 0),
+          quantity_remaining: 0,
+        })
+        .eq('id', row.id);
+
+      if (error) {
+        this.logger.error('Failed to reset expiring stock row', error);
+        throw new Error(`Failed to reset stock: ${error.message}`);
+      }
+    }
+
+    return {
+      resetRows: rowIds.length,
+      resetDoses,
+      message: `Reset ${resetDoses} expiring dose(s) across ${rowIds.length} stock batch(es).`,
+    };
   }
 
   async getHqBranches() {

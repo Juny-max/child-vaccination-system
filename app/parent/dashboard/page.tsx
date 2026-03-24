@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useParentDashboard } from "./dashboard-context"
 import type { Certificate } from "@/lib/api/parent"
-import { AlertTriangle, Award, CalendarDays, ChevronRight, Clock3, FileDown, QrCode, MessageCircle, Sparkles, Syringe } from "lucide-react"
+import { AlertTriangle, Award, CalendarDays, ChevronRight, Clock3, FileDown, QrCode, Sparkles, Syringe } from "lucide-react"
 import { generateCertificatePdf } from "@/lib/certificate-pdf"
 
 function toAppointmentDateTime(date: string, time?: string): Date {
@@ -356,7 +356,7 @@ export default function ParentDashboardOverview() {
         </Card>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[2fr,3fr]">
+      <section>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
@@ -413,62 +413,6 @@ export default function ParentDashboardOverview() {
                 <Clock3 className="size-4" />
               </Link>
             </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <MessageCircle className="size-5" /> Need assistance?
-            </CardTitle>
-            <CardDescription>Chat with our virtual nurse at any time</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <p>
-              Get quick answers about post-vaccination care, fever management, upcoming appointments, and how to update your child&apos;s
-              information.
-            </p>
-            <div className="space-y-2 rounded-lg bg-muted/60 p-4">
-              <p>• &ldquo;What should I expect after the MMR shot?&rdquo;</p>
-              <p>• &ldquo;Send me a reminder three days before the next vaccine.&rdquo;</p>
-              <p>• &ldquo;How do I update my child&apos;s allergy information?&rdquo;</p>
-            </div>
-            <Button asChild className="gap-2">
-              <Link href="/parent/dashboard/support">
-                Open chatbot
-                <ChevronRight className="size-4" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Clock3 className="size-5" /> Service quick links
-            </CardTitle>
-            <CardDescription>Jump directly to the section you need.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { label: "Vaccination record", href: "/parent/dashboard/vaccination-status" },
-              { label: "Missed vaccinations", href: "/parent/dashboard/missed-vaccinations" },
-              { label: "Child profile", href: "/parent/dashboard/child-details" },
-              { label: "Mother profile", href: "/parent/dashboard/mother-details" },
-              { label: "Appointments", href: "/parent/dashboard/appointments" },
-              { label: "Support center", href: "/parent/dashboard/support" },
-            ].map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3 hover:border-primary/40 hover:shadow-sm"
-              >
-                <span>{link.label}</span>
-                <ChevronRight className="size-4" />
-              </Link>
-            ))}
           </CardContent>
         </Card>
       </section>

@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from "react"
-import { AlertTriangle, CalendarDays, ClipboardList, Loader2, PhoneCall } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { AlertTriangle, CalendarDays, CheckCircle2, ClipboardList, Loader2, PhoneCall } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { TimePicker } from "@/components/ui/time-picker"
@@ -18,7 +19,6 @@ type MissedVaccination = parentApi.MissedVaccination
 export default function MissedVaccinationsPage() {
   const { children, missedVaccinations, isLoading } = useParentDashboard()
   const primaryChild = children[0]
-  const formRef = useRef<HTMLDivElement>(null)
 
   const monthsOld = useMemo(() => calculateMonthsOld(primaryChild?.dateOfBirth), [primaryChild?.dateOfBirth])
   const isCHWRecommended = monthsOld !== null && monthsOld <= 24
@@ -32,6 +32,7 @@ export default function MissedVaccinationsPage() {
   const [reason, setReason] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
+  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -48,11 +49,6 @@ export default function MissedVaccinationsPage() {
     setReason("")
     setConfirmation(null)
     setError(null)
-
-    // Scroll to form smoothly
-    setTimeout(() => {
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 100)
   }, [selectedVaccine, isCHWRecommended, primaryChild?.facilityName])
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -92,11 +88,13 @@ export default function MissedVaccinationsPage() {
       })
 
       setIsSubmitting(false)
-      setConfirmation(
+      const successMessage =
         `Your child's ${selectedVaccine.vaccine} make-up dose request has been saved and sent to ${
           visitPreference === "facility" ? preferredFacility : "the community health outreach coordinator"
-        }. We will confirm the schedule via SMS once a nurse reviews it.`,
-      )
+        }. We will confirm the schedule via SMS once a nurse reviews it.`
+      setConfirmation(successMessage)
+      setSelectedVaccine(null)
+      setIsConfirmationModalOpen(true)
     } catch (err) {
       setIsSubmitting(false)
       setError(err instanceof Error ? err.message : 'Failed to schedule appointment. Please try again.')
@@ -163,17 +161,23 @@ export default function MissedVaccinationsPage() {
         </div>
       )}
 
-      {selectedVaccine ? (
-        <div ref={formRef}>
-          <Card className="border-primary/30">
-            <CardHeader>
-              <CardTitle className="text-lg">Schedule make-up dose</CardTitle>
-              <CardDescription>
-                {selectedVaccine.vaccine} • overdue by {selectedVaccine.daysOverdue} days. Complete this form to route the
-                request to your facility team.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+      <Dialog
+        open={Boolean(selectedVaccine)}
+        onOpenChange={(open) => {
+          if (!open && !isSubmitting) {
+            setSelectedVaccine(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Schedule make-up dose</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {selectedVaccine?.vaccine || "Selected vaccine"} • overdue by {selectedVaccine?.daysOverdue || 0} days. Complete this form to route the request to your facility team.
+            </p>
+          </DialogHeader>
+
+          {selectedVaccine ? (
             <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="rounded-lg border border-border bg-background/80 p-4 text-sm text-muted-foreground">
                 {isCHWRecommended ? (
@@ -259,6 +263,7 @@ export default function MissedVaccinationsPage() {
                     date={preferredDate}
                     onDateChange={setPreferredDate}
                     placeholder="Pick a date"
+                    minDate={new Date()}
                   />
                 </div>
                 <div className="space-y-2">
@@ -305,7 +310,7 @@ export default function MissedVaccinationsPage() {
                 <Button type="submit" className="gap-2" disabled={isSubmitting}>
                   <CalendarDays className="size-4" /> {isSubmitting ? "Submitting..." : "Submit request"}
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => setSelectedVaccine(null)}>
+                <Button type="button" variant="ghost" onClick={() => setSelectedVaccine(null)} disabled={isSubmitting}>
                   Cancel
                 </Button>
               </div>
@@ -316,16 +321,27 @@ export default function MissedVaccinationsPage() {
                 </div>
               ) : null}
 
-              {confirmation ? (
-                <div className="rounded-md border border-primary/40 bg-primary/10 p-4 text-sm text-foreground">
-                  ✓ {confirmation}
-                </div>
-              ) : null}
             </form>
-          </CardContent>
-        </Card>
-        </div>
-      ) : null}
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isConfirmationModalOpen} onOpenChange={setIsConfirmationModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="sr-only">Request saved</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-3 text-center">
+            <div className="rounded-full bg-emerald-100 p-3">
+              <CheckCircle2 className="size-10 text-emerald-600 animate-bounce" />
+            </div>
+            <p className="text-sm text-foreground">✓ {confirmation}</p>
+            <Button onClick={() => setIsConfirmationModalOpen(false)} className="mt-1">
+              Okay
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader>
