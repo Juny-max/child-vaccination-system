@@ -49,7 +49,7 @@ export default function CertificatesPage() {
       issuedBy: cert.issuedBy || cert.issuedByFacility || "Unknown",
       issuedByFacility: cert.issuedByFacility || cert.issuedBy || "Unknown",
       completionStatus: cert.completionStatus === "Complete" ? "Complete" : "Partial",
-      qrPayload: cert.qrPayload || `${cert.certificateId}|${cert.childId}|${cert.childName}`,
+      qrPayload: cert.qrPayload || "",
       vaccinesCompleted: cert.vaccinesCompleted || cert.vaccines || [],
       lastVerified: cert.lastVerified || "Not verified yet",
       pdfUrl: cert.pdfUrl || null,
@@ -241,14 +241,20 @@ export default function CertificatesPage() {
                       className="group relative rounded-xl border border-border bg-white p-3 shadow-inner transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary"
                       title="Tap to enlarge QR code"
                     >
-                      <QRCodeCanvas
-                        value={record.qrPayload}
-                        size={120}
-                        includeMargin
-                        ref={(node) => assignQrRef(record.childId, node)}
-                        bgColor="#ffffff"
-                        fgColor="#111318"
-                      />
+                      {record.qrPayload ? (
+                        <QRCodeCanvas
+                          value={record.qrPayload}
+                          size={120}
+                          includeMargin
+                          ref={(node) => assignQrRef(record.childId, node)}
+                          bgColor="#ffffff"
+                          fgColor="#111318"
+                        />
+                      ) : (
+                        <div className="flex h-[120px] w-[120px] items-center justify-center rounded border border-dashed border-border text-xs text-muted-foreground">
+                          QR unavailable
+                        </div>
+                      )}
                       <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 transition-colors group-hover:bg-black/10">
                         <ZoomIn className="size-6 text-white opacity-0 drop-shadow transition-opacity group-hover:opacity-100" />
                       </span>
@@ -300,13 +306,19 @@ export default function CertificatesPage() {
           </DialogHeader>
           {qrModal && (
             <div className="rounded-2xl border border-border bg-white p-6 shadow-lg">
-              <QRCodeCanvas
-                value={qrModal.qrPayload}
-                size={220}
-                includeMargin
-                bgColor="#ffffff"
-                fgColor="#111318"
-              />
+              {qrModal.qrPayload ? (
+                <QRCodeCanvas
+                  value={qrModal.qrPayload}
+                  size={220}
+                  includeMargin
+                  bgColor="#ffffff"
+                  fgColor="#111318"
+                />
+              ) : (
+                <div className="flex h-[220px] w-[220px] items-center justify-center rounded border border-dashed border-border text-sm text-muted-foreground">
+                  QR unavailable
+                </div>
+              )}
             </div>
           )}
           <Badge variant="secondary" className="max-w-full gap-1 break-all bg-primary/10 text-xs font-mono text-primary">

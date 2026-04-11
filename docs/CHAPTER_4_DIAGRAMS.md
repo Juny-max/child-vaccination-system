@@ -7,6 +7,7 @@ This document contains all the diagrams needed for Chapter 4 of the project docu
 ## Table of Contents
 
 1. [System Overview](#1-system-overview)
+   - 1.1 [System Architecture Diagram](#11-system-architecture-diagram)
 2. [Flowcharts](#2-flowcharts)
    - 2.1 [Login with RBAC Flow](#21-login-with-rbac-flow)
    - 2.2 [Mother/Guardian Registration Flow](#22-motherguardian-registration-flow)
@@ -55,6 +56,81 @@ The Child Vaccination Command Center (CVCC) is a multi-tenant health management 
 | Data Officer | Data quality and deduplication |
 | PHA | Public Health Authority (government) |
 | Parent | Parents/Guardians of children |
+
+---
+
+### 1.1 System Architecture Diagram
+
+A high-level overview of the CVCC system showing the main layers: Users, Frontend, Backend, Database, and External Services.
+
+```mermaid
+graph TB
+    subgraph Users["Users - 7 Roles"]
+        U1["Parent"]
+        U2["Facility Nurse"]
+        U3["CHW"]
+        U4["Branch Manager"]
+        U5["Data Officer"]
+        U6["PHA"]
+        U7["HQ Admin"]
+    end
+
+    subgraph Frontend["Frontend - Next.js + React"]
+        Auth["Authentication"]
+        Portals["7 Role-Based Portals<br/>parent, facility, chw, branch, dashboard, pha, hq"]
+        PWA["Offline Support<br/>Service Worker + IndexedDB"]
+    end
+
+    subgraph Backend["Backend API - NestJS"]
+        AuthAPI["Auth Module"]
+        Modules["Feature Modules<br/>parent, facility, chw, branch, data-officer, pha, hq-admin"]
+        Services["Common Services<br/>Email, SMS, Scheduler"]
+    end
+
+    subgraph Database["Database - PostgreSQL/Supabase"]
+        Tables["21 Tables<br/>users, children, vaccines, vaccinations,<br/>appointments, certificates, audit_logs, etc."]
+    end
+
+    subgraph External["External Services"]
+        Email["Email<br/>Brevo SMTP"]
+        SMS["SMS Gateway"]
+        Maps["OpenStreetMap"]
+    end
+
+    U1 --> Auth
+    U2 --> Auth
+    U3 --> Auth
+    U4 --> Auth
+    U5 --> Auth
+    U6 --> Auth
+    U7 --> Auth
+
+    Auth --> Portals
+    Portals --> PWA
+
+    Portals --> AuthAPI
+    Portals --> Modules
+
+    AuthAPI --> Tables
+    Modules --> Tables
+
+    Services --> Email
+    Services --> SMS
+    Services --> Maps
+    Services --> Tables
+
+    classDef userStyle fill:#e3f2fd
+    classDef frontendStyle fill:#f3e5f5
+    classDef backendStyle fill:#e8f5e9
+    classDef dbStyle fill:#fffde7
+    classDef extStyle fill:#ffebee
+
+    class U1,U2,U3,U4,U5,U6,U7 userStyle
+    class Auth,Portals,PWA frontendStyle
+    class AuthAPI,Modules,Services backendStyle
+    class Tables dbStyle
+    class Email,SMS,Maps extStyle
+```
 
 ---
 

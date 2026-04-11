@@ -58,6 +58,7 @@ export enum AppointmentStatus {
 export class ChildProfileDto {
   id: string;
   childId: string;  // CVCC ID for display (e.g., CHILD-001)
+  qrPayload?: string;
   name: string;
   dateOfBirth: string;
   age: string;

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
+import { QrTokenService } from '../common/qr-token.service';
 import {
   SyncCHWVaccinationsDto,
   SyncResultDto,
@@ -28,6 +29,7 @@ type ChwOfflineChild = {
 type AssignedChild = {
   id: string;
   cvccId: string;
+  qrPayload?: string;
   fullName: string;
   dateOfBirth: string;
   gender: string;
@@ -42,7 +44,10 @@ type AssignedChild = {
 export class ChwService {
   private readonly logger = new Logger(ChwService.name);
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly qrTokenService: QrTokenService,
+  ) {}
 
   private toChildArray(rawChild: any): any[] {
     if (!rawChild) {
@@ -176,6 +181,7 @@ export class ChwService {
           children (
             id,
             cvcc_id,
+            qr_code_payload,
             full_name,
             date_of_birth,
             gender,
@@ -207,6 +213,7 @@ export class ChwService {
             deduped.set(child.id, {
               id: child.id,
               cvccId: child.cvcc_id,
+              qrPayload: child.qr_code_payload || undefined,
               fullName: child.full_name,
               dateOfBirth: child.date_of_birth,
               gender: child.gender,
@@ -269,7 +276,8 @@ export class ChwService {
   }
 
   async searchChildren(query: string, chwUserId: string) {
-    const normalized = (query || '').trim().toLowerCase();
+    const rawQuery = (query || '').trim();
+    const normalized = rawQuery.toLowerCase();
     if (!normalized) {
       return [];
     }
@@ -280,6 +288,10 @@ export class ChwService {
     // const log = { user: chwUserId, query, count: assignedChildren.length };
 
     const matches = assignedChildren.filter((child) => {
+      if (this.qrTokenService.isKnownToken(rawQuery)) {
+        return child.qrPayload === rawQuery;
+      }
+
       return (
         child.fullName.toLowerCase().includes(normalized) ||
         child.cvccId.toLowerCase().includes(normalized) ||
@@ -317,37 +329,74 @@ export class ChwService {
    * Used when CHW is online and can help children from any area
    */
   async searchAllChildren(query: string, chwUserId: string) {
-    const normalized = (query || '').trim().toLowerCase();
+    const rawQuery = (query || '').trim();
+    const normalized = rawQuery.toLowerCase();
     if (!normalized) {
       return [];
     }
 
     this.logger.debug('[CHW Search All] Starting search');
 
-    // Strategy 1: Search children by name or CVCC ID
-    const { data: childrenByName, error: nameError } = await this.db.supabase
-      .from('children')
-      .select(`
-        id,
-        cvcc_id,
-        full_name,
-        date_of_birth,
-        gender,
-        primary_facility_id,
-        child_guardian!inner (
-          is_primary,
-          guardians (
-            id,
-            full_name,
-            phone_primary,
-            community,
-            city,
-            catchment_area_id
+    let childrenByName: any[] | null = null;
+    let nameError: any = null;
+
+    // Strategy 1a: Exact token lookup for opaque QR scans
+    if (this.qrTokenService.isKnownToken(rawQuery)) {
+      const tokenQuery = await this.db.supabase
+        .from('children')
+        .select(`
+          id,
+          cvcc_id,
+          full_name,
+          date_of_birth,
+          gender,
+          primary_facility_id,
+          child_guardian!inner (
+            is_primary,
+            guardians (
+              id,
+              full_name,
+              phone_primary,
+              community,
+              city,
+              catchment_area_id
+            )
           )
-        )
-      `)
-      .or(`full_name.ilike.%${normalized}%,cvcc_id.ilike.%${normalized}%`)
-      .limit(20);
+        `)
+        .eq('qr_code_payload', rawQuery)
+        .limit(20);
+
+      childrenByName = tokenQuery.data || [];
+      nameError = tokenQuery.error;
+    } else {
+      // Strategy 1b: Search children by name or CVCC ID
+      const fuzzyQuery = await this.db.supabase
+        .from('children')
+        .select(`
+          id,
+          cvcc_id,
+          full_name,
+          date_of_birth,
+          gender,
+          primary_facility_id,
+          child_guardian!inner (
+            is_primary,
+            guardians (
+              id,
+              full_name,
+              phone_primary,
+              community,
+              city,
+              catchment_area_id
+            )
+          )
+        `)
+        .or(`full_name.ilike.%${normalized}%,cvcc_id.ilike.%${normalized}%`)
+        .limit(20);
+
+      childrenByName = fuzzyQuery.data || [];
+      nameError = fuzzyQuery.error;
+    }
 
     if (nameError) {
       throw new BadRequestException(nameError.message);

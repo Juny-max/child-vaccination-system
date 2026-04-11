@@ -94,6 +94,8 @@ export interface PHACertificateVerifyResult {
   isValid?: boolean;
   isPending?: boolean;
   certificateId: string;
+  childName?: string;
+  motherName?: string;
   issuedDate?: string;
   completionStatus?: string;
   vaccinesCompleted?: string[];
@@ -104,7 +106,8 @@ export interface PHACertificateVerifyResult {
 
 /**
  * Verify a certificate by its ID against the live database.
- * Returns only non-PII fields — no child name or guardian data.
+ * Returns validity metadata and limited identity fields for
+ * manual verification cross-checking.
  */
 export async function verifyPHACertificate(
   certificateId: string,

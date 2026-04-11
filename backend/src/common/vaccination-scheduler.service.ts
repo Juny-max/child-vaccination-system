@@ -6,6 +6,7 @@ import { SmsService } from './sms.service';
 @Injectable()
 export class VaccinationSchedulerService {
   private readonly logger = new Logger(VaccinationSchedulerService.name);
+  private readonly appointmentNoShowGraceMinutes = 120;
 
   constructor(
     private readonly db: DatabaseService,
@@ -156,6 +157,210 @@ export class VaccinationSchedulerService {
       );
     } catch (error) {
       this.logger.error('Error in vaccination reminder scheduler:', error);
+    }
+  }
+
+  private parseAppointmentContactPhone(notes: string | null | undefined): string | null {
+    if (!notes) return null;
+    const match = notes.match(/\[CONTACT_PHONE:([^\]]+)\]/i);
+    return match?.[1]?.trim() || null;
+  }
+
+  private async getGuardianPhoneById(guardianId: string | null | undefined): Promise<string | null> {
+    if (!guardianId) return null;
+
+    const { data, error } = await this.db.supabase
+      .from('guardians')
+      .select('phone_primary')
+      .eq('id', guardianId)
+      .maybeSingle();
+
+    if (error) {
+      this.logger.error(`Failed to fetch guardian phone for ${guardianId}:`, error);
+      return null;
+    }
+
+    return data?.phone_primary || null;
+  }
+
+  private async getChildNameById(childId: string | null | undefined): Promise<string> {
+    if (!childId) return 'your child';
+
+    const { data, error } = await this.db.supabase
+      .from('children')
+      .select('full_name')
+      .eq('id', childId)
+      .maybeSingle();
+
+    if (error) {
+      this.logger.error(`Failed to fetch child name for ${childId}:`, error);
+      return 'your child';
+    }
+
+    return data?.full_name || 'your child';
+  }
+
+  private getAppointmentMissDeadline(
+    scheduledDate: string,
+    scheduledTime?: string | null,
+  ): Date | null {
+    if (!scheduledDate) return null;
+
+    const [yearRaw, monthRaw, dayRaw] = scheduledDate.split('-');
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+
+    if ([year, month, day].some((value) => Number.isNaN(value))) {
+      return null;
+    }
+
+    let hour = 23;
+    let minute = 59;
+
+    if (scheduledTime && scheduledTime !== 'TBD') {
+      const [hourRaw, minuteRaw] = scheduledTime.split(':');
+      const parsedHour = Number(hourRaw);
+      const parsedMinute = Number(minuteRaw);
+
+      if (!Number.isNaN(parsedHour) && !Number.isNaN(parsedMinute)) {
+        hour = parsedHour;
+        minute = parsedMinute;
+      }
+    }
+
+    const deadlineUtcMs =
+      Date.UTC(year, month - 1, day, hour, minute, 0) +
+      this.appointmentNoShowGraceMinutes * 60 * 1000;
+
+    return new Date(deadlineUtcMs);
+  }
+
+  /**
+   * Auto-mark overdue scheduled/confirmed appointments as missed.
+   * Runs every 30 minutes in Ghana time.
+   */
+  @Cron('*/30 * * * *', {
+    name: 'appointment-no-show-check',
+    timeZone: 'Africa/Accra',
+  })
+  async autoMarkOverdueAppointmentsAsMissed() {
+    try {
+      const todayUtc = new Date().toISOString().split('T')[0];
+      const { data: appointments, error } = await this.db.supabase
+        .from('appointments')
+        .select(`
+          id,
+          child_id,
+          guardian_id,
+          scheduled_date,
+          scheduled_time,
+          status,
+          notes
+        `)
+        .in('status', ['scheduled', 'confirmed'])
+        .lte('scheduled_date', todayUtc);
+
+      if (error) {
+        this.logger.error('Error fetching overdue appointment candidates:', error);
+        return;
+      }
+
+      if (!appointments || appointments.length === 0) {
+        return;
+      }
+
+      const now = new Date();
+      let markedMissed = 0;
+      let smsSent = 0;
+
+      for (const appointment of appointments as any[]) {
+        const deadline = this.getAppointmentMissDeadline(
+          appointment.scheduled_date,
+          appointment.scheduled_time,
+        );
+
+        if (!deadline || now <= deadline) {
+          continue;
+        }
+
+        const autoMissedTag = `[AUTO_MISSED:${new Date().toISOString()}]`;
+        const updatedNotes = appointment.notes
+          ? `${appointment.notes}\n${autoMissedTag}`
+          : autoMissedTag;
+
+        const { data: updatedAppointment, error: updateError } = await this.db.supabase
+          .from('appointments')
+          .update({
+            status: 'missed',
+            notes: updatedNotes,
+          })
+          .eq('id', appointment.id)
+          .in('status', ['scheduled', 'confirmed'])
+          .select('id')
+          .maybeSingle();
+
+        if (updateError) {
+          this.logger.error(
+            `Failed to auto-mark appointment ${appointment.id} as missed:`,
+            updateError,
+          );
+          continue;
+        }
+
+        if (!updatedAppointment) {
+          continue;
+        }
+
+        markedMissed++;
+
+        const guardianPhone = await this.getGuardianPhoneById(appointment.guardian_id);
+        const contactPhone = this.parseAppointmentContactPhone(appointment.notes);
+        const recipientPhone = contactPhone || guardianPhone;
+
+        if (!recipientPhone) {
+          continue;
+        }
+
+        const childId = appointment.child_id as string | null | undefined;
+        const childName = await this.getChildNameById(childId);
+        const timeLabel = appointment.scheduled_time
+          ? ` at ${String(appointment.scheduled_time).slice(0, 5)}`
+          : '';
+        const smsMessage = `CVCC: Your appointment for ${childName} on ${appointment.scheduled_date}${timeLabel} was marked as MISSED because attendance was not recorded. Please rebook from your dashboard or contact your facility.`;
+
+        const sent = await this.smsService.sendSms(recipientPhone, smsMessage);
+
+        if (sent) {
+          smsSent++;
+          const guardianId = appointment.guardian_id as string | null | undefined;
+          if (guardianId) {
+            await this.logNotification({
+              template_id: 'appointment_missed_auto',
+              recipient_type: 'guardian',
+              recipient_id: guardianId,
+              channel: 'sms',
+              phone_number: recipientPhone,
+              subject: `Missed Appointment - ${childName}`,
+              content: smsMessage,
+              status: 'sent',
+              child_id: childId ?? undefined,
+            });
+          }
+        } else {
+          this.logger.warn(`Failed to send missed appointment SMS to ${recipientPhone}`);
+        }
+
+        await this.sleep(300);
+      }
+
+      if (markedMissed > 0 || smsSent > 0) {
+        this.logger.log(
+          `Appointment no-show check complete. Marked missed: ${markedMissed}, SMS sent: ${smsSent}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error('Error during appointment no-show scheduler job:', error);
     }
   }
 

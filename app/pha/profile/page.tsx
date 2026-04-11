@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { getProfile } from "@/lib/api/auth"
 import { toast } from "sonner"
 
 export default function PHAProfilePage() {
@@ -43,19 +44,46 @@ export default function PHAProfilePage() {
       return
     }
 
+    let isMounted = true
+
     // Read whatever the login stored
     const rawProfile = localStorage.getItem("userProfile")
     let parsed: Record<string, string> = {}
     try { parsed = rawProfile ? JSON.parse(rawProfile) : {} } catch { /* ignore */ }
 
+    const cachedName = sessionStorage.getItem("userName") || localStorage.getItem("userName") || "PHA Officer"
+
     setProfile({
-      name:       parsed.fullName  || parsed.full_name  || parsed.name  || "PHA Officer",
+      name:       parsed.fullName  || parsed.full_name  || parsed.name  || cachedName,
       email:      parsed.email     || "",
       role:       "Public Health Authority",
       region:     parsed.region    || "National",
       joinedDate: parsed.createdAt || parsed.created_at || "",
       userId:     userId           || "",
     })
+
+    const loadLiveProfile = async () => {
+      try {
+        const live = await getProfile()
+        if (!isMounted) return
+
+        setProfile((prev) => ({
+          ...prev,
+          name: live.fullName || prev.name,
+          email: live.email || prev.email,
+          joinedDate: live.createdAt || prev.joinedDate,
+          userId: live.id || prev.userId,
+        }))
+      } catch {
+        // Keep cached fallback values if live fetch fails.
+      }
+    }
+
+    loadLiveProfile()
+
+    return () => {
+      isMounted = false
+    }
   }, [router])
 
   const handlePasswordChange = async (e: React.FormEvent) => {

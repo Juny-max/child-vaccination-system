@@ -288,29 +288,98 @@ export default function FacilityDashboardPage() {
     setCameraState("idle")
   }
 
+  const extractLookupIdentifier = (decodedText: string): string => {
+    let value = (decodedText || "").trim()
+    if (!value) return ""
+
+    // Support legacy JSON payloads and any structured QR wrappers.
+    try {
+      const parsed = JSON.parse(value)
+      const candidate =
+        parsed?.childId ||
+        parsed?.id ||
+        parsed?.cvccId ||
+        parsed?.qrPayload ||
+        parsed?.certificateId ||
+        parsed?.token
+
+      if (typeof candidate === "string" && candidate.trim()) {
+        value = candidate.trim()
+      }
+    } catch {
+      // Not JSON; continue with raw string.
+    }
+
+    // Support URL payloads by extracting common id query params.
+    if (/^https?:\/\//i.test(value)) {
+      try {
+        const url = new URL(value)
+        const fromParams =
+          url.searchParams.get("id") ||
+          url.searchParams.get("childId") ||
+          url.searchParams.get("certificateId") ||
+          url.searchParams.get("token")
+
+        if (fromParams && fromParams.trim()) {
+          value = fromParams.trim()
+        } else {
+          const segments = url.pathname.split("/").filter(Boolean)
+          const lastSegment = segments[segments.length - 1]
+          if (lastSegment) {
+            value = lastSegment
+          }
+        }
+      } catch {
+        // Keep existing value if URL parsing fails.
+      }
+    }
+
+    // Support old pipe-delimited payloads by using the first segment.
+    if (value.includes("|")) {
+      value = value.split("|")[0].trim()
+    }
+
+    value = value.trim().slice(0, 100)
+
+    // Normalize known uppercase identifiers.
+    if (/^(qrc-(ch|cert)-|cert-gh-|ch-|cvcc-)/i.test(value)) {
+      value = value.toUpperCase()
+    }
+
+    return value
+  }
+
   const handleQRCodeScan = async (decodedText: string) => {
     try {
-      // The QR code should contain the child's ID or CVCC ID
-      // Try to parse it as JSON first, otherwise use as direct ID
-      let childId = decodedText
-      
-      try {
-        const parsed = JSON.parse(decodedText)
-        childId = parsed.childId || parsed.id || parsed.cvccId || decodedText
-      } catch {
-        // Not JSON, use as is
+      const lookupId = extractLookupIdentifier(decodedText)
+      if (!lookupId) {
+        setSystemMessage("Invalid QR code format. Please scan a valid child or certificate QR code.")
+        toast.error("Invalid QR code")
+        return
       }
+
+      if (!/^[a-zA-Z0-9-_]+$/.test(lookupId)) {
+        setSystemMessage("Invalid QR code content. Please scan a valid system-generated QR code.")
+        toast.error("Invalid QR code")
+        return
+      }
+
+      const isCertificateToken = /^QRC-CERT-[A-Z0-9-]{10,64}$/i.test(lookupId)
 
       setSystemMessage("Looking up child record...")
       toast.loading("Scanning QR code...")
       
       // Search for the child
-      const results = await facilityApi.searchChildren(childId)
+      const results = await facilityApi.searchChildren(lookupId)
       
       toast.dismiss()
       
       if (results.length === 0) {
-        setSystemMessage("No child found with this QR code. Please verify and try again.")
+        setSystemMessage(
+          isCertificateToken
+            ? "Certificate QR scanned, but no linked child record was found for this facility lookup."
+            : "No child found with this QR code. Please verify and try again."
+        )
         toast.error("Child not found")
         return
       }

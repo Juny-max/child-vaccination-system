@@ -59,12 +59,7 @@ export default function ChildDetailsPage() {
 
   const qrPayload = useMemo(() => {
     if (!activeChild) return ""
-    return JSON.stringify({
-      type: "cvcc-child",
-      id: activeChild.childId || activeChild.id,
-      name: activeChild.name,
-      dob: activeChild.dateOfBirth,
-    })
+    return activeChild.qrPayload || ""
   }, [activeChild])
 
   const fullHistory = useMemo(() => {

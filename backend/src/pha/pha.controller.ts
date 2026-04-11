@@ -98,9 +98,9 @@ export class PhaController {
    * GET /api/pha/certificates/verify?id=CERT-GH-2025-001234
    *
    * Verifies a certificate by its ID.
-   * Returns only non-PII fields: validity, issued date, completion status,
-   * vaccine names, issuing facility, and region.
-   * No child name, DOB, or guardian data is returned.
+    * Returns validity metadata and limited identity details for cross-checking:
+    * child name and mother/guardian name, plus issued date, completion status,
+    * vaccine names, issuing facility, and region.
    */
   @Get('certificates/verify')
   async verifyCertificate(@Query('id') id: string) {

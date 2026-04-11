@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
+import { SmsService } from '../common/sms.service';
 import {
   ChildProfileDto,
   VaccinationRecordDto,
@@ -19,7 +20,13 @@ import {
 
 @Injectable()
 export class ParentService {
-  constructor(private readonly db: DatabaseService) {}
+  private readonly appointmentRetentionDays = 30;
+  private readonly appointmentNoShowGraceMinutes = 120;
+
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly smsService: SmsService,
+  ) {}
 
   // =========================================================================
   // HELPER FUNCTIONS
@@ -125,6 +132,193 @@ export class ParentService {
     }
 
     return contacts;
+  }
+
+  /**
+   * Remove cancelled/completed appointments older than retention window.
+   */
+  private async cleanupExpiredAppointments(guardianId: string): Promise<void> {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - this.appointmentRetentionDays);
+
+    const year = cutoff.getFullYear();
+    const month = String(cutoff.getMonth() + 1).padStart(2, '0');
+    const day = String(cutoff.getDate()).padStart(2, '0');
+    const cutoffDate = `${year}-${month}-${day}`;
+
+    const { error } = await this.db.supabase
+      .from('appointments')
+      .delete()
+      .eq('guardian_id', guardianId)
+      .in('status', ['cancelled', 'completed'])
+      .lte('scheduled_date', cutoffDate);
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  private parseAppointmentContactPhone(notes: string | null | undefined): string | null {
+    if (!notes) return null;
+    const match = notes.match(/\[CONTACT_PHONE:([^\]]+)\]/i);
+    return match?.[1]?.trim() || null;
+  }
+
+  private async getGuardianPhoneById(guardianId: string | null | undefined): Promise<string | null> {
+    if (!guardianId) return null;
+
+    const { data, error } = await this.db.supabase
+      .from('guardians')
+      .select('phone_primary')
+      .eq('id', guardianId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`Failed to fetch guardian phone for ${guardianId}:`, error);
+      return null;
+    }
+
+    return data?.phone_primary || null;
+  }
+
+  private async getChildNameById(childId: string | null | undefined): Promise<string> {
+    if (!childId) return 'your child';
+
+    const { data, error } = await this.db.supabase
+      .from('children')
+      .select('full_name')
+      .eq('id', childId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`Failed to fetch child name for ${childId}:`, error);
+      return 'your child';
+    }
+
+    return data?.full_name || 'your child';
+  }
+
+  private getAppointmentMissDeadline(
+    scheduledDate: string,
+    scheduledTime?: string | null,
+  ): Date | null {
+    if (!scheduledDate) return null;
+
+    const [yearRaw, monthRaw, dayRaw] = scheduledDate.split('-');
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+
+    if ([year, month, day].some((value) => Number.isNaN(value))) {
+      return null;
+    }
+
+    let hour = 23;
+    let minute = 59;
+
+    if (scheduledTime && scheduledTime !== 'TBD') {
+      const [hourRaw, minuteRaw] = scheduledTime.split(':');
+      const parsedHour = Number(hourRaw);
+      const parsedMinute = Number(minuteRaw);
+
+      if (!Number.isNaN(parsedHour) && !Number.isNaN(parsedMinute)) {
+        hour = parsedHour;
+        minute = parsedMinute;
+      }
+    }
+
+    const deadlineUtcMs =
+      Date.UTC(year, month - 1, day, hour, minute, 0) +
+      this.appointmentNoShowGraceMinutes * 60 * 1000;
+
+    return new Date(deadlineUtcMs);
+  }
+
+  private async markOverdueAppointmentsAsMissed(guardianId: string): Promise<void> {
+    const todayUtc = new Date().toISOString().slice(0, 10);
+
+    const { data: candidates, error } = await this.db.supabase
+      .from('appointments')
+      .select(`
+        id,
+        child_id,
+        guardian_id,
+        scheduled_date,
+        scheduled_time,
+        status,
+        notes
+      `)
+      .eq('guardian_id', guardianId)
+      .in('status', ['scheduled', 'confirmed'])
+      .lte('scheduled_date', todayUtc);
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    const now = new Date();
+    for (const appointment of (candidates || []) as any[]) {
+      const deadline = this.getAppointmentMissDeadline(
+        appointment.scheduled_date,
+        appointment.scheduled_time,
+      );
+
+      if (!deadline || now <= deadline) {
+        continue;
+      }
+
+      const autoMissedTag = `[AUTO_MISSED:${new Date().toISOString()}]`;
+      const updatedNotes = appointment.notes
+        ? `${appointment.notes}\n${autoMissedTag}`
+        : autoMissedTag;
+
+      const { data: updatedAppointment, error: updateError } = await this.db.supabase
+        .from('appointments')
+        .update({
+          status: 'missed',
+          notes: updatedNotes,
+        })
+        .eq('id', appointment.id)
+        .in('status', ['scheduled', 'confirmed'])
+        .select('id')
+        .maybeSingle();
+
+      if (updateError) {
+        console.error(
+          `Failed to auto-mark appointment ${appointment.id} as missed:`,
+          updateError,
+        );
+        continue;
+      }
+
+      if (!updatedAppointment) {
+        continue;
+      }
+
+      const contactPhone = this.parseAppointmentContactPhone(appointment.notes);
+      const guardianPhone = await this.getGuardianPhoneById(appointment.guardian_id);
+      const smsTargetPhone = contactPhone || guardianPhone;
+
+      if (!smsTargetPhone) {
+        continue;
+      }
+
+      const childName = await this.getChildNameById(appointment.child_id);
+      const timeLabel = appointment.scheduled_time
+        ? ` at ${String(appointment.scheduled_time).slice(0, 5)}`
+        : '';
+      const smsMessage = `CVCC: Your appointment for ${childName} on ${appointment.scheduled_date}${timeLabel} was marked as MISSED because attendance was not recorded. Please rebook from your dashboard or contact your facility.`;
+
+      try {
+        await this.smsService.sendSms(smsTargetPhone, smsMessage);
+      } catch (smsError) {
+        console.error(
+          `Failed to send missed appointment SMS for appointment ${appointment.id}:`,
+          smsError,
+        );
+      }
+    }
   }
 
   // =========================================================================
@@ -239,6 +433,7 @@ export class ParentService {
       return {
         id: child.id,
         childId: child.cvcc_id,  // CVCC ID for display (e.g., CHILD-001)
+        qrPayload: child.qr_code_payload,
         name: child.full_name,
         dateOfBirth: child.date_of_birth,
         age: this.calculateAge(child.date_of_birth),
@@ -403,7 +598,7 @@ export class ParentService {
           completionStatus: vaccinationStatus.isComplete
             ? CertificateCompletionStatus.COMPLETE
             : CertificateCompletionStatus.PARTIAL,
-          qrPayload: `${child.childId}|${child.name}`,
+          qrPayload: child.qrPayload || `TEMP-${child.childId}`,
           vaccinesCompleted: vaccinationStatus.completedVaccines,
           lastVerified: null,
           pdfUrl: null,
@@ -468,6 +663,21 @@ export class ParentService {
 
     if (!guardian) {
       throw new NotFoundException('Guardian profile not found');
+    }
+
+    try {
+      await this.markOverdueAppointmentsAsMissed(guardian.id);
+    } catch (missedMarkError) {
+      console.error(
+        'Failed to auto-mark overdue parent appointments as missed:',
+        missedMarkError,
+      );
+    }
+
+    try {
+      await this.cleanupExpiredAppointments(guardian.id);
+    } catch (cleanupError) {
+      console.error('Failed to cleanup expired parent appointments:', cleanupError);
     }
 
     const appointments = await this.db.getAppointments(guardian.id);

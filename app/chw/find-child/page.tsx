@@ -23,6 +23,7 @@ import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 
 type LocalChildRecord = {
   id: string
+  displayId: string
   childName: string
   motherName: string
   motherPhone: string
@@ -33,6 +34,8 @@ type LocalChildRecord = {
 type CameraState = "idle" | "starting" | "active" | "error"
 
 type SearchMode = "name" | "phone"
+
+type ScanLookupState = "idle" | "loading" | "found" | "not-found" | "error"
 
 export default function ChwFindChildPage() {
   const router = useRouter()
@@ -49,6 +52,10 @@ export default function ChwFindChildPage() {
   const [showErrorDialog, setShowErrorDialog] = useState(false)
   const [errorDialogMessage, setErrorDialogMessage] = useState("")
   const [showTransferInModal, setShowTransferInModal] = useState(false)
+  const [showScanLookupModal, setShowScanLookupModal] = useState(false)
+  const [scanLookupState, setScanLookupState] = useState<ScanLookupState>("idle")
+  const [scanLookupMessage, setScanLookupMessage] = useState("")
+  const [scanLookupChild, setScanLookupChild] = useState<LocalChildRecord | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const isProcessingScan = useRef(false)
@@ -87,6 +94,7 @@ export default function ChwFindChildPage() {
 
   const mapSearchResult = (child: ChwSearchResult): LocalChildRecord => ({
     id: child.id,
+    displayId: child.childId || child.id,
     childName: child.childName,
     motherName: child.motherName,
     motherPhone: child.motherPhone,
@@ -156,6 +164,7 @@ export default function ChwFindChildPage() {
 
       const matches = local.map((child) => ({
         id: child.id,
+        displayId: child.cvccId || child.id,
         childName: child.fullName,
         motherName: child.guardianName || "Unknown",
         motherPhone: child.guardianPhone || "N/A",
@@ -305,6 +314,12 @@ export default function ChwFindChildPage() {
     await startCamera()
   }
 
+  const handleOpenScannedChildChart = () => {
+    if (!scanLookupChild) return
+    setShowScanLookupModal(false)
+    router.push(`/chw/child/${scanLookupChild.id}`)
+  }
+
   const handleQRCodeScan = async (decodedText: string) => {
     try {
       // The QR code should contain the child's ID or CVCC ID
@@ -332,6 +347,22 @@ export default function ChwFindChildPage() {
         return
       }
 
+      const isOpaqueToken = /^QRC-(CH|CERT)-[A-Z0-9-]{10,64}$/i.test(sanitizedId)
+      if (!isOnline && isOpaqueToken) {
+        const offlineTokenMessage =
+          "This QR code uses secure token format and needs internet access for verification. Please reconnect and scan again."
+        setScanLookupChild(null)
+        setScanLookupState("not-found")
+        setScanLookupMessage(offlineTokenMessage)
+        setSystemMessage(offlineTokenMessage)
+        setShowScanLookupModal(true)
+        return
+      }
+
+      setScanLookupChild(null)
+      setScanLookupState("loading")
+      setScanLookupMessage("Looking up child record from QR code...")
+      setShowScanLookupModal(true)
       setSystemMessage("Looking up child record from QR code...")
 
       // DUAL SEARCH STRATEGY (same as manual search)
@@ -339,8 +370,17 @@ export default function ChwFindChildPage() {
         // ONLINE MODE: Search only within the CHW's assigned catchment area
         const backendResults = await searchChwChildren(sanitizedId)
         if (backendResults.length > 0) {
-          // Found online, navigate to chart
-          router.push(`/chw/child/${backendResults[0].id}`)
+          const mappedResults = backendResults.map(mapSearchResult)
+          const selectedChild = mappedResults[0]
+          setResults(mappedResults)
+          setScanLookupChild(selectedChild)
+          setScanLookupState("found")
+          setScanLookupMessage(
+            backendResults.length > 1
+              ? `Found ${backendResults.length} matches. Review the child details and open the chart.`
+              : "Child found. Review the details and open the chart."
+          )
+          setSystemMessage(`QR lookup successful for ${selectedChild.childName}.`)
           return
         }
       } else {
@@ -348,22 +388,42 @@ export default function ChwFindChildPage() {
         const localChild = await chwOfflineDb.children.where("cvccId").equals(sanitizedId).first()
 
         if (localChild) {
-          router.push(`/chw/child/${localChild.id}`)
+          const mappedLocalChild: LocalChildRecord = {
+            id: localChild.id,
+            displayId: localChild.cvccId || localChild.id,
+            childName: localChild.fullName,
+            motherName: localChild.guardianName || "Unknown",
+            motherPhone: localChild.guardianPhone || "N/A",
+            nextVaccine: "Review chart",
+            village: "Offline cache",
+          }
+
+          setResults([mappedLocalChild])
+          setScanLookupChild(mappedLocalChild)
+          setScanLookupState("found")
+          setScanLookupMessage("Child found in offline cache. Open the chart to continue.")
+          setSystemMessage(`Offline QR lookup successful for ${mappedLocalChild.childName}.`)
           return
         }
       }
 
       // Not found in any mode
-      setErrorDialogMessage(
+      const notFoundMessage =
         isOnline
           ? "No child found with this QR code in your catchment area. If this child has moved in, use Transfer In."
           : "No child found with this QR code in your offline cache. Connect to internet to search your catchment."
-      )
-      setShowErrorDialog(true)
+
+      setScanLookupChild(null)
+      setScanLookupState("not-found")
+      setScanLookupMessage(notFoundMessage)
+      setSystemMessage(notFoundMessage)
     } catch (error) {
       console.error("QR scan failed", error)
-      setErrorDialogMessage("QR lookup failed. Please try manual search instead.")
-      setShowErrorDialog(true)
+      setScanLookupChild(null)
+      setScanLookupState("error")
+      setScanLookupMessage("QR lookup failed. Please try manual search instead.")
+      setSystemMessage("QR lookup failed. Please try manual search instead.")
+      setShowScanLookupModal(true)
     }
   }
 
@@ -538,7 +598,7 @@ export default function ChwFindChildPage() {
                         <div>
                           <p className="text-sm font-semibold text-foreground">{child.childName}</p>
                           <p className="text-xs text-muted-foreground">Mother: {child.motherName}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{child.id}</p>
+                          <p className="text-xs text-muted-foreground font-mono">CVCC ID: {child.displayId}</p>
                         </div>
                         <div className="flex flex-col items-start gap-2 sm:items-end">
                           <Badge variant="secondary" className="text-xs">{child.nextVaccine}</Badge>
@@ -614,7 +674,7 @@ export default function ChwFindChildPage() {
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Once the QR is decoded, the offline chart opens instantly. No internet needed on the field.
+                Once the QR is decoded, a lookup modal appears so you can confirm before opening the child chart.
               </p>
             )}
           </CardContent>
@@ -622,18 +682,104 @@ export default function ChwFindChildPage() {
       </main>
 
       <Dialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-lg">
           <DialogHeader>
             <div className="mx-auto mb-2 h-28 w-28">
               <DotLottieReact src="/Sign%20for%20error%20_%20Flat%20style.lottie" autoplay loop className="h-full w-full" />
             </div>
-            <DialogTitle className="text-center text-xl">Child Not Found</DialogTitle>
+            <DialogTitle className="text-center text-2xl sm:text-3xl">Child Not Found</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-center">
-            <p className="text-sm text-muted-foreground">{errorDialogMessage}</p>
-            <Button className="w-full" onClick={() => setShowErrorDialog(false)}>
+            <p className="text-base sm:text-lg leading-relaxed text-muted-foreground">{errorDialogMessage}</p>
+            <Button className="h-12 w-full text-base" onClick={() => setShowErrorDialog(false)}>
               Close
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showScanLookupModal}
+        onOpenChange={(open) => {
+          if (scanLookupState === "loading" && !open) return
+          setShowScanLookupModal(open)
+          if (!open && scanLookupState !== "loading") {
+            setScanLookupState("idle")
+            setScanLookupChild(null)
+            setScanLookupMessage("")
+          }
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-lg md:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-center text-2xl sm:text-3xl">
+              {scanLookupState === "loading"
+                ? "Checking QR code"
+                : scanLookupState === "found"
+                ? "Child Found"
+                : scanLookupState === "not-found"
+                ? "Child Not Found"
+                : "QR Lookup Error"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {scanLookupState === "loading" ? (
+              <div className="flex flex-col items-center gap-3 py-2">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-base sm:text-lg leading-relaxed text-muted-foreground">{scanLookupMessage}</p>
+              </div>
+            ) : null}
+
+            {scanLookupState !== "loading" ? (
+              <p className="text-base sm:text-lg leading-relaxed text-muted-foreground text-center">{scanLookupMessage}</p>
+            ) : null}
+
+            {scanLookupState === "found" && scanLookupChild ? (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+                <p className="text-lg sm:text-xl font-semibold text-foreground">{scanLookupChild.childName}</p>
+                <p className="mt-1 text-sm sm:text-base text-muted-foreground">Mother: {scanLookupChild.motherName}</p>
+                <p className="text-sm sm:text-base text-muted-foreground">Phone: {scanLookupChild.motherPhone}</p>
+                <p className="text-sm sm:text-base text-muted-foreground font-mono">CVCC ID: {scanLookupChild.displayId}</p>
+                <p className="mt-2 text-sm sm:text-base text-muted-foreground">Village: {scanLookupChild.village}</p>
+              </div>
+            ) : null}
+
+            {scanLookupState === "found" && scanLookupChild ? (
+              <div className="flex flex-col gap-2">
+                <Button className="h-12 w-full text-base" onClick={handleOpenScannedChildChart}>
+                  Open child chart
+                </Button>
+                <Button variant="outline" className="h-12 w-full text-base" onClick={() => setShowScanLookupModal(false)}>
+                  Continue scanning
+                </Button>
+              </div>
+            ) : null}
+
+            {scanLookupState === "not-found" ? (
+              <div className="flex flex-col gap-2">
+                {isOnline ? (
+                  <Button
+                    className="h-12 w-full text-base"
+                    onClick={() => {
+                      setShowScanLookupModal(false)
+                      setShowTransferInModal(true)
+                    }}
+                  >
+                    Transfer child in
+                  </Button>
+                ) : null}
+                <Button variant="outline" className="h-12 w-full text-base" onClick={() => setShowScanLookupModal(false)}>
+                  Close
+                </Button>
+              </div>
+            ) : null}
+
+            {scanLookupState === "error" ? (
+              <Button className="h-12 w-full text-base" onClick={() => setShowScanLookupModal(false)}>
+                Close
+              </Button>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>

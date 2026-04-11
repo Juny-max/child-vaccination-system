@@ -7,6 +7,7 @@ import { apiRequest } from './config';
 export interface ChildProfile {
   id: string;
   childId: string;
+  qrPayload?: string;
   name: string;
   dateOfBirth: string;
   age: string;

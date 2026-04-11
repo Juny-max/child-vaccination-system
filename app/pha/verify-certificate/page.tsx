@@ -28,6 +28,8 @@ import { verifyPHACertificate, type PHACertificateVerifyResult } from "@/lib/api
 type VerificationResult = {
   status: "valid" | "revoked" | "pending" | "not-found"
   certificateId: string
+  childName?: string
+  motherName?: string
   data?: {
     issuedDate: string
     completionStatus: string
@@ -76,13 +78,20 @@ export default function VerifyCertificatePage() {
         setLog((prev) => [{ time: "Just now", certificateId: id.trim(), result: "Not Found" }, ...prev.slice(0, 4)])
         toast.error("Certificate not found in system")
       } else if (res.isPending) {
-        setVerificationResult({ status: "pending", certificateId: res.certificateId })
+        setVerificationResult({
+          status: "pending",
+          certificateId: res.certificateId,
+          childName: res.childName,
+          motherName: res.motherName,
+        })
         setLog((prev) => [{ time: "Just now", certificateId: id.trim(), result: "Pending" }, ...prev.slice(0, 4)])
         toast.info("Child is registered — vaccination in progress, no certificate issued yet")
       } else if (!res.isValid) {
         setVerificationResult({
           status: "revoked",
           certificateId: res.certificateId,
+          childName: res.childName,
+          motherName: res.motherName,
           data: {
             issuedDate: res.issuedDate ?? "",
             completionStatus: res.completionStatus ?? "",
@@ -97,6 +106,8 @@ export default function VerifyCertificatePage() {
         setVerificationResult({
           status: "valid",
           certificateId: res.certificateId,
+          childName: res.childName,
+          motherName: res.motherName,
           data: {
             issuedDate: res.issuedDate ?? "",
             completionStatus: res.completionStatus ?? "",
@@ -131,7 +142,7 @@ export default function VerifyCertificatePage() {
   }
 
   const handleQRScanSuccess = (decodedText: string) => {
-    // QR payload format is "certificateId|childId|childName" — extract just the first part
+    // Accept opaque token payloads first, then legacy JSON/pipe formats.
     let certId = decodedText.trim()
     try {
       const parsed = JSON.parse(decodedText)
@@ -166,7 +177,7 @@ export default function VerifyCertificatePage() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>✅ This tool confirms that a digital vaccination certificate is authentic and issued by an authorized facility.</p>
-            <p>🔒 For privacy protection, the system only verifies the certificate&apos;s validity - it does NOT display the child&apos;s personal information (name, date of birth, etc.).</p>
+            <p>🔒 To support identity cross-checking, the system displays only the child&apos;s name and mother/guardian name. It does NOT display date of birth, phone numbers, or addresses.</p>
             <p>📱 You can verify by entering the Certificate ID manually or by scanning the certificate&apos;s QR code.</p>
           </CardContent>
         </Card>
@@ -286,6 +297,18 @@ export default function VerifyCertificatePage() {
                   {/* Certificate Details */}
                   <div className="rounded-lg border bg-background p-4">
                     <dl className="space-y-3 text-sm">
+                      {verificationResult.childName && (
+                        <div className="flex items-center justify-between border-b pb-2">
+                          <dt className="font-semibold text-foreground">Child Name</dt>
+                          <dd className="text-muted-foreground">{verificationResult.childName}</dd>
+                        </div>
+                      )}
+                      {verificationResult.motherName && (
+                        <div className="flex items-center justify-between border-b pb-2">
+                          <dt className="font-semibold text-foreground">Mother Name</dt>
+                          <dd className="text-muted-foreground">{verificationResult.motherName}</dd>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between border-b pb-2">
                         <dt className="font-semibold text-foreground">Certificate ID</dt>
                         <dd className="font-mono text-sm text-muted-foreground">{verificationResult.certificateId}</dd>
@@ -341,7 +364,7 @@ export default function VerifyCertificatePage() {
                   {/* Privacy Notice */}
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:bg-blue-950/20">
                     <p className="text-xs text-blue-700 dark:text-blue-400">
-                      🔒 For privacy protection, this system does NOT display the child&apos;s name, date of birth, or parent contact information. This verification confirms only that the certificate itself is genuine.
+                      🔒 Only limited identity details are shown (child and mother/guardian names) to support manual cross-checking. Sensitive details such as date of birth and contact numbers remain hidden.
                     </p>
                   </div>
                 </div>
@@ -362,7 +385,19 @@ export default function VerifyCertificatePage() {
                     </div>
                   </div>
                   <div className="rounded-lg border bg-background p-4">
-                    <dl className="text-sm">
+                    <dl className="space-y-3 text-sm">
+                      {verificationResult.childName && (
+                        <div className="flex items-center justify-between border-b pb-2">
+                          <dt className="font-semibold text-foreground">Child Name</dt>
+                          <dd className="text-muted-foreground">{verificationResult.childName}</dd>
+                        </div>
+                      )}
+                      {verificationResult.motherName && (
+                        <div className="flex items-center justify-between border-b pb-2">
+                          <dt className="font-semibold text-foreground">Mother Name</dt>
+                          <dd className="text-muted-foreground">{verificationResult.motherName}</dd>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between">
                         <dt className="font-semibold text-foreground">Certificate ID</dt>
                         <dd className="font-mono text-sm text-muted-foreground">{verificationResult.certificateId}</dd>
@@ -387,7 +422,19 @@ export default function VerifyCertificatePage() {
                     </div>
                   </div>
                   <div className="rounded-lg border bg-background p-4">
-                    <dl className="text-sm">
+                    <dl className="space-y-3 text-sm">
+                      {verificationResult.childName && (
+                        <div className="flex items-center justify-between border-b pb-2">
+                          <dt className="font-semibold text-foreground">Child Name</dt>
+                          <dd className="text-muted-foreground">{verificationResult.childName}</dd>
+                        </div>
+                      )}
+                      {verificationResult.motherName && (
+                        <div className="flex items-center justify-between border-b pb-2">
+                          <dt className="font-semibold text-foreground">Mother Name</dt>
+                          <dd className="text-muted-foreground">{verificationResult.motherName}</dd>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between">
                         <dt className="font-semibold text-foreground">Reference ID</dt>
                         <dd className="font-mono text-sm text-muted-foreground">{verificationResult.certificateId}</dd>

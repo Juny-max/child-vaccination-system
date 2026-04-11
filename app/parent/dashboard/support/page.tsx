@@ -49,6 +49,9 @@ const EMPTY_BOOKING_DRAFT: BookingDraft = {
   notes: '',
 }
 
+// Keep chatbot logic ready, but hide AI frontend during presentation.
+const SHOW_AI_SUPPORT_FRONTEND = false
+
 function toDateInputString(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -551,227 +554,230 @@ export default function SupportPage() {
 
   return (
     <div className="space-y-6 lg:space-y-8">
-      {/* Header Card */}
-      <Card className="border-primary/20 bg-gradient-to-r from-primary/10 via-secondary/10 to-muted">
-        <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <Badge variant="secondary" className="mb-2 inline-flex items-center gap-1">
-              <Sparkles className="size-3" /> AI-powered assistant
-            </Badge>
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <Bot className="size-6" /> Virtual Assistant
-            </CardTitle>
-            <CardDescription>
-              Ask questions about your children&apos;s vaccinations, get personalized advice, and learn about post-care guidance.
-            </CardDescription>
-          </div>
-          <Button 
-            variant={isChatOpen ? "outline" : "secondary"} 
-            size="sm" 
-            className="gap-2" 
-            onClick={isChatOpen ? () => setIsChatOpen(false) : handleLaunchChatbot}
-          >
-            <MessageCircle className="size-4" /> 
-            {isChatOpen ? 'Minimize chat' : 'Launch chatbot'}
-          </Button>
-        </CardHeader>
-      </Card>
-      {/* Live audio session is rendered inside input area (see input) */}
-
-      {/* Chat Interface */}
-      {isChatOpen && (
-        <Card className="border-primary/40 shadow-lg">
-          <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-full bg-primary/10">
-                <Bot className="size-5 text-primary" />
-              </div>
+      {SHOW_AI_SUPPORT_FRONTEND ? (
+        <>
+          {/* Header Card */}
+          <Card className="border-primary/20 bg-gradient-to-r from-primary/10 via-secondary/10 to-muted">
+            <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <CardTitle className="text-lg">Virtual Nurse</CardTitle>
-                <CardDescription className="flex items-center gap-1">
-                  <span className="size-2 rounded-full bg-green-500"></span>
-                  Online • Powered by AI
+                <Badge variant="secondary" className="mb-2 inline-flex items-center gap-1">
+                  <Sparkles className="size-3" /> AI-powered assistant
+                </Badge>
+                <CardTitle className="flex items-center gap-2 text-2xl">
+                  <Bot className="size-6" /> Virtual Assistant
+                </CardTitle>
+                <CardDescription>
+                  Ask questions about your children&apos;s vaccinations, get personalized advice, and learn about post-care guidance.
                 </CardDescription>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={handleClearChat} title="Clear chat">
-                <RefreshCw className="size-4" />
+              <Button
+                variant={isChatOpen ? "outline" : "secondary"}
+                size="sm"
+                className="gap-2"
+                onClick={isChatOpen ? () => setIsChatOpen(false) : handleLaunchChatbot}
+              >
+                <MessageCircle className="size-4" />
+                {isChatOpen ? 'Minimize chat' : 'Launch chatbot'}
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => setIsChatOpen(false)}>
-                <X className="size-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          
-          <CardContent className="p-0">
-            {/* Messages Area */}
-            <div ref={messagesContainerRef} className="h-[400px] space-y-4 overflow-y-auto p-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "flex gap-3",
-                    message.role === 'user' ? "flex-row-reverse" : "flex-row"
-                  )}
-                >
-                  <div className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-full",
-                    message.role === 'user' 
-                      ? "bg-primary text-primary-foreground" 
-                      : "bg-muted"
-                  )}>
-                    {message.role === 'user' ? (
-                      <User className="size-4" />
-                    ) : (
-                      <Bot className="size-4" />
-                    )}
+            </CardHeader>
+          </Card>
+          {/* Live audio session is rendered inside input area (see input) */}
+
+          {/* Chat Interface */}
+          {isChatOpen && (
+            <Card className="border-primary/40 shadow-lg">
+              <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-10 items-center justify-center rounded-full bg-primary/10">
+                    <Bot className="size-5 text-primary" />
                   </div>
-                  <div
-                    className={cn(
-                      "max-w-[80%] rounded-2xl px-4 py-3 text-sm",
-                      message.role === 'user'
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-foreground"
-                    )}
-                  >
-                    <div className="whitespace-pre-wrap">{message.content}</div>
-                    <div className={cn(
-                      "mt-1 text-xs",
-                      message.role === 'user' ? "text-primary-foreground/70" : "text-muted-foreground"
-                    )}>
-                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  <div>
+                    <CardTitle className="text-lg">Virtual Nurse</CardTitle>
+                    <CardDescription className="flex items-center gap-1">
+                      <span className="size-2 rounded-full bg-green-500"></span>
+                      Online • Powered by AI
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="icon" onClick={handleClearChat} title="Clear chat">
+                    <RefreshCw className="size-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => setIsChatOpen(false)}>
+                    <X className="size-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-0">
+                {/* Messages Area */}
+                <div ref={messagesContainerRef} className="h-[400px] space-y-4 overflow-y-auto p-4">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={cn(
+                        "flex gap-3",
+                        message.role === 'user' ? "flex-row-reverse" : "flex-row"
+                      )}
+                    >
+                      <div className={cn(
+                        "flex size-8 shrink-0 items-center justify-center rounded-full",
+                        message.role === 'user'
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted"
+                      )}>
+                        {message.role === 'user' ? (
+                          <User className="size-4" />
+                        ) : (
+                          <Bot className="size-4" />
+                        )}
+                      </div>
+                      <div
+                        className={cn(
+                          "max-w-[80%] rounded-2xl px-4 py-3 text-sm",
+                          message.role === 'user'
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-foreground"
+                        )}
+                      >
+                        <div className="whitespace-pre-wrap">{message.content}</div>
+                        <div className={cn(
+                          "mt-1 text-xs",
+                          message.role === 'user' ? "text-primary-foreground/70" : "text-muted-foreground"
+                        )}>
+                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Loading indicator */}
+                  {isLoading && (
+                    <div className="flex gap-3">
+                      <div className="flex size-8 items-center justify-center rounded-full bg-muted">
+                        <Bot className="size-4" />
+                      </div>
+                      <div className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" />
+                        Thinking...
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+
+                {/* Quick Replies */}
+                {messages.length <= 1 && !isLoading && (
+                  <div className="border-t px-4 py-3">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Suggested questions:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {quickReplies.map((reply, idx) => (
+                        <Button
+                          key={idx}
+                          variant="outline"
+                          size="sm"
+                          className="h-auto whitespace-normal py-2 text-left text-xs"
+                          onClick={() => handleSendMessage(reply)}
+                        >
+                          {reply}
+                        </Button>
+                      ))}
                     </div>
                   </div>
-                </div>
-              ))}
-              
-              {/* Loading indicator */}
-              {isLoading && (
-                <div className="flex gap-3">
-                  <div className="flex size-8 items-center justify-center rounded-full bg-muted">
-                    <Bot className="size-4" />
+                )}
+
+                {/* Error Display */}
+                {error && (
+                  <div className="border-t bg-destructive/10 px-4 py-2 text-xs text-destructive">
+                    {error}
                   </div>
-                  <div className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
-                    Thinking...
-                  </div>
-                </div>
-              )}
-              
+                )}
 
-            </div>
-
-            {/* Quick Replies */}
-            {messages.length <= 1 && !isLoading && (
-              <div className="border-t px-4 py-3">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">Suggested questions:</p>
-                <div className="flex flex-wrap gap-2">
-                  {quickReplies.map((reply, idx) => (
-                    <Button
-                      key={idx}
-                      variant="outline"
-                      size="sm"
-                      className="h-auto whitespace-normal py-2 text-left text-xs"
-                      onClick={() => handleSendMessage(reply)}
-                    >
-                      {reply}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Error Display */}
-            {error && (
-              <div className="border-t bg-destructive/10 px-4 py-2 text-xs text-destructive">
-                {error}
-              </div>
-            )}
-
-            {/* Input Area */}
-            <div className="border-t p-4">
-              {bookingActive && bookingAwaiting === 'confirm' && (
-                <div className="mb-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
-                  <p className="text-sm font-semibold text-foreground">Confirm appointment details</p>
-                  <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                    <p><span className="font-medium text-foreground">Child:</span> {bookingDraft.childName}</p>
-                    <p><span className="font-medium text-foreground">Date:</span> {bookingDraft.date}</p>
-                    <p><span className="font-medium text-foreground">Time:</span> {bookingDraft.time}</p>
-                    <p><span className="font-medium text-foreground">Contact:</span> {bookingDraft.contactPhone}</p>
-                    <p><span className="font-medium text-foreground">Preferred facility:</span> {bookingDraft.preferredFacility || 'Any participating clinic'}</p>
-                    <p><span className="font-medium text-foreground">Notes:</span> {bookingDraft.notes || 'None'}</p>
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <Button
-                      size="sm"
-                      className="gap-2"
-                      disabled={isLoading || isBookingInProgress}
-                      onClick={() => handleSendMessage('yes')}
-                    >
-                      {isBookingInProgress ? <Loader2 className="size-3.5 animate-spin" /> : null}
-                      Confirm
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={isLoading || isBookingInProgress}
-                      onClick={() => handleSendMessage('no')}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <textarea
-                  ref={inputRef}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask about vaccinations, appointments, or child care..."
-                  disabled={isLoading || isBookingInProgress}
-                  className="min-h-[44px] max-h-[120px] flex-1 resize-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-                  rows={1}
-                />
-                <GeminiLiveSession
-                  chatContext={chatContext}
-                  onTranscriptUpdate={(userText, botText) => {
-                    if (userText) {
-                      handleSendMessage(userText, botText)
-                    } else if (botText) {
-                      addAssistantMessage(botText)
-                    }
-                  }}
-                  enabled={isChatOpen}
-                />
-
-                <Button 
-                  onClick={() => handleSendMessage()} 
-                  disabled={!draft.trim() || isLoading || isBookingInProgress}
-                  size="icon"
-                  className="size-11 shrink-0 rounded-xl"
-                >
-                  {isLoading || isBookingInProgress ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Send className="size-4" />
+                {/* Input Area */}
+                <div className="border-t p-4">
+                  {bookingActive && bookingAwaiting === 'confirm' && (
+                    <div className="mb-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                      <p className="text-sm font-semibold text-foreground">Confirm appointment details</p>
+                      <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                        <p><span className="font-medium text-foreground">Child:</span> {bookingDraft.childName}</p>
+                        <p><span className="font-medium text-foreground">Date:</span> {bookingDraft.date}</p>
+                        <p><span className="font-medium text-foreground">Time:</span> {bookingDraft.time}</p>
+                        <p><span className="font-medium text-foreground">Contact:</span> {bookingDraft.contactPhone}</p>
+                        <p><span className="font-medium text-foreground">Preferred facility:</span> {bookingDraft.preferredFacility || 'Any participating clinic'}</p>
+                        <p><span className="font-medium text-foreground">Notes:</span> {bookingDraft.notes || 'None'}</p>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <Button
+                          size="sm"
+                          className="gap-2"
+                          disabled={isLoading || isBookingInProgress}
+                          onClick={() => handleSendMessage('yes')}
+                        >
+                          {isBookingInProgress ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                          Confirm
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isLoading || isBookingInProgress}
+                          onClick={() => handleSendMessage('no')}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
                   )}
-                </Button>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Press Enter to send • Shift+Enter for new line
-              </p>
-              {bookingActive && (
-                <p className="mt-1 text-xs text-primary">
-                  Appointment booking in progress • type "cancel booking" to stop.
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+
+                  <div className="flex gap-2">
+                    <textarea
+                      ref={inputRef}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Ask about vaccinations, appointments, or child care..."
+                      disabled={isLoading || isBookingInProgress}
+                      className="min-h-[44px] max-h-[120px] flex-1 resize-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+                      rows={1}
+                    />
+                    <GeminiLiveSession
+                      chatContext={chatContext}
+                      onTranscriptUpdate={(userText, botText) => {
+                        if (userText) {
+                          handleSendMessage(userText, botText)
+                        } else if (botText) {
+                          addAssistantMessage(botText)
+                        }
+                      }}
+                      enabled={isChatOpen}
+                    />
+
+                    <Button
+                      onClick={() => handleSendMessage()}
+                      disabled={!draft.trim() || isLoading || isBookingInProgress}
+                      size="icon"
+                      className="size-11 shrink-0 rounded-xl"
+                    >
+                      {isLoading || isBookingInProgress ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Send className="size-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Press Enter to send • Shift+Enter for new line
+                  </p>
+                  {bookingActive && (
+                    <p className="mt-1 text-xs text-primary">
+                      Appointment booking in progress • type "cancel booking" to stop.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      ) : null}
 
       {/* Human Support Card */}
       <Card>

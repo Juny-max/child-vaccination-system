@@ -221,6 +221,7 @@ export class AuthService {
         role: normalizedRole,
         phoneNumber: user.phone_number,
         lastLogin: user.last_login,
+        createdAt: user.created_at,
         branchId: user.branch_id || undefined,
       },
       mustChangePassword: user.must_change_password || false,
@@ -330,6 +331,7 @@ export class AuthService {
         role: newUser.role,
         phoneNumber: newUser.phone_number,
         lastLogin: undefined,
+        createdAt: newUser.created_at,
       },
     };
   }
@@ -410,6 +412,7 @@ export class AuthService {
       role: user.role,
       phoneNumber: user.phone_number,
       lastLogin: user.last_login,
+      createdAt: user.created_at,
     };
   }
 
@@ -440,6 +443,7 @@ export class AuthService {
         role: user.role,
         phoneNumber: user.phone_number,
         lastLogin: user.last_login,
+        createdAt: user.created_at,
         branchId: user.branch_id || undefined,
       };
     } catch (error: any) {

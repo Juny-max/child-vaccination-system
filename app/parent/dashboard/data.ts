@@ -40,7 +40,7 @@ export const certificateRecords: CertificateRecord[] = [
     issuedDate: "October 12, 2025",
     issuedBy: "Accra Central Health Center",
     completionStatus: "Complete",
-    qrPayload: "CERT-GH-2025-001234|CHILD-001|Esi Boadu|Complete",
+    qrPayload: "QRC-CERT-C9X4M7N2P5R8T1V6K3L0",
     vaccinesCompleted: [
       "BCG",
       "OPV0",
@@ -61,7 +61,7 @@ export const certificateRecords: CertificateRecord[] = [
     issuedDate: "September 02, 2025",
     issuedBy: "Accra Central Health Center",
     completionStatus: "Partial",
-    qrPayload: "CERT-GH-2025-001567|CHILD-002|Kojo Asante|Partial",
+    qrPayload: "QRC-CERT-H6Q1Z8D4F7K2N5P9T3R0",
     vaccinesCompleted: [
       "BCG",
       "OPV0",
@@ -78,7 +78,7 @@ export const certificateRecords: CertificateRecord[] = [
     issuedDate: "August 20, 2025",
     issuedBy: "Madina Community Clinic",
     completionStatus: "Complete",
-    qrPayload: "CERT-GH-2025-002045|CHILD-003|Zara Asante|Complete",
+    qrPayload: "QRC-CERT-P4V9M2X7L1C8R5N6D3T0",
     vaccinesCompleted: [
       "BCG",
       "OPV0",

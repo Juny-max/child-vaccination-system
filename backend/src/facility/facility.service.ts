@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException, ConflictExc
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { SmsService } from '../common/sms.service';
+import { QrTokenService } from '../common/qr-token.service';
 import {
   ChildSearchResultDto,
   FacilityChildProfileDto,
@@ -33,6 +34,7 @@ export class FacilityService {
     private readonly db: DatabaseService,
     private readonly emailService: EmailService,
     private readonly smsService: SmsService,
+    private readonly qrTokenService: QrTokenService,
   ) {}
 
   /**
@@ -42,38 +44,83 @@ export class FacilityService {
     query: string,
     facilityId?: string,
   ): Promise<ChildSearchResultDto[]> {
-    const trimmedQuery = query.trim().toLowerCase();
+    const rawQuery = query.trim();
+    const trimmedQuery = rawQuery.toLowerCase();
+
+    let children: any[] | null = null;
+    const childSelect = `
+          id,
+          cvcc_id,
+          full_name,
+          date_of_birth,
+          gender,
+          primary_facility_id,
+          child_guardian!inner (
+            guardian_id,
+            is_primary,
+            guardians (
+              id,
+              full_name,
+              phone_primary
+            )
+          ),
+          branches:primary_facility_id (
+            id,
+            name
+          )
+        `;
+
+    // Opaque QR tokens are resolved by exact match to avoid fuzzy collisions.
+    if (this.qrTokenService.isChildToken(rawQuery)) {
+      const { data: tokenChildren, error: tokenError } = await this.db.supabase
+        .from('children')
+        .select(childSelect)
+        .eq('qr_code_payload', rawQuery)
+        .limit(10);
+
+      if (tokenError) throw new Error(tokenError.message);
+      children = tokenChildren || [];
+    } else if (this.qrTokenService.isCertificateToken(rawQuery)) {
+      const { data: certificate, error: certificateError } = await this.db.supabase
+        .from('certificates')
+        .select('child_id')
+        .eq('qr_payload', rawQuery)
+        .single();
+
+      if (certificateError) {
+        // PGRST116 means no row found; treat as no match and continue to normal search.
+        if (certificateError.code !== 'PGRST116') {
+          throw new Error(certificateError.message);
+        }
+      }
+
+      if (certificate?.child_id) {
+        const { data: certChildren, error: certChildError } = await this.db.supabase
+          .from('children')
+          .select(childSelect)
+          .eq('id', certificate.child_id)
+          .limit(1);
+
+        if (certChildError) throw new Error(certChildError.message);
+        children = certChildren || [];
+      } else {
+        children = [];
+      }
+    }
 
     // Search in children table with joins using child_guardian pivot table
-    const { data: children, error } = await this.db.supabase
-      .from('children')
-      .select(`
-        id,
-        cvcc_id,
-        full_name,
-        date_of_birth,
-        gender,
-        primary_facility_id,
-        child_guardian!inner (
-          guardian_id,
-          is_primary,
-          guardians (
-            id,
-            full_name,
-            phone_primary
-          )
-        ),
-        branches:primary_facility_id (
-          id,
-          name
+    if (!children || children.length === 0) {
+      const { data: fuzzyChildren, error } = await this.db.supabase
+        .from('children')
+        .select(childSelect)
+        .or(
+          `cvcc_id.ilike.%${trimmedQuery}%,full_name.ilike.%${trimmedQuery}%`,
         )
-      `)
-      .or(
-        `cvcc_id.ilike.%${trimmedQuery}%,full_name.ilike.%${trimmedQuery}%`,
-      )
-      .limit(10);
+        .limit(10);
 
-    if (error) throw new Error(error.message);
+      if (error) throw new Error(error.message);
+      children = fuzzyChildren || [];
+    }
 
     // Also search by guardian phone
     const { data: byPhone, error: phoneError } = await this.db.supabase
@@ -994,37 +1041,57 @@ export class FacilityService {
       throw new BadRequestException('Selected guardian was not found. Please refresh and try again.');
     }
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const cvccId = `CVCC-${dateStr}-${randomSuffix}`;
-    const qrPayload = JSON.stringify({ cvccId });
+    let cvccId = '';
+    let child: { id: string } | null = null;
+    let lastError: any = null;
 
-    const { data: child, error: childError } = await this.db.supabase
-      .from('children')
-      .insert({
-        cvcc_id: cvccId,
-        qr_code_payload: qrPayload,
-        full_name: dto.fullName,
-        date_of_birth: dto.dateOfBirth,
-        gender: dto.gender,
-        birth_weight: dto.birthWeight ?? null,
-        birth_length: dto.birthLength ?? null,
-        head_circumference: dto.headCircumference ?? null,
-        place_of_birth: dto.placeOfBirth || null,
-        delivery_type: dto.deliveryType || null,
-        birth_order: dto.birthOrder || null,
-        blood_type: dto.bloodType || null,
-        critical_notes: dto.notes || null,
-        profile_photo_url: dto.profilePhotoUrl || null,
-        primary_facility_id: facilityId,
-        created_by_user_id: userId,
-        is_active: true,
-      })
-      .select('id')
-      .single();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      cvccId = `CVCC-${dateStr}-${randomSuffix}`;
+      const qrPayload = this.qrTokenService.generateChildToken();
 
-    if (childError || !child) {
-      throw new Error(`Failed to register child: ${childError?.message || 'Unknown error'}`);
+      const { data: insertedChild, error: childError } = await this.db.supabase
+        .from('children')
+        .insert({
+          cvcc_id: cvccId,
+          qr_code_payload: qrPayload,
+          full_name: dto.fullName,
+          date_of_birth: dto.dateOfBirth,
+          gender: dto.gender,
+          birth_weight: dto.birthWeight ?? null,
+          birth_length: dto.birthLength ?? null,
+          head_circumference: dto.headCircumference ?? null,
+          place_of_birth: dto.placeOfBirth || null,
+          delivery_type: dto.deliveryType || null,
+          birth_order: dto.birthOrder || null,
+          blood_type: dto.bloodType || null,
+          critical_notes: dto.notes || null,
+          profile_photo_url: dto.profilePhotoUrl || null,
+          primary_facility_id: facilityId,
+          created_by_user_id: userId,
+          is_active: true,
+        })
+        .select('id')
+        .single();
+
+      if (!childError && insertedChild) {
+        child = insertedChild;
+        lastError = null;
+        break;
+      }
+
+      lastError = childError;
+      if (childError?.code !== '23505') {
+        break;
+      }
+    }
+
+    if (!child) {
+      if (lastError?.code === '23505') {
+        throw new ConflictException('Could not generate a unique child QR token. Please try again.');
+      }
+      throw new Error(`Failed to register child: ${lastError?.message || 'Unknown error'}`);
     }
 
     const { error: linkError } = await this.db.supabase
