@@ -104,6 +104,24 @@ export class EmailService {
     }
   }
 
+  async sendEmailChangeVerificationEmail(
+    to: { email: string; name: string },
+    verificationLink: string,
+  ): Promise<boolean> {
+    try {
+      await this.sendEmail({
+        to,
+        subject: 'Verify Your New Email Address - Child Vaccination Command Center',
+        html: this.getEmailChangeVerificationTemplate(to.name, verificationLink),
+      });
+      this.logger.log(`Email change verification sent to ${to.email}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to send email change verification to ${to.email}`, error);
+      return false;
+    }
+  }
+
   // Admin-initiated password reset — sends a temporary password
   async sendPasswordResetEmailWithStatus(
     to: { email: string; name: string },
@@ -410,6 +428,85 @@ export class EmailService {
     </tr>
   </table>
 
+</body>
+</html>`;
+  }
+
+  private getEmailChangeVerificationTemplate(name: string, verificationLink: string): string {
+    const year = new Date().getFullYear();
+    const requestTime = new Date().toLocaleString('en-GB', {
+      day: '2-digit', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Accra',
+    });
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verify Email Change - CVCC</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;padding:36px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;">
+          <tr>
+            <td style="background-color:#0a6640;border-radius:6px 6px 0 0;padding:28px 32px;">
+              <p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;">Child Vaccination Command Center</p>
+              <p style="margin:6px 0 0 0;font-size:12px;color:rgba(255,255,255,0.75);">Email Verification</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background-color:#ffffff;padding:32px;">
+              <p style="margin:0 0 8px 0;font-size:22px;font-weight:700;color:#111827;">Hi, ${name}</p>
+              <p style="margin:0 0 4px 0;font-size:12px;color:#9ca3af;">Request time: ${requestTime} (Ghana Time)</p>
+
+              <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
+
+              <p style="margin:0 0 20px 0;font-size:14px;color:#374151;line-height:1.75;">
+                We received a request to change your parent portal email address. Please confirm this update by clicking the button below.
+              </p>
+
+              <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
+                <tr>
+                  <td style="border-radius:5px;background-color:#0a6640;">
+                    <a href="${verificationLink}" target="_blank"
+                       style="display:inline-block;padding:13px 30px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:5px;letter-spacing:0.3px;">
+                      Verify New Email
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 8px 0;font-size:12px;color:#6b7280;">This verification link expires in <strong>30 minutes</strong>.</p>
+              <p style="margin:0 0 22px 0;font-size:11px;color:#9ca3af;word-break:break-all;">If the button does not work, copy this link: <span style="color:#0a6640;">${verificationLink}</span></p>
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fffbeb;border-left:3px solid #f59e0b;border-radius:0 4px 4px 0;">
+                <tr>
+                  <td style="padding:12px 16px;">
+                    <p style="margin:0;font-size:12px;color:#92400e;line-height:1.6;">
+                      If you did not request this change, ignore this email. Your account email will remain unchanged.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 6px 6px;padding:18px 32px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.8;">
+                &copy; ${year} Child Vaccination Command Center (CVCC)<br/>
+                This is an automated message. Please do not reply to this email.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`;
   }

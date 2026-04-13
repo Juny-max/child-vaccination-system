@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
+import { QrTokenService } from '../common/qr-token.service';
 import { CreateHqBranchDto, UpdateHqBranchDto } from './hq-branches.dto';
 import {
   CreateHqUserDto,
@@ -25,6 +26,31 @@ import {
 import { RegisterStaffDto } from './register-staff.dto';
 import { UpdateStaffDto } from './update-staff.dto';
 
+type BranchChildQueueType =
+  | 'overdue'
+  | 'zero-dose'
+  | 'missed'
+  | 'failed-reminder';
+
+type BranchChildQueuePriority = 'critical' | 'high' | 'medium' | 'low';
+
+type BranchChildQueueItem = {
+  id: string;
+  queueType: BranchChildQueueType;
+  childId: string;
+  childCvccId: string;
+  childName: string;
+  guardianName: string;
+  guardianPhone: string;
+  reason: string;
+  priority: BranchChildQueuePriority;
+  referenceDate: string | null;
+  daysOpen: number;
+  assignedToUserId?: string | null;
+  assignedToName?: string | null;
+  assignedAt?: string | null;
+};
+
 @Injectable()
 export class BranchManagerService {
   private readonly logger = new Logger(BranchManagerService.name);
@@ -32,6 +58,7 @@ export class BranchManagerService {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly emailService: EmailService,
+    private readonly qrTokenService: QrTokenService,
   ) {}
 
   /**
@@ -638,6 +665,42 @@ export class BranchManagerService {
     return map[status] ?? status;
   }
 
+  private calculateAgeLabel(dateOfBirth?: string | null): string {
+    if (!dateOfBirth) {
+      return 'Unknown';
+    }
+
+    const birthDate = new Date(dateOfBirth);
+    if (Number.isNaN(birthDate.getTime())) {
+      return 'Unknown';
+    }
+
+    const today = new Date();
+    let years = today.getFullYear() - birthDate.getFullYear();
+    let months = today.getMonth() - birthDate.getMonth();
+
+    if (today.getDate() < birthDate.getDate()) {
+      months -= 1;
+    }
+
+    if (months < 0) {
+      years -= 1;
+      months += 12;
+    }
+
+    if (years > 0) {
+      return `${years} year${years === 1 ? '' : 's'}`;
+    }
+
+    if (months > 0) {
+      return `${months} month${months === 1 ? '' : 's'}`;
+    }
+
+    const diffMs = today.getTime() - birthDate.getTime();
+    const days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+    return `${days} day${days === 1 ? '' : 's'}`;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // Stock management write operations
   // ═══════════════════════════════════════════════════════════════════════════
@@ -657,6 +720,945 @@ export class BranchManagerService {
       throw new Error(`Failed to fetch vaccines: ${error.message}`);
     }
     return data ?? [];
+  }
+
+  /**
+   * Search branch child records by child name, CVCC ID, guardian phone, or QR token.
+   * Results are strictly scoped to the manager's branch.
+   */
+  async searchBranchChildren(branchId: string, query: string) {
+    const db = this.databaseService.supabase;
+    const rawQuery = (query || '').trim();
+    if (!rawQuery) {
+      return [];
+    }
+
+    const trimmedQuery = rawQuery.toLowerCase();
+
+    const childSelect = `
+      id,
+      cvcc_id,
+      full_name,
+      date_of_birth,
+      gender,
+      primary_facility_id,
+      qr_code_payload,
+      branches:primary_facility_id (
+        id,
+        name
+      ),
+      child_guardian!inner (
+        is_primary,
+        guardians (
+          id,
+          full_name,
+          phone_primary
+        )
+      )
+    `;
+
+    let children: any[] | null = null;
+
+    if (this.qrTokenService.isChildToken(rawQuery)) {
+      const { data: tokenChildren, error: tokenError } = await db
+        .from('children')
+        .select(childSelect)
+        .eq('primary_facility_id', branchId)
+        .eq('is_active', true)
+        .eq('qr_code_payload', rawQuery)
+        .limit(20);
+
+      if (tokenError) {
+        throw new InternalServerErrorException(
+          `Failed to search child records: ${tokenError.message}`,
+        );
+      }
+
+      children = tokenChildren || [];
+    } else if (this.qrTokenService.isCertificateToken(rawQuery)) {
+      const { data: certificate, error: certificateError } = await db
+        .from('certificates')
+        .select('child_id')
+        .eq('qr_payload', rawQuery)
+        .single();
+
+      if (certificateError && certificateError.code !== 'PGRST116') {
+        throw new InternalServerErrorException(
+          `Failed to search child records: ${certificateError.message}`,
+        );
+      }
+
+      if (certificate?.child_id) {
+        const { data: certificateChild, error: childError } = await db
+          .from('children')
+          .select(childSelect)
+          .eq('id', certificate.child_id)
+          .eq('primary_facility_id', branchId)
+          .eq('is_active', true)
+          .limit(1);
+
+        if (childError) {
+          throw new InternalServerErrorException(
+            `Failed to search child records: ${childError.message}`,
+          );
+        }
+
+        children = certificateChild || [];
+      } else {
+        children = [];
+      }
+    }
+
+    if (!children || children.length === 0) {
+      const { data: fuzzyChildren, error: fuzzyError } = await db
+        .from('children')
+        .select(childSelect)
+        .eq('primary_facility_id', branchId)
+        .eq('is_active', true)
+        .or(`cvcc_id.ilike.%${trimmedQuery}%,full_name.ilike.%${trimmedQuery}%`)
+        .limit(20);
+
+      if (fuzzyError) {
+        throw new InternalServerErrorException(
+          `Failed to search child records: ${fuzzyError.message}`,
+        );
+      }
+
+      children = fuzzyChildren || [];
+    }
+
+    const { data: byPhone, error: phoneError } = await db
+      .from('guardians')
+      .select(`
+        id,
+        full_name,
+        phone_primary,
+        child_guardian!inner (
+          child_id,
+          is_primary,
+          children (
+            id,
+            cvcc_id,
+            full_name,
+            date_of_birth,
+            gender,
+            primary_facility_id,
+            is_active,
+            branches:primary_facility_id (
+              id,
+              name
+            )
+          )
+        )
+      `)
+      .ilike('phone_primary', `%${trimmedQuery}%`)
+      .limit(20);
+
+    if (phoneError) {
+      throw new InternalServerErrorException(
+        `Failed to search child records: ${phoneError.message}`,
+      );
+    }
+
+    const allChildren: any[] = [];
+
+    if (children) {
+      children.forEach((child: any) => {
+        const primaryGuardianLink = Array.isArray(child.child_guardian)
+          ? child.child_guardian.find((cg: any) => cg.is_primary) ||
+            child.child_guardian[0]
+          : child.child_guardian;
+
+        const guardianJoin = primaryGuardianLink?.guardians as any;
+        const guardianData = Array.isArray(guardianJoin)
+          ? guardianJoin[0]
+          : guardianJoin;
+
+        allChildren.push({
+          ...child,
+          guardian: guardianData
+            ? {
+                id: guardianData.id,
+                full_name: guardianData.full_name,
+                phone_primary: guardianData.phone_primary,
+              }
+            : null,
+        });
+      });
+    }
+
+    if (byPhone) {
+      byPhone.forEach((guardian: any) => {
+        const childGuardianLinks = Array.isArray(guardian.child_guardian)
+          ? guardian.child_guardian
+          : [guardian.child_guardian];
+
+        childGuardianLinks.forEach((link: any) => {
+          const linkedChild = Array.isArray(link?.children)
+            ? link.children[0]
+            : link?.children;
+
+          if (!linkedChild) return;
+          if (linkedChild.primary_facility_id !== branchId) return;
+          if (linkedChild.is_active === false) return;
+
+          allChildren.push({
+            ...linkedChild,
+            guardian: {
+              id: guardian.id,
+              full_name: guardian.full_name,
+              phone_primary: guardian.phone_primary,
+            },
+          });
+        });
+      });
+    }
+
+    const uniqueChildren = Array.from(
+      new Map(allChildren.map((child: any) => [child.id, child])).values(),
+    ).slice(0, 20);
+
+    if (uniqueChildren.length === 0) {
+      return [];
+    }
+
+    const childIds = uniqueChildren.map((child: any) => child.id);
+    const { data: completedEvents, error: completedEventsError } = await db
+      .from('vaccination_events')
+      .select('child_id, administered_date')
+      .in('child_id', childIds)
+      .eq('status', 'completed');
+
+    if (completedEventsError) {
+      throw new InternalServerErrorException(
+        `Failed to load child vaccination summaries: ${completedEventsError.message}`,
+      );
+    }
+
+    const vaccinationSummaryMap = new Map<
+      string,
+      { completedCount: number; lastVisit: string | null }
+    >();
+
+    (completedEvents ?? []).forEach((event: any) => {
+      const existing = vaccinationSummaryMap.get(event.child_id) ?? {
+        completedCount: 0,
+        lastVisit: null,
+      };
+
+      const nextCount = existing.completedCount + 1;
+      const nextLastVisit =
+        !existing.lastVisit || event.administered_date > existing.lastVisit
+          ? event.administered_date
+          : existing.lastVisit;
+
+      vaccinationSummaryMap.set(event.child_id, {
+        completedCount: nextCount,
+        lastVisit: nextLastVisit,
+      });
+    });
+
+    return Promise.all(
+      uniqueChildren.map(async (child: any) => {
+        let upcoming: any[] = [];
+        try {
+          upcoming =
+            (await this.databaseService.getUpcomingVaccinations(
+              child.id,
+              child.date_of_birth,
+            )) || [];
+        } catch {
+          upcoming = [];
+        }
+
+        const sortedUpcoming = [...upcoming].sort((a: any, b: any) =>
+          String(a?.dueDate ?? '').localeCompare(String(b?.dueDate ?? '')),
+        );
+
+        const upcomingCount = sortedUpcoming.filter((item: any) => !item.isOverdue).length;
+        const overdueCount = sortedUpcoming.filter((item: any) => item.isOverdue).length;
+
+        let vaccinationStatus: 'Complete' | 'In Progress' | 'Overdue' =
+          'In Progress';
+        if (overdueCount > 0) {
+          vaccinationStatus = 'Overdue';
+        } else if (sortedUpcoming.length === 0) {
+          vaccinationStatus = 'Complete';
+        }
+
+        const nextDue = sortedUpcoming[0];
+        const branchData = Array.isArray(child.branches)
+          ? child.branches[0]
+          : child.branches;
+        const vaccinationSummary = vaccinationSummaryMap.get(child.id) ?? {
+          completedCount: 0,
+          lastVisit: null,
+        };
+
+        return {
+          id: child.id,
+          childId: child.cvcc_id,
+          childName: child.full_name,
+          dateOfBirth: child.date_of_birth,
+          age: this.calculateAgeLabel(child.date_of_birth),
+          gender: child.gender || 'Unknown',
+          guardianName: child.guardian?.full_name || 'Unknown',
+          guardianPhone: child.guardian?.phone_primary || 'N/A',
+          facilityName: branchData?.name || 'Unknown facility',
+          vaccinationStatus,
+          completedVaccines: vaccinationSummary.completedCount,
+          upcomingVaccines: upcomingCount,
+          overdueVaccines: overdueCount,
+          nextVaccine: nextDue?.vaccine?.name || null,
+          nextDueDate: nextDue?.dueDate || null,
+          lastVisit: vaccinationSummary.lastVisit,
+        };
+      }),
+    );
+  }
+
+  /**
+   * Return action-first child management queues for branch managers.
+   */
+  async getChildManagementQueues(branchId: string): Promise<{
+    overdue: BranchChildQueueItem[];
+    zeroDose: BranchChildQueueItem[];
+    missed: BranchChildQueueItem[];
+    failedReminders: BranchChildQueueItem[];
+  }> {
+    const db = this.databaseService.supabase;
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+    const childSelect = `
+      id,
+      cvcc_id,
+      full_name,
+      date_of_birth,
+      child_guardian!inner (
+        is_primary,
+        guardians (
+          id,
+          full_name,
+          phone_primary
+        )
+      )
+    `;
+
+    const [childrenResult, schedulesResult, missedResult] =
+      await Promise.all([
+        db
+          .from('children')
+          .select(childSelect)
+          .eq('primary_facility_id', branchId)
+          .eq('is_active', true),
+        db
+          .from('vaccination_schedules')
+          .select('vaccine_id, dose_number, due_days_from_birth, vaccines(name)')
+          .eq('is_mandatory', true)
+          .order('due_days_from_birth', { ascending: true }),
+        db
+          .from('appointments')
+          .select(`
+            id,
+            child_id,
+            scheduled_date,
+            scheduled_time,
+            vaccines(name),
+            children (
+              id,
+              cvcc_id,
+              full_name,
+              child_guardian!inner (
+                is_primary,
+                guardians (
+                  id,
+                  full_name,
+                  phone_primary
+                )
+              )
+            )
+          `)
+          .eq('facility_id', branchId)
+          .eq('status', 'missed')
+          .gte('scheduled_date', thirtyDaysAgoStr)
+          .lte('scheduled_date', todayStr)
+          .order('scheduled_date', { ascending: false })
+          .order('scheduled_time', { ascending: false })
+          .limit(200),
+      ]);
+
+    if (childrenResult.error) {
+      throw new InternalServerErrorException(
+        `Failed to load branch children: ${childrenResult.error.message}`,
+      );
+    }
+
+    if (schedulesResult.error) {
+      throw new InternalServerErrorException(
+        `Failed to load vaccination schedules: ${schedulesResult.error.message}`,
+      );
+    }
+
+    if (missedResult.error) {
+      throw new InternalServerErrorException(
+        `Failed to load missed appointments: ${missedResult.error.message}`,
+      );
+    }
+
+    const children = childrenResult.data ?? [];
+    const childMap = new Map<
+      string,
+      {
+        childId: string;
+        childCvccId: string;
+        childName: string;
+        guardianId: string | null;
+        guardianName: string;
+        guardianPhone: string;
+        dateOfBirth: string | null;
+      }
+    >();
+
+    children.forEach((child: any) => {
+      const guardianLink = Array.isArray(child.child_guardian)
+        ? child.child_guardian.find((entry: any) => entry.is_primary) ||
+          child.child_guardian[0]
+        : child.child_guardian;
+
+      const guardianJoin = guardianLink?.guardians as any;
+      const guardian = Array.isArray(guardianJoin)
+        ? guardianJoin[0]
+        : guardianJoin;
+
+      childMap.set(child.id, {
+        childId: child.id,
+        childCvccId: child.cvcc_id || 'N/A',
+        childName: child.full_name || 'Unknown',
+        guardianId: guardian?.id || null,
+        guardianName: guardian?.full_name || 'Unknown',
+        guardianPhone: guardian?.phone_primary || 'N/A',
+        dateOfBirth: child.date_of_birth || null,
+      });
+    });
+
+    const childIds = Array.from(childMap.keys());
+    if (childIds.length === 0) {
+      return {
+        overdue: [],
+        zeroDose: [],
+        missed: [],
+        failedReminders: [],
+      };
+    }
+
+    const guardianToChildIds = new Map<string, string[]>();
+    childMap.forEach((child) => {
+      if (!child.guardianId) return;
+      const existing = guardianToChildIds.get(child.guardianId) || [];
+      existing.push(child.childId);
+      guardianToChildIds.set(child.guardianId, existing);
+    });
+
+    const guardianIds = Array.from(guardianToChildIds.keys());
+
+    const [completedResult, notificationResult, followUpAuditResult] = await Promise.all([
+      db
+        .from('vaccination_events')
+        .select('child_id, vaccine_id, dose_number, administered_date')
+        .in('child_id', childIds)
+        .eq('status', 'completed'),
+      guardianIds.length > 0
+        ? db
+            .from('notifications')
+            .select('id, recipient_id, metadata, status, error_message, recipient_contact, channel, created_at')
+            .eq('recipient_type', 'guardian')
+            .in('recipient_id', guardianIds)
+            .in('status', ['failed', 'bounced'])
+            .order('created_at', { ascending: false })
+            .limit(200)
+        : Promise.resolve({ data: [], error: null }),
+      db
+        .from('audit_logs')
+        .select('entity_id, created_at, after_data')
+        .eq('category', 'branch-follow-up')
+        .eq('entity_type', 'child')
+        .in('entity_id', childIds)
+        .order('created_at', { ascending: false })
+        .limit(500),
+    ]);
+
+    if (completedResult.error) {
+      throw new InternalServerErrorException(
+        `Failed to load vaccination events: ${completedResult.error.message}`,
+      );
+    }
+
+    if (notificationResult.error) {
+      throw new InternalServerErrorException(
+        `Failed to load failed reminders: ${notificationResult.error.message}`,
+      );
+    }
+
+    if (followUpAuditResult.error) {
+      throw new InternalServerErrorException(
+        `Failed to load follow-up assignments: ${followUpAuditResult.error.message}`,
+      );
+    }
+
+    const completedEvents = completedResult.data ?? [];
+    const latestAssignmentByQueueKey = new Map<
+      string,
+      { assignedToUserId: string | null; assignedToName: string | null; assignedAt: string | null }
+    >();
+
+    (followUpAuditResult.data ?? []).forEach((audit: any) => {
+      const childId = typeof audit.entity_id === 'string' ? audit.entity_id : null;
+      if (!childId) return;
+
+      const afterData =
+        audit.after_data && typeof audit.after_data === 'object'
+          ? (audit.after_data as Record<string, unknown>)
+          : {};
+
+      if (afterData.action !== 'assign_follow_up') return;
+
+      const queueTypeRaw = afterData.queue_type;
+      if (
+        queueTypeRaw !== 'overdue' &&
+        queueTypeRaw !== 'zero-dose' &&
+        queueTypeRaw !== 'missed' &&
+        queueTypeRaw !== 'failed-reminder'
+      ) {
+        return;
+      }
+
+      const key = `${childId}:${queueTypeRaw}`;
+      if (latestAssignmentByQueueKey.has(key)) return;
+
+      latestAssignmentByQueueKey.set(key, {
+        assignedToUserId:
+          typeof afterData.assigned_to_user_id === 'string'
+            ? afterData.assigned_to_user_id
+            : null,
+        assignedToName:
+          typeof afterData.assigned_to_name === 'string'
+            ? afterData.assigned_to_name
+            : null,
+        assignedAt:
+          typeof afterData.assigned_at === 'string'
+            ? afterData.assigned_at
+            : typeof audit.created_at === 'string'
+              ? audit.created_at
+              : null,
+      });
+    });
+
+    const attachAssignment = (item: BranchChildQueueItem): BranchChildQueueItem => {
+      const assignment = latestAssignmentByQueueKey.get(
+        `${item.childId}:${item.queueType}`,
+      );
+
+      if (!assignment) {
+        return item;
+      }
+
+      return {
+        ...item,
+        assignedToUserId: assignment.assignedToUserId,
+        assignedToName: assignment.assignedToName,
+        assignedAt: assignment.assignedAt,
+      };
+    };
+
+    const schedules = schedulesResult.data ?? [];
+    const receivedExact = new Set<string>();
+    const receivedVaccine = new Set<string>();
+    const completedCountByChild = new Map<string, number>();
+
+    completedEvents.forEach((event: any) => {
+      if (!event.child_id || !event.vaccine_id) return;
+
+      completedCountByChild.set(
+        event.child_id,
+        (completedCountByChild.get(event.child_id) ?? 0) + 1,
+      );
+
+      if (event.dose_number != null) {
+        receivedExact.add(
+          `${event.child_id}:${event.vaccine_id}:${event.dose_number}`,
+        );
+      } else {
+        receivedVaccine.add(`${event.child_id}:${event.vaccine_id}`);
+      }
+    });
+
+    const overdue: BranchChildQueueItem[] = [];
+    const zeroDose: BranchChildQueueItem[] = [];
+    const GRACE_DAYS = 14;
+
+    childMap.forEach((child) => {
+      const completedCount = completedCountByChild.get(child.childId) ?? 0;
+
+      if (completedCount === 0) {
+        const birthDate = child.dateOfBirth ? new Date(child.dateOfBirth) : null;
+        const ageDays = birthDate
+          ? Math.max(
+              0,
+              Math.floor((today.getTime() - birthDate.getTime()) / (1000 * 60 * 60 * 24)),
+            )
+          : 0;
+
+        zeroDose.push(attachAssignment({
+          id: `zero-dose-${child.childId}`,
+          queueType: 'zero-dose',
+          childId: child.childId,
+          childCvccId: child.childCvccId,
+          childName: child.childName,
+          guardianName: child.guardianName,
+          guardianPhone: child.guardianPhone,
+          reason: 'No completed vaccinations recorded yet.',
+          priority: ageDays > 180 ? 'high' : 'medium',
+          referenceDate: child.dateOfBirth,
+          daysOpen: ageDays,
+        }));
+      }
+
+      if (!child.dateOfBirth) return;
+
+      const dob = new Date(child.dateOfBirth);
+      const ageInDays = Math.floor(
+        (today.getTime() - dob.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      const mostOverdue = schedules.reduce<
+        { schedule: any; daysOverdue: number; dueDate: Date } | null
+      >((current, schedule: any) => {
+        if (ageInDays <= schedule.due_days_from_birth + GRACE_DAYS) {
+          return current;
+        }
+
+        const exactKey = `${child.childId}:${schedule.vaccine_id}:${schedule.dose_number}`;
+        const looseKey = `${child.childId}:${schedule.vaccine_id}`;
+
+        if (receivedExact.has(exactKey) || receivedVaccine.has(looseKey)) {
+          return current;
+        }
+
+        const daysOverdue = ageInDays - schedule.due_days_from_birth;
+        const dueDate = new Date(
+          dob.getTime() + schedule.due_days_from_birth * 24 * 60 * 60 * 1000,
+        );
+
+        if (!current || daysOverdue > current.daysOverdue) {
+          return {
+            schedule,
+            daysOverdue,
+            dueDate,
+          };
+        }
+
+        return current;
+      }, null);
+
+      if (!mostOverdue) return;
+
+      overdue.push(attachAssignment({
+        id: `overdue-${child.childId}-${mostOverdue.schedule.vaccine_id}-${mostOverdue.schedule.dose_number}`,
+        queueType: 'overdue',
+        childId: child.childId,
+        childCvccId: child.childCvccId,
+        childName: child.childName,
+        guardianName: child.guardianName,
+        guardianPhone: child.guardianPhone,
+        reason: `Overdue vaccination: ${(mostOverdue.schedule.vaccines as any)?.name ?? 'Vaccine'} (Dose ${mostOverdue.schedule.dose_number})`,
+        priority:
+          mostOverdue.daysOverdue > 30
+            ? 'critical'
+            : mostOverdue.daysOverdue > 14
+              ? 'high'
+              : 'medium',
+        referenceDate: mostOverdue.dueDate.toISOString().split('T')[0],
+        daysOpen: mostOverdue.daysOverdue,
+      }));
+    });
+
+    const missedLatestByChild = new Map<string, BranchChildQueueItem>();
+    (missedResult.data ?? []).forEach((appointment: any) => {
+      const child = Array.isArray(appointment.children)
+        ? appointment.children[0]
+        : appointment.children;
+
+      const childId = child?.id || appointment.child_id;
+      if (!childId) return;
+
+      const baseChild = childMap.get(childId);
+      if (!baseChild) return;
+
+      const scheduledDate = appointment.scheduled_date || null;
+      const scheduledDateObj = scheduledDate
+        ? new Date(`${scheduledDate}T00:00:00`)
+        : null;
+      const daysSinceMissed = scheduledDateObj
+        ? Math.max(
+            0,
+            Math.floor((today.getTime() - scheduledDateObj.getTime()) / (1000 * 60 * 60 * 24)),
+          )
+        : 0;
+
+      const candidate = attachAssignment({
+        id: `missed-${appointment.id}`,
+        queueType: 'missed',
+        childId: baseChild.childId,
+        childCvccId: baseChild.childCvccId,
+        childName: baseChild.childName,
+        guardianName: baseChild.guardianName,
+        guardianPhone: baseChild.guardianPhone,
+        reason: `Missed appointment: ${appointment.vaccines?.name ?? 'Scheduled visit'}${appointment.scheduled_time ? ` at ${String(appointment.scheduled_time).slice(0, 5)}` : ''}`,
+        priority: daysSinceMissed > 14 ? 'high' : 'medium',
+        referenceDate: scheduledDate,
+        daysOpen: daysSinceMissed,
+      });
+
+      const existing = missedLatestByChild.get(baseChild.childId);
+      if (!existing) {
+        missedLatestByChild.set(baseChild.childId, candidate);
+        return;
+      }
+
+      const existingDate = existing.referenceDate ?? '';
+      const candidateDate = candidate.referenceDate ?? '';
+      if (candidateDate > existingDate) {
+        missedLatestByChild.set(baseChild.childId, candidate);
+      }
+    });
+
+    const failedReminderLatestByChild = new Map<string, BranchChildQueueItem>();
+    (notificationResult.data ?? []).forEach((notification: any) => {
+      const metadata =
+        notification.metadata && typeof notification.metadata === 'object'
+          ? (notification.metadata as Record<string, unknown>)
+          : {};
+
+      const childIdFromMetadata =
+        typeof metadata.child_id === 'string'
+          ? metadata.child_id
+          : typeof metadata.childId === 'string'
+            ? metadata.childId
+            : null;
+
+      let childId = childIdFromMetadata;
+      if (!childId && typeof notification.recipient_id === 'string') {
+        const linkedChildren = guardianToChildIds.get(notification.recipient_id);
+        if (linkedChildren?.length === 1) {
+          childId = linkedChildren[0];
+        }
+      }
+
+      if (!childId || !childMap.has(childId)) return;
+
+      const baseChild = childMap.get(childId)!;
+      const reason =
+        notification.error_message ||
+        `${String(notification.channel || 'Notification').toUpperCase()} delivery failed`;
+
+      const candidate = attachAssignment({
+        id: `failed-reminder-${notification.id}`,
+        queueType: 'failed-reminder',
+        childId: baseChild.childId,
+        childCvccId: baseChild.childCvccId,
+        childName: baseChild.childName,
+        guardianName: baseChild.guardianName,
+        guardianPhone:
+          baseChild.guardianPhone !== 'N/A'
+            ? baseChild.guardianPhone
+            : notification.recipient_contact || 'N/A',
+        reason,
+        priority: 'high',
+        referenceDate: notification.created_at
+          ? String(notification.created_at).slice(0, 10)
+          : null,
+        daysOpen: notification.created_at
+          ? Math.max(
+              0,
+              Math.floor(
+                (today.getTime() - new Date(notification.created_at).getTime()) /
+                  (1000 * 60 * 60 * 24),
+              ),
+            )
+          : 0,
+      });
+
+      const existing = failedReminderLatestByChild.get(childId);
+      if (!existing) {
+        failedReminderLatestByChild.set(childId, candidate);
+        return;
+      }
+
+      const existingDate = existing.referenceDate ?? '';
+      const candidateDate = candidate.referenceDate ?? '';
+      if (candidateDate > existingDate) {
+        failedReminderLatestByChild.set(childId, candidate);
+      }
+    });
+
+    overdue.sort((a, b) => b.daysOpen - a.daysOpen);
+    zeroDose.sort((a, b) => b.daysOpen - a.daysOpen);
+
+    const missed = Array.from(missedLatestByChild.values()).sort(
+      (a, b) => b.daysOpen - a.daysOpen,
+    );
+    const failedReminders = Array.from(failedReminderLatestByChild.values()).sort(
+      (a, b) => b.daysOpen - a.daysOpen,
+    );
+
+    return {
+      overdue: overdue.slice(0, 50),
+      zeroDose: zeroDose.slice(0, 50),
+      missed: missed.slice(0, 50),
+      failedReminders: failedReminders.slice(0, 50),
+    };
+  }
+
+  async assignChildFollowUp(
+    branchId: string,
+    actorUserId: string,
+    dto: {
+      childId: string;
+      assigneeUserId: string;
+      queueType: BranchChildQueueType;
+      reason?: string;
+      notes?: string;
+    },
+  ) {
+    const db = this.databaseService.supabase;
+
+    const [childResult, assigneeResult] = await Promise.all([
+      db
+        .from('children')
+        .select('id, full_name, primary_facility_id, is_active')
+        .eq('id', dto.childId)
+        .maybeSingle(),
+      db
+        .from('users')
+        .select('id, full_name, email, role, branch_id, status')
+        .eq('id', dto.assigneeUserId)
+        .maybeSingle(),
+    ]);
+
+    if (childResult.error) {
+      throw new InternalServerErrorException(
+        `Failed to validate child record: ${childResult.error.message}`,
+      );
+    }
+
+    if (!childResult.data) {
+      throw new NotFoundException('Child record not found.');
+    }
+
+    if (
+      childResult.data.primary_facility_id !== branchId ||
+      childResult.data.is_active === false
+    ) {
+      throw new ForbiddenException('You can only assign follow-up within your branch.');
+    }
+
+    if (assigneeResult.error) {
+      throw new InternalServerErrorException(
+        `Failed to validate assignee: ${assigneeResult.error.message}`,
+      );
+    }
+
+    if (!assigneeResult.data) {
+      throw new NotFoundException('Assigned staff member not found.');
+    }
+
+    const assignee = assigneeResult.data;
+    const isEligibleRole =
+      assignee.role === 'facility-nurse' || assignee.role === 'chw';
+
+    if (!isEligibleRole || assignee.branch_id !== branchId || assignee.status !== 'active') {
+      throw new BadRequestException(
+        'Follow-up can only be assigned to an active nurse or CHW in this branch.',
+      );
+    }
+
+    const assignedAt = new Date().toISOString();
+
+    const { error: auditError } = await db.from('audit_logs').insert({
+      user_id: actorUserId,
+      action: 'update',
+      entity_type: 'child',
+      entity_id: dto.childId,
+      after_data: {
+        action: 'assign_follow_up',
+        queue_type: dto.queueType,
+        reason: dto.reason || null,
+        notes: dto.notes || null,
+        assigned_to_user_id: assignee.id,
+        assigned_to_name: assignee.full_name,
+        assigned_to_role: assignee.role,
+        assigned_at: assignedAt,
+      },
+      category: 'branch-follow-up',
+    });
+
+    if (auditError) {
+      throw new InternalServerErrorException(
+        `Failed to assign follow-up task: ${auditError.message}`,
+      );
+    }
+
+    const queueLabel = dto.queueType.replace('-', ' ');
+    const notificationMessage =
+      `You have been assigned a child follow-up. Child: ${childResult.data.full_name}. ` +
+      `Queue: ${queueLabel}. Please review and action it from your dashboard.`;
+
+    const { error: notificationError } = await db.from('notifications').insert({
+      template_id: 'branch_follow_up_assignment',
+      recipient_type: 'staff',
+      recipient_id: assignee.id,
+      channel: 'push',
+      recipient_contact: assignee.email,
+      subject: 'New follow-up assignment',
+      message: notificationMessage,
+      status: 'sent',
+      metadata: {
+        child_id: dto.childId,
+        queue_type: dto.queueType,
+        assigned_by_user_id: actorUserId,
+        branch_id: branchId,
+        reason: dto.reason || null,
+        notes: dto.notes || null,
+        assigned_at: assignedAt,
+      },
+      sent_at: assignedAt,
+    });
+
+    let responseMessage = `Follow-up assigned to ${assignee.full_name}.`;
+    if (notificationError) {
+      this.logger.error(
+        `Follow-up assigned but assignee notification failed: ${notificationError.message}`,
+      );
+      responseMessage =
+        `Follow-up assigned to ${assignee.full_name}. Dashboard notification could not be queued.`;
+    }
+
+    return {
+      success: true,
+      message: responseMessage,
+      assignment: {
+        childId: dto.childId,
+        childName: childResult.data.full_name,
+        assigneeUserId: assignee.id,
+        assigneeName: assignee.full_name,
+        assigneeRole: assignee.role,
+        queueType: dto.queueType,
+      },
+    };
   }
 
   /**

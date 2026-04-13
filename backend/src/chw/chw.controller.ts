@@ -36,6 +36,32 @@ export class ChwController {
     return this.chwService.getDashboardSummary(req.user.id);
   }
 
+  @Get('notifications')
+  async getNotifications(
+    @Request() req: any,
+    @Query('limit') limit?: string,
+    @Query('unreadOnly') unreadOnly?: string,
+  ) {
+    const parsedLimit = Number(limit);
+    const safeLimit = Number.isFinite(parsedLimit)
+      ? Math.max(1, Math.min(parsedLimit, 30))
+      : 10;
+
+    return this.chwService.getNotifications(
+      req.user.id,
+      safeLimit,
+      unreadOnly !== 'false',
+    );
+  }
+
+  @Post('notifications/:notificationId/read')
+  async markNotificationRead(
+    @Param('notificationId') notificationId: string,
+    @Request() req: any,
+  ) {
+    return this.chwService.markNotificationRead(req.user.id, notificationId);
+  }
+
   @Get('children/search')
   async searchChildren(@Query('query') query: string, @Request() req: any) {
     return this.chwService.searchChildren(query, req.user.id);

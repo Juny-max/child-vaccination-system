@@ -265,7 +265,10 @@ export interface Guardian {
   landmark: string | null;
   city: string;
   region: string;
-  preferredContact: 'sms' | 'email' | 'whatsapp';
+  preferredContact: 'sms' | 'email';
+  message?: string;
+  emailVerificationRequired?: boolean;
+  credentialsEmailSent?: boolean;
 }
 
 export interface UpdateGuardianRequest {
@@ -277,7 +280,7 @@ export interface UpdateGuardianRequest {
   landmark?: string;
   city: string;
   region: string;
-  preferredContact?: 'sms' | 'email' | 'whatsapp';
+  preferredContact?: 'sms' | 'email';
 }
 
 /**
@@ -337,6 +340,23 @@ export interface UrgentFollowUp {
   emergencyContactPhone?: string;
 }
 
+export interface MissedAppointmentReminder {
+  id: string;
+  childId: string;
+  childName: string;
+  caregiver: string;
+  contact: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  vaccine: string;
+  daysSinceMissed: number;
+  status: string;
+  guardianId?: string;
+  phoneAlternate?: string;
+  email?: string;
+  relationship?: string;
+}
+
 /**
  * Get today's appointments for the facility
  */
@@ -355,6 +375,22 @@ export async function getUrgentFollowUps(facilityId?: string): Promise<UrgentFol
     ? `/facility/follow-ups/urgent?facilityId=${encodeURIComponent(facilityId)}`
     : '/facility/follow-ups/urgent';
   return apiRequest<UrgentFollowUp[]>(url);
+}
+
+/**
+ * Get missed appointment reminders for nurse follow-up
+ */
+export async function getMissedAppointments(
+  facilityId?: string,
+  days?: number,
+): Promise<MissedAppointmentReminder[]> {
+  const params = new URLSearchParams();
+  if (facilityId) params.set('facilityId', facilityId);
+  if (typeof days === 'number') params.set('days', String(days));
+
+  const query = params.toString();
+  const url = query ? `/facility/appointments/missed?${query}` : '/facility/appointments/missed';
+  return apiRequest<MissedAppointmentReminder[]>(url);
 }
 
 export interface GuardianOption {

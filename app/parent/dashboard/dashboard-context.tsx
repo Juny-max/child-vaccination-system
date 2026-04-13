@@ -36,6 +36,8 @@ export type ParentDashboardContextValue = {
   createAppointment: (data: parentApi.CreateAppointmentRequest) => Promise<parentApi.Appointment>
   cancelAppointment: (appointmentId: string, reason?: string) => Promise<void>
   updateMotherDetails: (data: parentApi.UpdateMotherDetailsRequest) => Promise<void>
+  requestEmailChangeVerification: (newEmail: string) => Promise<parentApi.RequestEmailChangeResponse>
+  verifyEmailChangeToken: (token: string) => Promise<parentApi.MotherDetails>
   retryFetch: () => Promise<void>
   logout: () => Promise<void>
 }
@@ -62,6 +64,8 @@ const defaultContext: ParentDashboardContextValue = {
   createAppointment: async () => ({} as parentApi.Appointment),
   cancelAppointment: async () => {},
   updateMotherDetails: async () => {},
+  requestEmailChangeVerification: async () => ({ success: false, message: '' }),
+  verifyEmailChangeToken: async () => ({} as parentApi.MotherDetails),
   retryFetch: async () => {},
   logout: async () => {},
 }
@@ -178,6 +182,16 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     setMotherDetails(updated)
   }, [])
 
+  const requestEmailChangeVerificationHandler = useCallback(async (newEmail: string) => {
+    return parentApi.requestEmailChangeVerification({ newEmail })
+  }, [])
+
+  const verifyEmailChangeTokenHandler = useCallback(async (token: string) => {
+    const updated = await parentApi.verifyEmailChangeToken(token)
+    setMotherDetails(updated)
+    return updated
+  }, [])
+
   // Logout
   const logoutHandler = useCallback(async () => {
     await authApi.logout()
@@ -271,6 +285,8 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     createAppointment: createAppointmentHandler,
     cancelAppointment: cancelAppointmentHandler,
     updateMotherDetails: updateMotherDetailsHandler,
+    requestEmailChangeVerification: requestEmailChangeVerificationHandler,
+    verifyEmailChangeToken: verifyEmailChangeTokenHandler,
     retryFetch,
     logout: logoutHandler,
   }

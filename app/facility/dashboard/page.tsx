@@ -58,6 +58,7 @@ export default function FacilityDashboardPage() {
   const [isSearching, setIsSearching] = useState(false)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [showErrorModal, setShowErrorModal] = useState(false)
+  const [showSearchFailedModal, setShowSearchFailedModal] = useState(false)
   const [cameraState, setCameraState] = useState<CameraState>("idle")
   const [cameraError, setCameraError] = useState<string | null>(null)
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -67,8 +68,10 @@ export default function FacilityDashboardPage() {
   // Today's appointments and urgent follow-ups
   const [appointments, setAppointments] = useState<facilityApi.TodayAppointment[]>([])
   const [followUps, setFollowUps] = useState<facilityApi.UrgentFollowUp[]>([])
+  const [missedAppointments, setMissedAppointments] = useState<facilityApi.MissedAppointmentReminder[]>([])
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true)
   const [isLoadingFollowUps, setIsLoadingFollowUps] = useState(true)
+  const [isLoadingMissedAppointments, setIsLoadingMissedAppointments] = useState(true)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [contactDetail, setContactDetail] = useState<facilityApi.UrgentFollowUp | null>(null)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
@@ -110,22 +113,25 @@ export default function FacilityDashboardPage() {
         })
     }
     
-    // Fetch today's appointments and urgent follow-ups (filtered by facility)
+    // Fetch today's appointments, urgent follow-ups, and missed appointment reminders (filtered by facility)
     const fetchDashboardData = async () => {
       try {
-        const [appointmentsData, followUpsData, pendingRequests] = await Promise.all([
+        const [appointmentsData, followUpsData, missedAppointmentsData, pendingRequests] = await Promise.all([
           facilityApi.getTodaysAppointments(branchId || undefined),
           facilityApi.getUrgentFollowUps(branchId || undefined),
+          facilityApi.getMissedAppointments(branchId || undefined, 14),
           facilityApi.getAppointmentRequests(branchId || undefined, "scheduled"),
         ])
         setAppointments(appointmentsData)
         setFollowUps(followUpsData)
+        setMissedAppointments(missedAppointmentsData)
         setPendingAppointmentRequestsCount(pendingRequests.length)
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error)
       } finally {
         setIsLoadingAppointments(false)
         setIsLoadingFollowUps(false)
+        setIsLoadingMissedAppointments(false)
       }
     }
     
@@ -189,7 +195,8 @@ export default function FacilityDashboardPage() {
       }
     } catch (error) {
       console.error('Search failed:', error)
-      setSystemMessage("Search failed. Please try again.")
+      setSystemMessage(null)
+      setShowSearchFailedModal(true)
       setSearchResults([])
     } finally {
       setIsSearching(false)
@@ -402,7 +409,16 @@ export default function FacilityDashboardPage() {
   }
 
   const todaysAppointments = useMemo(() => appointments, [appointments])
+  const todaysAppointmentsPreview = useMemo(() => todaysAppointments.slice(0, 4), [todaysAppointments])
   const todaysFollowUps = useMemo(() => followUps, [followUps])
+  const recentMissedAppointments = useMemo(
+    () => missedAppointments.filter((appointment) => appointment.daysSinceMissed <= 14),
+    [missedAppointments],
+  )
+  const missedAppointmentsPreview = useMemo(
+    () => recentMissedAppointments.slice(0, 4),
+    [recentMissedAppointments],
+  )
 
   const handleLogout = () => {
     setIsLoggingOut(true)
@@ -667,7 +683,7 @@ export default function FacilityDashboardPage() {
           </div>
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
+        <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-[3fr,2fr]">
           <Card>
             <CardHeader className="space-y-1">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -675,8 +691,8 @@ export default function FacilityDashboardPage() {
               </CardTitle>
               <CardDescription>
                 Prepare immunisation cards and vaccines before families arrive.{" "}
-                <Link href="/facility/dashboard/appointments" className="text-primary hover:underline">
-                  View all requests &rarr;
+                <Link href="/facility/dashboard/appointments/today" className="text-primary hover:underline">
+                  View all today&apos;s appointments &rarr;
                 </Link>
               </CardDescription>
             </CardHeader>
@@ -689,7 +705,7 @@ export default function FacilityDashboardPage() {
               ) : todaysAppointments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No booked visits yet. Walk-in clients will appear once registered.</p>
               ) : (
-                todaysAppointments.map((appointment, index) => (
+                todaysAppointmentsPreview.map((appointment, index) => (
                   <div key={`${appointment.id}-${index}`} className="flex flex-col gap-2 rounded-lg border border-border bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-semibold text-foreground">{appointment.childName}</p>
@@ -707,9 +723,82 @@ export default function FacilityDashboardPage() {
                   </div>
                 ))
               )}
+              {!isLoadingAppointments && todaysAppointments.length > 4 ? (
+                <Button variant="outline" size="sm" className="w-full gap-2" asChild>
+                  <Link href="/facility/dashboard/appointments/today">
+                    View all today&apos;s appointments ({todaysAppointments.length})
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : null}
             </CardContent>
           </Card>
 
+          <Card className="border-amber-300/50">
+            <CardHeader className="space-y-1">
+              <CardTitle className="flex items-center gap-2 text-lg text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="h-5 w-5" /> Missed appointment follow-ups
+              </CardTitle>
+              <CardDescription>
+                Mothers who missed appointments in the last 14 days. Call and help them rebook quickly.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {isLoadingMissedAppointments ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading missed appointments...</span>
+                </div>
+              ) : recentMissedAppointments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No missed appointments in the recent follow-up window.</p>
+              ) : (
+                missedAppointmentsPreview.map((item, index) => (
+                  <div
+                    key={`${item.id}-${item.childId}-${item.scheduledDate}-${index}`}
+                    className="flex flex-col gap-3 rounded-lg border border-amber-200/70 bg-amber-50/40 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/40 dark:bg-amber-950/20"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{item.childName}</p>
+                      <p className="text-xs text-muted-foreground">Guardian: {item.caregiver}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Missed on {item.scheduledDate || "Unknown date"} at {item.scheduledTime} • {item.vaccine}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+                      <Badge variant="outline" className="border-amber-400/60 text-amber-700 dark:text-amber-300">
+                        {item.daysSinceMissed} day{item.daysSinceMissed === 1 ? "" : "s"} ago
+                      </Badge>
+                      {item.contact && item.contact !== "N/A" ? (
+                        <Button variant="outline" size="sm" className="gap-2" asChild>
+                          <Link href={`tel:${item.contact.replace(/\s+/g, "")}`}>
+                            <Phone className="h-4 w-4" /> Call guardian
+                          </Link>
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" className="gap-2" disabled>
+                          <Phone className="h-4 w-4" /> No phone
+                        </Button>
+                      )}
+                      <Button variant="secondary" size="sm" asChild>
+                        <Link href="/facility/dashboard/appointments">Manage requests</Link>
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+              {!isLoadingMissedAppointments && recentMissedAppointments.length > 4 ? (
+                <Button variant="outline" size="sm" className="w-full gap-2" asChild>
+                  <Link href="/facility/dashboard/appointments/missed">
+                    View all missed appointments ({recentMissedAppointments.length})
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+        </section>
+
+        <section>
           <Card className="border-destructive/50">
             <CardHeader className="space-y-1">
               <CardTitle className="flex items-center gap-2 text-lg text-destructive">
@@ -942,6 +1031,32 @@ export default function FacilityDashboardPage() {
           <div className="flex justify-center pt-2">
             <Button onClick={() => setShowErrorModal(false)} className="w-full sm:w-auto px-8">
               OK, Got it
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Error Modal - Search Failure */}
+      <Dialog open={showSearchFailedModal} onOpenChange={setShowSearchFailedModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <div className="w-32 h-32">
+                <DotLottieReact
+                  src="/Sign for error _ Flat style.lottie"
+                  loop
+                  autoplay
+                />
+              </div>
+              <DialogTitle className="text-center text-xl">Search Failed</DialogTitle>
+            </div>
+          </DialogHeader>
+          <DialogDescription className="text-center text-base py-4">
+            Search failed. Please try again.
+          </DialogDescription>
+          <div className="flex justify-center pt-2">
+            <Button onClick={() => setShowSearchFailedModal(false)} className="w-full sm:w-auto px-8">
+              Try again
             </Button>
           </div>
         </DialogContent>

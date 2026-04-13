@@ -2,7 +2,7 @@
 // Facility Nurse Module DTOs - Data Transfer Objects
 // ============================================================================
 
-import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsIn } from 'class-validator';
 
 // ============================================================================
 // ENUMS
@@ -402,7 +402,8 @@ export class UpdateGuardianDto {
 
   @IsString()
   @IsOptional()
-  preferredContact?: 'sms' | 'email' | 'whatsapp';
+  @IsIn(['sms', 'email'])
+  preferredContact?: 'sms' | 'email';
 }
 
 /**
@@ -418,7 +419,10 @@ export class GuardianDto {
   landmark: string | null;
   city: string;
   region: string;
-  preferredContact: 'sms' | 'email' | 'whatsapp';
+  preferredContact: 'sms' | 'email';
+  message?: string;
+  emailVerificationRequired?: boolean;
+  credentialsEmailSent?: boolean;
 }
 
 /**
@@ -458,6 +462,28 @@ export class UrgentFollowUpDto {
   nhisNumber?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+}
+
+/**
+ * Missed appointment reminder response (for nurse follow-up)
+ */
+export class MissedAppointmentReminderDto {
+  id: string;
+  childId: string;
+  childName: string;
+  caregiver: string;
+  contact: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  vaccine: string;
+  daysSinceMissed: number;
+  status: string;
+
+  // Extended guardian contact info
+  guardianId?: string;
+  phoneAlternate?: string;
+  email?: string;
+  relationship?: string;
 }
 
 /**

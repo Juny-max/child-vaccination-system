@@ -184,9 +184,9 @@ export default function VaccinationStatusPage() {
               ))}
               
               {/* Upcoming/Missed Vaccinations */}
-              {upcomingVaccinations.map((upcoming) => (
+              {upcomingVaccinations.map((upcoming, index) => (
                 <div
-                  key={upcoming.id}
+                  key={`${upcoming.id}-${upcoming.vaccineCode}-${upcoming.doseNumber}-${upcoming.dueDate}-${index}`}
                   className="flex flex-col gap-3 rounded-lg border border-border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>

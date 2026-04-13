@@ -97,7 +97,9 @@ export interface MotherDetails {
   secondaryPhone?: string;
   email?: string;
   address?: string;
+  addressLine1?: string;
   preferredContact: 'phone' | 'sms' | 'email';
+  preferredContactMethod?: 'phone' | 'sms' | 'email';
   preferredLanguage: string;
   emergencyContacts: EmergencyContact[];
 }
@@ -182,6 +184,15 @@ export interface UpdateMotherDetailsRequest {
   }>;
 }
 
+export interface RequestEmailChangeRequest {
+  newEmail: string;
+}
+
+export interface RequestEmailChangeResponse {
+  success: boolean;
+  message: string;
+}
+
 // ============================================
 // Parent API Functions
 // ============================================
@@ -207,6 +218,28 @@ export async function updateProfile(data: UpdateMotherDetailsRequest): Promise<M
   return apiRequest<MotherDetails>('/parent/profile', {
     method: 'PUT',
     body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Request email change verification link
+ */
+export async function requestEmailChangeVerification(
+  data: RequestEmailChangeRequest,
+): Promise<RequestEmailChangeResponse> {
+  return apiRequest<RequestEmailChangeResponse>('/parent/profile/email-change/request', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Verify email change token and apply the new email
+ */
+export async function verifyEmailChangeToken(token: string): Promise<MotherDetails> {
+  return apiRequest<MotherDetails>('/parent/profile/email-change/verify', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
   });
 }
 

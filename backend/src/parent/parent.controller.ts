@@ -16,12 +16,15 @@ import {
 import { ParentService } from './parent.service';
 import {
   UpdateMotherDetailsDto,
+  RequestEmailChangeDto,
+  VerifyEmailChangeDto,
   CreateAppointmentDto,
   CancelAppointmentDto,
 } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Request as ExpressRequest } from 'express';
 
 /**
  * Parent Portal Controller
@@ -74,6 +77,40 @@ export class ParentController {
     @Body() updates: UpdateMotherDetailsDto,
   ) {
     return this.parentService.updateGuardianProfile(req.user.id, updates);
+  }
+
+  /**
+   * POST /api/parent/profile/email-change/request
+   * Send verification link to a new email before applying the change
+   */
+  @Post('profile/email-change/request')
+  @HttpCode(HttpStatus.OK)
+  async requestEmailChange(
+    @Request() req: any & ExpressRequest,
+    @Body() requestDto: RequestEmailChangeDto,
+  ) {
+    const baseUrl =
+      (req.headers.origin as string) ||
+      process.env.FRONTEND_URL ||
+      'http://localhost:3000';
+    return this.parentService.requestGuardianEmailChange(
+      req.user.id,
+      requestDto,
+      baseUrl,
+    );
+  }
+
+  /**
+   * POST /api/parent/profile/email-change/verify
+   * Verify email change token and persist the new email
+   */
+  @Post('profile/email-change/verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyEmailChange(
+    @Request() req: any,
+    @Body() verifyDto: VerifyEmailChangeDto,
+  ) {
+    return this.parentService.verifyGuardianEmailChange(req.user.id, verifyDto);
   }
 
   // =========================================================================

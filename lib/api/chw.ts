@@ -16,6 +16,16 @@ export type ChwDashboardSummary = {
   fetchedAt: string
 }
 
+export type ChwNotification = {
+  id: string
+  templateId: string
+  subject: string | null
+  message: string
+  status: string
+  createdAt: string
+  metadata: Record<string, unknown>
+}
+
 export type ChwSearchResult = {
   id: string
   childId: string
@@ -75,6 +85,28 @@ export async function getChwDashboardSummary(): Promise<ChwDashboardSummary> {
   return apiRequest<ChwDashboardSummary>("/chw/dashboard/summary")
 }
 
+export async function getChwNotifications(
+  limit = 10,
+  unreadOnly = true,
+): Promise<ChwNotification[]> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    unreadOnly: String(unreadOnly),
+  })
+  return apiRequest<ChwNotification[]>(`/chw/notifications?${params.toString()}`)
+}
+
+export async function markChwNotificationRead(
+  notificationId: string,
+): Promise<{ success: boolean; marked: boolean }> {
+  return apiRequest<{ success: boolean; marked: boolean }>(
+    `/chw/notifications/${encodeURIComponent(notificationId)}/read`,
+    {
+      method: "POST",
+    },
+  )
+}
+
 export async function searchChwChildren(query: string): Promise<ChwSearchResult[]> {
   return apiRequest<ChwSearchResult[]>(`/chw/children/search?query=${encodeURIComponent(query)}`)
 }
@@ -128,7 +160,14 @@ export async function getChwChildChartAll(childId: string): Promise<ChwChildChar
 }
 
 export async function queueChwOfflineRegistration(payload: Record<string, unknown>) {
-  return apiRequest<{ queued: boolean; queueId: string; status: string; createdAt: string }>(
+  return apiRequest<{
+    queued: boolean
+    queueId: string
+    status: string
+    createdAt: string
+    childId?: string | null
+    errorMessage?: string
+  }>(
     "/chw/offline-registrations",
     {
       method: "POST",

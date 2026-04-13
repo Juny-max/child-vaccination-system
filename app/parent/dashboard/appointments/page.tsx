@@ -155,9 +155,11 @@ export default function AppointmentsPage() {
     setExpandedAppointmentId((previous) => (previous === appointmentId ? null : appointmentId))
   }
 
-  const handleOpenBooking = () => {
+  const handleOpenBooking = (childId?: string) => {
     setConfirmation(null)
-    if (!selectedChildId && children.length > 0) {
+    if (childId && children.some((child) => child.id === childId)) {
+      setSelectedChildId(childId)
+    } else if (!selectedChildId && children.length > 0) {
       setSelectedChildId(children[0].id)
     }
     setSelectedDate(undefined)
@@ -546,6 +548,17 @@ export default function AppointmentsPage() {
                         <a href={`tel:${appointment.facilityPhone}`} aria-label="Call the facility">
                           <PhoneCall className="size-3.5" /> Call facility
                         </a>
+                      </Button>
+                    )}
+                    {appointment.status === "missed" && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="gap-1.5 text-xs"
+                        onClick={() => handleOpenBooking(appointment.childId)}
+                      >
+                        <PlusCircle className="size-3.5" />
+                        Rebook appointment
                       </Button>
                     )}
                     {/* Cancel button for scheduled or confirmed appointments */}

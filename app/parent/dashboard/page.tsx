@@ -39,6 +39,14 @@ function formatAppointmentTime(time?: string): string {
   return `${displayHour}:${minutesRaw} ${ampm}`
 }
 
+function getIssuedDateTimestamp(issuedDate?: string): number | null {
+  if (!issuedDate) return null
+  const normalized = issuedDate.trim().toLowerCase()
+  if (!normalized || normalized === "not issued yet" || normalized === "n/a") return null
+  const timestamp = new Date(issuedDate).getTime()
+  return Number.isNaN(timestamp) ? null : timestamp
+}
+
 export default function ParentDashboardOverview() {
   const { userName, dashboard, appointments, certificates, missedVaccinations } = useParentDashboard()
 
@@ -57,10 +65,25 @@ export default function ParentDashboardOverview() {
     })[0]
   }, [appointments])
 
+  const latestMissedAppointment = useMemo(() => {
+    const missedAppointments = appointments.filter((appointment) => appointment.status === "missed")
+
+    return missedAppointments.sort((first, second) => {
+      const firstDate = toAppointmentDateTime(first.scheduledDate, first.scheduledTime).getTime()
+      const secondDate = toAppointmentDateTime(second.scheduledDate, second.scheduledTime).getTime()
+      return secondDate - firstDate
+    })[0]
+  }, [appointments])
+
   const nextAppointmentChild = useMemo(() => {
     if (!nextAppointment) return null
     return childrenData.find((child) => child.id === nextAppointment.childId) ?? null
   }, [childrenData, nextAppointment])
+
+  const latestMissedAppointmentChild = useMemo(() => {
+    if (!latestMissedAppointment) return null
+    return childrenData.find((child) => child.id === latestMissedAppointment.childId) ?? null
+  }, [childrenData, latestMissedAppointment])
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -69,7 +92,20 @@ export default function ParentDashboardOverview() {
   const completedCertificates = useMemo(() => {
     return [...certificates]
       .filter((record) => record.completionStatus === "Complete")
-      .sort((a, b) => new Date(b.issuedDate || 0).getTime() - new Date(a.issuedDate || 0).getTime())
+      .sort((a, b) => {
+        const aIssuedAt = getIssuedDateTimestamp(a.issuedDate)
+        const bIssuedAt = getIssuedDateTimestamp(b.issuedDate)
+
+        // Always prioritize certificates with real issued dates over placeholders.
+        if (aIssuedAt === null && bIssuedAt !== null) return 1
+        if (aIssuedAt !== null && bIssuedAt === null) return -1
+
+        if (aIssuedAt !== null && bIssuedAt !== null) {
+          return bIssuedAt - aIssuedAt
+        }
+
+        return b.certificateId.localeCompare(a.certificateId)
+      })
   }, [certificates])
 
   const latestCertificate = completedCertificates[0]
@@ -140,51 +176,63 @@ export default function ParentDashboardOverview() {
             <CardTitle className="flex items-center gap-2 text-lg">
               <CalendarDays className="size-5" /> Next appointment
             </CardTitle>
-            <CardDescription>Stay prepared for the next visit</CardDescription>
+            <CardDescription>Stay prepared for the next visit and track missed visits.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {nextAppointment ? (
-              <>
-                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-foreground">Next</p>
+                {nextAppointment ? (
+                  <Badge variant={nextAppointment.status === "confirmed" ? "default" : "secondary"}>
+                    {nextAppointment.status === "confirmed" ? "Confirmed" : "Pending review"}
+                  </Badge>
+                ) : null}
+              </div>
+              {nextAppointment ? (
+                <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Scheduled for</p>
                   <h3 className="text-lg font-semibold">{formatAppointmentDate(nextAppointment.scheduledDate)}</h3>
                   <p className="text-sm text-muted-foreground">{formatAppointmentTime(nextAppointment.scheduledTime)}</p>
                   <p className="text-sm text-muted-foreground">{nextAppointment.facilityName || "Facility pending assignment"}</p>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <p>
-                    <span className="text-muted-foreground">Child:</span>{" "}
-                    <span className="font-medium text-foreground">{nextAppointment.childName || nextAppointmentChild?.name || "Not specified"}</span>
+                  <p className="text-xs text-muted-foreground">
+                    {nextAppointment.childName || nextAppointmentChild?.name || "Not specified"} • {nextAppointment.childCvccId || nextAppointment.childId}
                   </p>
-                  <p>
-                    <span className="text-muted-foreground">Child ID:</span>{" "}
-                    <span className="font-medium text-foreground">{nextAppointment.childCvccId || nextAppointment.childId}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Vaccine:</span>{" "}
-                    <span className="font-medium text-foreground">{nextAppointment.vaccineName || "General health visit"}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Purpose:</span>{" "}
-                    <span className="font-medium text-foreground">{nextAppointment.purpose}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Status:</span>{" "}
-                    <Badge variant={nextAppointment.status === "confirmed" ? "default" : "secondary"}>
-                      {nextAppointment.status === "confirmed" ? "Confirmed" : "Pending review"}
-                    </Badge>
-                  </p>
+                  <p className="text-xs text-muted-foreground">{nextAppointment.vaccineName || nextAppointment.purpose || "General health visit"}</p>
                   {nextAppointment.facilityPhone ? (
-                    <p>
-                      <span className="text-muted-foreground">Facility contact:</span>{" "}
-                      <span className="font-medium text-foreground">{nextAppointment.facilityPhone}</span>
-                    </p>
+                    <p className="text-xs text-muted-foreground">Facility contact: {nextAppointment.facilityPhone}</p>
                   ) : null}
                 </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">No upcoming appointments scheduled.</p>
-            )}
+              ) : (
+                <p className="text-sm text-muted-foreground">No upcoming appointments scheduled.</p>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-foreground">Missed</p>
+                {latestMissedAppointment ? (
+                  <Badge variant="outline" className="border-orange-500/40 bg-orange-500/10 text-orange-500">
+                    Missed
+                  </Badge>
+                ) : null}
+              </div>
+              {latestMissedAppointment ? (
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Was scheduled for</p>
+                  <h3 className="text-lg font-semibold">{formatAppointmentDate(latestMissedAppointment.scheduledDate)}</h3>
+                  <p className="text-sm text-muted-foreground">{formatAppointmentTime(latestMissedAppointment.scheduledTime)}</p>
+                  <p className="text-sm text-muted-foreground">{latestMissedAppointment.facilityName || "Facility pending assignment"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {latestMissedAppointment.childName || latestMissedAppointmentChild?.name || "Not specified"} • {latestMissedAppointment.childCvccId || latestMissedAppointment.childId}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {latestMissedAppointment.vaccineName || latestMissedAppointment.purpose || "General health visit"}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No missed appointments.</p>
+              )}
+            </div>
             <Button asChild variant="outline" className="gap-2">
               <Link href="/parent/dashboard/appointments">
                 Manage appointments

@@ -122,9 +122,9 @@ export class VaccinationSchedulerService {
                 recipient_type: 'guardian',
                 recipient_id: guardian.id,
                 channel: 'sms',
-                phone_number: recipientPhone,
+                recipient_contact: recipientPhone,
                 subject: `Vaccination Due Today - ${child.full_name}`,
-                content: message,
+                message,
                 status: 'sent',
                 child_id: child.id,
                 vaccine_id: vaccine?.id,
@@ -247,24 +247,8 @@ export class VaccinationSchedulerService {
   async autoMarkOverdueAppointmentsAsMissed() {
     try {
       const todayUtc = new Date().toISOString().split('T')[0];
-      const { data: appointments, error } = await this.db.supabase
-        .from('appointments')
-        .select(`
-          id,
-          child_id,
-          guardian_id,
-          scheduled_date,
-          scheduled_time,
-          status,
-          notes
-        `)
-        .in('status', ['scheduled', 'confirmed'])
-        .lte('scheduled_date', todayUtc);
-
-      if (error) {
-        this.logger.error('Error fetching overdue appointment candidates:', error);
-        return;
-      }
+      const appointments = await this.fetchOverdueAppointmentCandidates(todayUtc);
+      if (!appointments) return;
 
       if (!appointments || appointments.length === 0) {
         return;
@@ -340,9 +324,9 @@ export class VaccinationSchedulerService {
               recipient_type: 'guardian',
               recipient_id: guardianId,
               channel: 'sms',
-              phone_number: recipientPhone,
+              recipient_contact: recipientPhone,
               subject: `Missed Appointment - ${childName}`,
-              content: smsMessage,
+              message: smsMessage,
               status: 'sent',
               child_id: childId ?? undefined,
             });
@@ -365,6 +349,54 @@ export class VaccinationSchedulerService {
   }
 
   /**
+   * Fetch appointments that are candidates for auto-marking as missed.
+   * Retries transient network timeouts to reduce noisy scheduler failures.
+   */
+  private async fetchOverdueAppointmentCandidates(todayUtc: string) {
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const { data, error } = await this.db.supabase
+        .from('appointments')
+        .select(`
+          id,
+          child_id,
+          guardian_id,
+          scheduled_date,
+          scheduled_time,
+          status,
+          notes
+        `)
+        .in('status', ['scheduled', 'confirmed'])
+        .lte('scheduled_date', todayUtc);
+
+      if (!error) {
+        return data ?? [];
+      }
+
+      const errorMessage = String((error as any)?.message || '').toLowerCase();
+      const isTransientNetworkError =
+        errorMessage.includes('fetch failed') ||
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('timed out') ||
+        errorMessage.includes('connect');
+
+      if (!isTransientNetworkError || attempt === maxAttempts) {
+        this.logger.error('Error fetching overdue appointment candidates:', error);
+        return null;
+      }
+
+      const retryDelayMs = attempt * 1000;
+      this.logger.warn(
+        `Transient fetch error loading overdue appointments (attempt ${attempt}/${maxAttempts}). Retrying in ${retryDelayMs}ms...`,
+      );
+      await this.sleep(retryDelayMs);
+    }
+
+    return null;
+  }
+
+  /**
    * Log notification to database
    */
   private async logNotification(data: {
@@ -372,15 +404,22 @@ export class VaccinationSchedulerService {
     recipient_type: string;
     recipient_id: string;
     channel: string;
-    phone_number?: string;
-    email?: string;
-    subject: string;
-    content: string;
+    recipient_contact?: string;
+    subject?: string | null;
+    message: string;
     status: string;
     child_id?: string;
     vaccine_id?: string;
   }) {
     try {
+      const recipientContact = data.recipient_contact?.trim();
+      if (!recipientContact) {
+        this.logger.warn(
+          `Skipping notification log for template ${data.template_id}: missing recipient_contact.`,
+        );
+        return;
+      }
+
       const { error } = await this.db['_supabase']
         .from('notifications')
         .insert({
@@ -388,10 +427,9 @@ export class VaccinationSchedulerService {
           recipient_type: data.recipient_type,
           recipient_id: data.recipient_id,
           channel: data.channel,
-          phone_number: data.phone_number,
-          email: data.email,
-          subject: data.subject,
-          content: data.content,
+          recipient_contact: recipientContact,
+          subject: data.subject ?? null,
+          message: data.message,
           status: data.status,
           metadata: {
             child_id: data.child_id,

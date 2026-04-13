@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -38,6 +39,21 @@ type AssignedChild = {
   guardianPhone?: string;
   village?: string;
   catchmentAreaId: string;
+};
+
+type ChwOfflineRegistrationPayload = {
+  guardianId?: string;
+  motherName: string;
+  motherPhone: string;
+  childName: string;
+  childDob: string;
+  childGender?: string;
+};
+
+type ChwRegistrationContext = {
+  branchId: string | null;
+  catchmentAreaId: string | null;
+  community: string | null;
 };
 
 @Injectable()
@@ -141,6 +157,414 @@ export class ChwService {
 
   private escapeIlikePattern(value: string): string {
     return value.replace(/([\\%_])/g, '\\$1');
+  }
+
+  private normalizeWhitespace(value: string): string {
+    return value.trim().replace(/\s+/g, ' ');
+  }
+
+  private normalizeNameForMatch(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private namesLikelySame(left: string, right: string): boolean {
+    const normalizedLeft = this.normalizeNameForMatch(left);
+    const normalizedRight = this.normalizeNameForMatch(right);
+
+    if (!normalizedLeft || !normalizedRight) {
+      return false;
+    }
+
+    return (
+      normalizedLeft === normalizedRight ||
+      normalizedLeft.includes(normalizedRight) ||
+      normalizedRight.includes(normalizedLeft)
+    );
+  }
+
+  private normalizePhone(value: string): string {
+    return value.replace(/\s+/g, '').replace(/[()\-]/g, '');
+  }
+
+  private normalizeDateInput(value: string): string {
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('Child date of birth is invalid.');
+    }
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  private normalizeGender(value?: string): 'male' | 'female' | 'intersex' | 'undisclosed' {
+    const normalized = (value || '').trim().toLowerCase();
+    if (normalized === 'male' || normalized === 'female' || normalized === 'intersex') {
+      return normalized;
+    }
+    return 'undisclosed';
+  }
+
+  private extractOfflineRegistrationPayload(payload: any): ChwOfflineRegistrationPayload {
+    if (!payload || typeof payload !== 'object') {
+      throw new BadRequestException('Registration payload is required.');
+    }
+
+    const motherName =
+      typeof payload.motherName === 'string'
+        ? this.normalizeWhitespace(payload.motherName)
+        : '';
+    const motherPhone =
+      typeof payload.motherPhone === 'string'
+        ? this.normalizePhone(payload.motherPhone)
+        : '';
+    const childName =
+      typeof payload.childName === 'string'
+        ? this.normalizeWhitespace(payload.childName)
+        : '';
+    const childDobRaw =
+      typeof payload.childDob === 'string' ? payload.childDob : '';
+    const childDob = this.normalizeDateInput(childDobRaw || '');
+
+    if (!motherName) {
+      throw new BadRequestException('Mother name is required.');
+    }
+    if (!motherPhone) {
+      throw new BadRequestException('Mother phone is required.');
+    }
+    if (!childName) {
+      throw new BadRequestException('Child name is required.');
+    }
+
+    return {
+      guardianId:
+        typeof payload.guardianId === 'string' && this.isUuid(payload.guardianId)
+          ? payload.guardianId
+          : undefined,
+      motherName,
+      motherPhone,
+      childName,
+      childDob,
+      childGender:
+        typeof payload.childGender === 'string' ? payload.childGender : undefined,
+    };
+  }
+
+  private async getChwRegistrationContext(
+    chwUserId: string,
+  ): Promise<ChwRegistrationContext> {
+    const [userResult, catchmentResult] = await Promise.all([
+      this.db.supabase
+        .from('users')
+        .select('id, branch_id')
+        .eq('id', chwUserId)
+        .maybeSingle(),
+      this.db.supabase
+        .from('catchment_areas')
+        .select('id, branch_id, community')
+        .eq('assigned_chw_id', chwUserId)
+        .limit(1),
+    ]);
+
+    if (userResult.error || !userResult.data) {
+      throw new BadRequestException(
+        userResult.error?.message || 'Unable to resolve CHW profile.',
+      );
+    }
+
+    if (catchmentResult.error) {
+      throw new BadRequestException(catchmentResult.error.message);
+    }
+
+    const catchment = (catchmentResult.data || [])[0];
+
+    return {
+      branchId: userResult.data.branch_id || catchment?.branch_id || null,
+      catchmentAreaId: catchment?.id || null,
+      community: catchment?.community || null,
+    };
+  }
+
+  private async ensureGuardianForOfflineRegistration(
+    payload: ChwOfflineRegistrationPayload,
+    chwUserId: string,
+    context: ChwRegistrationContext,
+  ): Promise<string> {
+    if (payload.guardianId) {
+      const { data: guardianById, error: guardianByIdError } = await this.db.supabase
+        .from('guardians')
+        .select('id')
+        .eq('id', payload.guardianId)
+        .maybeSingle();
+
+      if (guardianByIdError && guardianByIdError.code !== 'PGRST116') {
+        throw new BadRequestException(guardianByIdError.message);
+      }
+
+      if (guardianById?.id) {
+        return guardianById.id;
+      }
+    }
+
+    const phoneVariants = this.buildPhoneExactVariants(payload.motherPhone);
+    const phoneCandidates = Array.from(
+      new Set(
+        [payload.motherPhone, ...phoneVariants]
+          .map((value) => this.normalizePhone(value))
+          .filter(Boolean),
+      ),
+    );
+
+    if (phoneCandidates.length > 0) {
+      const { data: guardiansByPhone, error: guardianByPhoneError } = await this.db.supabase
+        .from('guardians')
+        .select('id, full_name')
+        .in('phone_primary', phoneCandidates)
+        .limit(10);
+
+      if (guardianByPhoneError) {
+        throw new BadRequestException(guardianByPhoneError.message);
+      }
+
+      const sameNameGuardian = (guardiansByPhone || []).find((guardian: any) =>
+        this.namesLikelySame(guardian.full_name || '', payload.motherName),
+      );
+
+      if (sameNameGuardian?.id) {
+        return sameNameGuardian.id;
+      }
+
+      if ((guardiansByPhone || []).length > 0) {
+        throw new ConflictException(
+          'This phone number is already linked to an existing mother profile. Please verify the number or select the existing mother suggestion.',
+        );
+      }
+    }
+
+    const { data: guardian, error: guardianCreateError } = await this.db.supabase
+      .from('guardians')
+      .insert({
+        user_id: null,
+        full_name: payload.motherName,
+        phone_primary: payload.motherPhone,
+        address_line1: 'Address to be completed at facility',
+        city: context.community || 'Unknown',
+        region: 'Unknown',
+        country: 'Ghana',
+        community: context.community || null,
+        catchment_area_id: context.catchmentAreaId,
+        preferred_contact: 'sms',
+        notes:
+          'Provisional guardian profile created from CHW minimal registration.',
+        created_by_user_id: chwUserId,
+      })
+      .select('id')
+      .single();
+
+    if (guardianCreateError || !guardian) {
+      if (guardianCreateError?.code === '23505') {
+        const { data: fallbackGuardians, error: fallbackError } = await this.db.supabase
+          .from('guardians')
+          .select('id, full_name')
+          .in('phone_primary', phoneCandidates)
+          .limit(10);
+
+        if (fallbackError) {
+          throw new BadRequestException(fallbackError.message);
+        }
+
+        const sameNameFallback = (fallbackGuardians || []).find((entry: any) =>
+          this.namesLikelySame(entry.full_name || '', payload.motherName),
+        );
+
+        if (sameNameFallback?.id) {
+          return sameNameFallback.id;
+        }
+        throw new ConflictException(
+          'This phone number is already linked to an existing mother profile. Please verify the number or select the existing mother suggestion.',
+        );
+      }
+
+      throw new BadRequestException(
+        guardianCreateError?.message ||
+          'Failed to create provisional guardian profile.',
+      );
+    }
+
+    return guardian.id;
+  }
+
+  private async findExistingChildForGuardian(
+    guardianId: string,
+    payload: ChwOfflineRegistrationPayload,
+  ): Promise<string | null> {
+    const { data, error } = await this.db.supabase
+      .from('child_guardian')
+      .select('child_id, children!inner(id, full_name, date_of_birth, is_active)')
+      .eq('guardian_id', guardianId);
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    const targetName = payload.childName.toLowerCase();
+    const targetDob = payload.childDob;
+
+    const match = (data || []).find((row: any) => {
+      const child = Array.isArray(row.children) ? row.children[0] : row.children;
+      if (!child?.id || child?.is_active === false) {
+        return false;
+      }
+
+      const childName = String(child.full_name || '').trim().toLowerCase();
+      const childDob = String(child.date_of_birth || '').slice(0, 10);
+      return childName === targetName && childDob === targetDob;
+    });
+
+    const child = match
+      ? Array.isArray(match.children)
+        ? match.children[0]
+        : match.children
+      : null;
+
+    return child?.id || null;
+  }
+
+  private async createChildForOfflineRegistration(
+    guardianId: string,
+    chwUserId: string,
+    context: ChwRegistrationContext,
+    payload: ChwOfflineRegistrationPayload,
+  ): Promise<string> {
+    const existingChildId = await this.findExistingChildForGuardian(
+      guardianId,
+      payload,
+    );
+
+    if (existingChildId) {
+      return existingChildId;
+    }
+
+    const childGender = this.normalizeGender(payload.childGender);
+    let insertedChildId: string | null = null;
+    let lastInsertError: any = null;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      const cvccId = `CVCC-${dateStamp}-${randomSuffix}`;
+      const qrPayload = this.qrTokenService.generateChildToken();
+
+      const { data: child, error: childInsertError } = await this.db.supabase
+        .from('children')
+        .insert({
+          cvcc_id: cvccId,
+          qr_code_payload: qrPayload,
+          full_name: payload.childName,
+          date_of_birth: payload.childDob,
+          gender: childGender,
+          primary_facility_id: context.branchId,
+          catchment_area_id: context.catchmentAreaId,
+          critical_notes:
+            'Provisional child profile created from CHW minimal registration.',
+          created_by_user_id: chwUserId,
+          is_active: true,
+        })
+        .select('id')
+        .single();
+
+      if (!childInsertError && child?.id) {
+        insertedChildId = child.id;
+        lastInsertError = null;
+        break;
+      }
+
+      lastInsertError = childInsertError;
+      if (childInsertError?.code !== '23505') {
+        break;
+      }
+    }
+
+    if (!insertedChildId) {
+      throw new BadRequestException(
+        lastInsertError?.message || 'Failed to create child profile.',
+      );
+    }
+
+    const { error: linkError } = await this.db.supabase
+      .from('child_guardian')
+      .insert({
+        child_id: insertedChildId,
+        guardian_id: guardianId,
+        relationship: 'mother',
+        is_primary: true,
+      });
+
+    if (linkError) {
+      await this.db.supabase.from('children').delete().eq('id', insertedChildId);
+      throw new BadRequestException(
+        `Failed to link child to guardian: ${linkError.message}`,
+      );
+    }
+
+    return insertedChildId;
+  }
+
+  private summarizeSyncError(error: unknown): string {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : 'Unknown sync error';
+
+    return message.length > 400 ? message.slice(0, 400) : message;
+  }
+
+  private async materializeOfflineRegistration(
+    queueId: string,
+    chwUserId: string,
+    rawPayload: any,
+  ): Promise<string> {
+    const payload = this.extractOfflineRegistrationPayload(rawPayload);
+    const context = await this.getChwRegistrationContext(chwUserId);
+    const guardianId = await this.ensureGuardianForOfflineRegistration(
+      payload,
+      chwUserId,
+      context,
+    );
+    const childId = await this.createChildForOfflineRegistration(
+      guardianId,
+      chwUserId,
+      context,
+      payload,
+    );
+
+    const syncTimestamp = new Date().toISOString();
+
+    const { error: queueUpdateError } = await this.db.supabase
+      .from('sync_queue')
+      .update({
+        status: 'synced',
+        entity_id: childId,
+        synced_at: syncTimestamp,
+        conflict_reason: null,
+        retry_count: 0,
+        updated_at: syncTimestamp,
+      })
+      .eq('id', queueId);
+
+    if (queueUpdateError) {
+      throw new BadRequestException(queueUpdateError.message);
+    }
+
+    return childId;
   }
 
   private async getAssignedChildren(chwUserId: string): Promise<AssignedChild[]> {
@@ -272,6 +696,79 @@ export class ChwService {
       pendingQueueCount: pendingQueueCount || 0,
       visits,
       fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  async getNotifications(
+    chwUserId: string,
+    limit = 10,
+    unreadOnly = true,
+  ): Promise<
+    Array<{
+      id: string;
+      templateId: string;
+      subject: string | null;
+      message: string;
+      status: string;
+      createdAt: string;
+      metadata: Record<string, unknown>;
+    }>
+  > {
+    const safeLimit = Math.max(1, Math.min(limit, 30));
+
+    let query = this.db.supabase
+      .from('notifications')
+      .select('id, template_id, subject, message, status, created_at, metadata')
+      .eq('recipient_type', 'staff')
+      .eq('recipient_id', chwUserId)
+      .order('created_at', { ascending: false })
+      .limit(safeLimit);
+
+    if (unreadOnly) {
+      query = query.in('status', ['pending', 'sent']);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    return (data || []).map((notification: any) => ({
+      id: notification.id,
+      templateId: notification.template_id,
+      subject: notification.subject || null,
+      message: notification.message,
+      status: notification.status,
+      createdAt: notification.created_at,
+      metadata:
+        notification.metadata && typeof notification.metadata === 'object'
+          ? notification.metadata
+          : {},
+    }));
+  }
+
+  async markNotificationRead(chwUserId: string, notificationId: string) {
+    const { data, error } = await this.db.supabase
+      .from('notifications')
+      .update({
+        status: 'delivered',
+        delivered_at: new Date().toISOString(),
+      })
+      .eq('id', notificationId)
+      .eq('recipient_type', 'staff')
+      .eq('recipient_id', chwUserId)
+      .in('status', ['pending', 'sent'])
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    return {
+      success: true,
+      marked: Boolean(data),
     };
   }
 
@@ -1085,11 +1582,41 @@ export class ChwService {
       throw new BadRequestException(error?.message || 'Failed to queue registration');
     }
 
+    let finalStatus = data.status;
+    let childId: string | null = null;
+    let errorMessage: string | undefined;
+
+    try {
+      childId = await this.materializeOfflineRegistration(data.id, chwUserId, payload);
+      finalStatus = 'synced';
+    } catch (materializationError) {
+      const conflictReason = this.summarizeSyncError(materializationError);
+      const updateTimestamp = new Date().toISOString();
+
+      await this.db.supabase
+        .from('sync_queue')
+        .update({
+          status: 'failed',
+          conflict_reason: conflictReason,
+          retry_count: 1,
+          updated_at: updateTimestamp,
+        })
+        .eq('id', data.id);
+
+      this.logger.error(
+        `[CHW queueOfflineRegistration] Materialization failed for queue ${data.id}: ${conflictReason}`,
+      );
+      finalStatus = 'failed';
+      errorMessage = conflictReason;
+    }
+
     return {
       queued: true,
       queueId: data.id,
-      status: data.status,
+      status: finalStatus,
       createdAt: data.created_at,
+      childId,
+      errorMessage,
     };
   }
 

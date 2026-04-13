@@ -4,10 +4,13 @@
  */
 
 import * as facilityApi from "@/lib/api/facility"
+import { decryptData, encryptData } from "@/lib/secure-storage"
 
 const DB_NAME = "cvcc_offline_vaccinations"
 const DB_VERSION = 1
 const STORE_NAME = "pending_vaccinations"
+const ENCRYPTION_KEY_STORAGE = "facility_offline_encryption_key"
+const STABLE_ENCRYPTION_KEY_PREFIX = "facility_offline_stable_key:"
 
 export type PendingVaccination = {
   id: string
@@ -23,6 +26,156 @@ export type PendingVaccination = {
   timestamp: number
   retryCount: number
   status: "pending" | "syncing" | "failed"
+}
+
+type StoredPendingVaccination = {
+  id: string
+  status: PendingVaccination["status"]
+  retryCount: number
+  timestamp: number
+  encryptedPayload?: string
+  // Legacy plain-text fields for backward compatibility.
+  childId?: string
+  vaccineName?: string
+  administeredDate?: string
+  batchNumber?: string
+  expiryDate?: string
+  administeredBy?: string
+  vaccinationSite?: string
+  aefiFlag?: boolean
+  notes?: string
+}
+
+function getEncryptionKey(): string {
+  if (typeof window === "undefined") {
+    throw new Error("Offline encryption is only available in the browser")
+  }
+
+  const cached = sessionStorage.getItem(ENCRYPTION_KEY_STORAGE)
+  if (cached) {
+    return cached
+  }
+
+  const userId = localStorage.getItem("userId") || "anonymous"
+  const stableKeyStorageName = `${STABLE_ENCRYPTION_KEY_PREFIX}${userId}`
+  const stableKey = localStorage.getItem(stableKeyStorageName)
+
+  if (stableKey) {
+    sessionStorage.setItem(ENCRYPTION_KEY_STORAGE, stableKey)
+    return stableKey
+  }
+
+  const token = localStorage.getItem("accessToken") || localStorage.getItem("authToken")
+  const generatedKey = token
+    ? `${userId}:${token.substring(0, 32)}`
+    : `${userId}:cvcc-facility-offline`
+
+  localStorage.setItem(stableKeyStorageName, generatedKey)
+  sessionStorage.setItem(ENCRYPTION_KEY_STORAGE, generatedKey)
+
+  return generatedKey
+}
+
+function isLegacyPlainRecord(
+  record: StoredPendingVaccination,
+): record is PendingVaccination {
+  return (
+    typeof record.childId === "string" &&
+    typeof record.vaccineName === "string" &&
+    typeof record.administeredDate === "string" &&
+    typeof record.batchNumber === "string" &&
+    typeof record.administeredBy === "string"
+  )
+}
+
+async function toStoredRecord(
+  vaccination: PendingVaccination,
+): Promise<StoredPendingVaccination> {
+  const encryptedPayload = await encryptData(vaccination, getEncryptionKey())
+
+  return {
+    id: vaccination.id,
+    status: vaccination.status,
+    retryCount: vaccination.retryCount,
+    timestamp: vaccination.timestamp,
+    encryptedPayload,
+  }
+}
+
+async function fromStoredRecord(
+  storedRecord: StoredPendingVaccination,
+): Promise<PendingVaccination | null> {
+  if (storedRecord.encryptedPayload) {
+    try {
+      const decrypted = await decryptData<PendingVaccination>(
+        storedRecord.encryptedPayload,
+        getEncryptionKey(),
+      )
+
+      return {
+        ...decrypted,
+        id: storedRecord.id,
+        status: storedRecord.status,
+        retryCount:
+          typeof storedRecord.retryCount === "number"
+            ? storedRecord.retryCount
+            : decrypted.retryCount,
+        timestamp:
+          typeof storedRecord.timestamp === "number"
+            ? storedRecord.timestamp
+            : decrypted.timestamp,
+      }
+    } catch (error) {
+      console.error(
+        `Failed to decrypt offline vaccination ${storedRecord.id}:`,
+        error,
+      )
+      return null
+    }
+  }
+
+  if (!isLegacyPlainRecord(storedRecord)) {
+    return null
+  }
+
+  return {
+    id: storedRecord.id,
+    childId: storedRecord.childId,
+    vaccineName: storedRecord.vaccineName,
+    administeredDate: storedRecord.administeredDate,
+    batchNumber: storedRecord.batchNumber,
+    expiryDate: storedRecord.expiryDate,
+    administeredBy: storedRecord.administeredBy,
+    vaccinationSite: storedRecord.vaccinationSite,
+    aefiFlag: Boolean(storedRecord.aefiFlag),
+    notes: storedRecord.notes,
+    timestamp: storedRecord.timestamp,
+    retryCount: storedRecord.retryCount,
+    status: storedRecord.status,
+  }
+}
+
+async function migrateLegacyRecords(
+  records: PendingVaccination[],
+): Promise<void> {
+  if (records.length === 0) {
+    return
+  }
+
+  const db = await openDB()
+  const encryptedRecords = await Promise.all(records.map(toStoredRecord))
+
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], "readwrite")
+    const store = transaction.objectStore(STORE_NAME)
+
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+
+    encryptedRecords.forEach((record) => {
+      store.put(record)
+    })
+  })
 }
 
 // Initialize IndexedDB
@@ -69,10 +222,12 @@ export async function savePendingVaccination(
     status: "pending",
   }
 
+  const storedVaccination = await toStoredRecord(pendingVaccination)
+
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], "readwrite")
     const store = transaction.objectStore(STORE_NAME)
-    const request = store.add(pendingVaccination)
+    const request = store.add(storedVaccination)
 
     request.onsuccess = () => resolve(id)
     request.onerror = () => reject(request.error)
@@ -88,7 +243,34 @@ export async function getPendingVaccinations(): Promise<PendingVaccination[]> {
     const store = transaction.objectStore(STORE_NAME)
     const request = store.getAll()
 
-    request.onsuccess = () => resolve(request.result || [])
+    request.onsuccess = () => {
+      ;(async () => {
+        const rawRecords = (request.result || []) as StoredPendingVaccination[]
+        const legacyRecordsToMigrate: PendingVaccination[] = []
+
+        const parsed = await Promise.all(
+          rawRecords.map(async (record) => {
+            const parsedRecord = await fromStoredRecord(record)
+            if (parsedRecord && !record.encryptedPayload) {
+              legacyRecordsToMigrate.push(parsedRecord)
+            }
+            return parsedRecord
+          }),
+        )
+
+        const validRecords = parsed.filter(
+          (item): item is PendingVaccination => item !== null,
+        )
+
+        resolve(validRecords)
+
+        if (legacyRecordsToMigrate.length > 0) {
+          void migrateLegacyRecords(legacyRecordsToMigrate).catch((error) => {
+            console.error("Failed to migrate legacy offline records:", error)
+          })
+        }
+      })().catch((error) => reject(error))
+    }
     request.onerror = () => reject(request.error)
   })
 }
@@ -107,7 +289,7 @@ export async function updateVaccinationStatus(
     const getRequest = store.get(id)
 
     getRequest.onsuccess = () => {
-      const vaccination = getRequest.result
+      const vaccination = getRequest.result as StoredPendingVaccination | undefined
       if (vaccination) {
         vaccination.status = status
         if (retryCount !== undefined) {
@@ -146,10 +328,15 @@ export async function getPendingCount(): Promise<number> {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], "readonly")
     const store = transaction.objectStore(STORE_NAME)
-    const index = store.index("status")
-    const request = index.count(IDBKeyRange.only("pending"))
+    const request = store.getAll()
 
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      const records = (request.result || []) as StoredPendingVaccination[]
+      const unsyncedCount = records.filter(
+        (record) => record.status === "pending" || record.status === "failed",
+      ).length
+      resolve(unsyncedCount)
+    }
     request.onerror = () => reject(request.error)
   })
 }
@@ -193,12 +380,15 @@ export async function syncPendingVaccinations(): Promise<{
   total: number
 }> {
   const pending = await getPendingVaccinations()
-  const pendingOnly = pending.filter(v => v.status === "pending")
+  const unsynced = pending.filter(
+    (vaccination) =>
+      vaccination.status === "pending" || vaccination.status === "failed",
+  )
 
   let success = 0
   let failed = 0
 
-  for (const vaccination of pendingOnly) {
+  for (const vaccination of unsynced) {
     const result = await syncVaccination(vaccination)
     if (result) {
       success++
@@ -210,7 +400,7 @@ export async function syncPendingVaccinations(): Promise<{
   return {
     success,
     failed,
-    total: pendingOnly.length,
+    total: unsynced.length,
   }
 }
 
@@ -229,7 +419,7 @@ export function startBackgroundSync(
 
     const result = await syncPendingVaccinations()
     
-    if (result.success > 0 && onSyncComplete) {
+    if (onSyncComplete && result.total > 0) {
       onSyncComplete(result)
     }
   }

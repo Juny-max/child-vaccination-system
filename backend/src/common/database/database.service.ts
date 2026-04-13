@@ -65,6 +65,40 @@ export class DatabaseService implements OnModuleInit {
     return data as T;
   }
 
+  private isTransientNetworkError(error: any): boolean {
+    const message = String(error?.message || '').toLowerCase();
+    const code = String(error?.code || '');
+
+    return (
+      message.includes('fetch failed') ||
+      message.includes('network') ||
+      code === 'ECONNREFUSED' ||
+      code === 'ETIMEDOUT' ||
+      code === 'UND_ERR_CONNECT_TIMEOUT'
+    );
+  }
+
+  private async withRetry<T>(operation: () => Promise<T>, maxRetries = 2): Promise<T> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        lastError = error;
+
+        if (!this.isTransientNetworkError(error) || attempt === maxRetries) {
+          break;
+        }
+
+        // Exponential backoff to absorb brief Supabase connectivity hiccups.
+        await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 120));
+      }
+    }
+
+    throw lastError;
+  }
+
   // =========================================================================
   // PARENT PORTAL QUERIES
   // =========================================================================
@@ -221,25 +255,31 @@ export class DatabaseService implements OnModuleInit {
    * Get certificates for a child
    */
   async getCertificates(childId: string) {
-    const { data, error } = await this._supabase
-      .from('certificates')
-      .select(`
-        id,
-        certificate_id,
-        qr_payload,
-        issued_date,
-        completion_status,
-        vaccines_completed,
-        pdf_url,
-        status,
-        last_verified_at,
-        issued_by_user_id,
-        issued_by_facility_id
-      `)
-      .eq('child_id', childId)
-      .order('issued_date', { ascending: false });
+    const data = await this.withRetry(async () => {
+      const { data, error } = await this._supabase
+        .from('certificates')
+        .select(`
+          id,
+          certificate_id,
+          qr_payload,
+          issued_date,
+          completion_status,
+          vaccines_completed,
+          pdf_url,
+          status,
+          last_verified_at,
+          issued_by_user_id,
+          issued_by_facility_id
+        `)
+        .eq('child_id', childId)
+        .order('issued_date', { ascending: false });
 
-    if (error) throw new Error(error.message);
+      if (error) {
+        throw Object.assign(new Error(error.message), { code: error.code });
+      }
+
+      return data;
+    });
     
     // Fetch related user and facility data separately if needed
     if (data && data.length > 0) {
@@ -250,20 +290,40 @@ export class DatabaseService implements OnModuleInit {
       // Fetch users
       const usersMap = new Map();
       if (userIds.length > 0) {
-        const { data: users } = await this._supabase
-          .from('users')
-          .select('id, full_name')
-          .in('id', userIds);
+        const users = await this.withRetry(async () => {
+          const { data: users, error: usersError } = await this._supabase
+            .from('users')
+            .select('id, full_name')
+            .in('id', userIds);
+
+          if (usersError) {
+            throw Object.assign(new Error(usersError.message), {
+              code: usersError.code,
+            });
+          }
+
+          return users;
+        });
         users?.forEach(u => usersMap.set(u.id, u));
       }
       
       // Fetch facilities
       const facilitiesMap = new Map();
       if (facilityIds.length > 0) {
-        const { data: facilities } = await this._supabase
-          .from('branches')
-          .select('id, name')
-          .in('id', facilityIds);
+        const facilities = await this.withRetry(async () => {
+          const { data: facilities, error: facilitiesError } = await this._supabase
+            .from('branches')
+            .select('id, name')
+            .in('id', facilityIds);
+
+          if (facilitiesError) {
+            throw Object.assign(new Error(facilitiesError.message), {
+              code: facilitiesError.code,
+            });
+          }
+
+          return facilities;
+        });
         facilities?.forEach(f => facilitiesMap.set(f.id, f));
       }
       
@@ -415,37 +475,19 @@ export class DatabaseService implements OnModuleInit {
    * Get user by ID with retry logic for transient network failures
    */
   async getUserById(userId: string) {
-    const maxRetries = 2;
-    let lastError: any;
+    return this.withRetry(async () => {
+      const { data, error } = await this._supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const { data, error } = await this._supabase
-          .from('users')
-          .select('*')
-          .eq('id', userId)
-          .single();
-
-        if (error) throw new Error(error.message);
-        return data;
-      } catch (error: any) {
-        lastError = error;
-        
-        // Only retry on network errors, not on data errors
-        const isNetworkError = error.message?.includes('fetch failed') || 
-                              error.code === 'ECONNREFUSED' ||
-                              error.code === 'ETIMEDOUT';
-        
-        if (!isNetworkError || attempt === maxRetries) {
-          break;
-        }
-        
-        // Wait before retrying (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 100));
+      if (error) {
+        throw Object.assign(new Error(error.message), { code: error.code });
       }
-    }
 
-    throw lastError;
+      return data;
+    });
   }
 
   /**

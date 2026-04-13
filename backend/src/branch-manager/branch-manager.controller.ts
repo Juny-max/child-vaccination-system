@@ -21,6 +21,7 @@ import {
   CreateBranchCatchmentAreaDto,
   UpdateBranchCatchmentAreaDto,
 } from './catchment-areas.dto';
+import { AssignChildFollowUpDto } from './child-management.dto';
 import { LogStockDto, ResetExpiringStockDto } from './log-stock.dto';
 import { RegisterStaffDto } from './register-staff.dto';
 import { UpdateStaffDto, UpdateStaffStatusDto } from './update-staff.dto';
@@ -61,6 +62,64 @@ export class BranchManagerController {
       );
     }
     return this.branchManagerService.getDashboardData(branchId);
+  }
+
+  /**
+   * GET /api/branch-manager/children/search?query=...
+   * Search branch child records by name, phone, CVCC ID, or QR token.
+   */
+  @Get('children/search')
+  async searchBranchChildren(
+    @CurrentUser() user: any,
+    @Query('query') query?: string,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+
+    return this.branchManagerService.searchBranchChildren(
+      user.branchId,
+      query ?? '',
+    );
+  }
+
+  /**
+   * GET /api/branch-manager/children/queues
+   * Return action-first child management queues for branch managers.
+   */
+  @Get('children/queues')
+  async getChildManagementQueues(@CurrentUser() user: any) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+
+    return this.branchManagerService.getChildManagementQueues(user.branchId);
+  }
+
+  /**
+   * POST /api/branch-manager/children/follow-ups/assign
+   * Assign a branch child follow-up to an active nurse/CHW in this branch.
+   */
+  @Post('children/follow-ups/assign')
+  async assignChildFollowUp(
+    @CurrentUser() user: any,
+    @Body() dto: AssignChildFollowUpDto,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+
+    return this.branchManagerService.assignChildFollowUp(
+      user.branchId,
+      user.id,
+      dto,
+    );
   }
 
   /**

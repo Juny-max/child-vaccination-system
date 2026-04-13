@@ -26,7 +26,14 @@ import {
 } from "lucide-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -62,7 +69,7 @@ type ChildRecord = {
     name: string
     phone: string
     address: string
-    preferredContact: "sms" | "email" | "whatsapp"
+    preferredContact: "sms" | "email"
   }
   birthDetails: {
     weight: string
@@ -298,7 +305,7 @@ export default function ChildPatientChartPage() {
     landmark: "",
     city: "",
     region: "",
-    preferredContact: "sms" as "sms" | "email" | "whatsapp",
+    preferredContact: "sms" as "sms" | "email",
   })
   const [isSavingGuardian, setIsSavingGuardian] = useState(false)
   const [isLoadingGuardian, setIsLoadingGuardian] = useState(false)
@@ -442,18 +449,6 @@ export default function ChildPatientChartPage() {
       return { ...previous, recordedBy: userName }
     })
   }, [userName])
-
-  useEffect(() => {
-    if (!systemMessage) return
-    const timeout = window.setTimeout(() => setSystemMessage(null), 5000)
-    return () => window.clearTimeout(timeout)
-  }, [systemMessage])
-
-  useEffect(() => {
-    if (!measurementStatus) return
-    const timeout = window.setTimeout(() => setMeasurementStatus(null), 5000)
-    return () => window.clearTimeout(timeout)
-  }, [measurementStatus])
 
   // Background sync for offline vaccinations
   useEffect(() => {
@@ -892,7 +887,7 @@ export default function ChildPatientChartPage() {
         landmark: guardian.landmark || "",
         city: guardian.city,
         region: guardian.region,
-        preferredContact: guardian.preferredContact || "sms",
+        preferredContact: guardian.preferredContact === "email" ? "email" : "sms",
       })
       setShowGuardianModal(true)
     } catch (error) {
@@ -931,14 +926,14 @@ export default function ChildPatientChartPage() {
         preferredContact: guardianForm.preferredContact,
       }
 
-      await facilityApi.updateGuardian(guardianData.id, updateData)
+      const updatedGuardian = await facilityApi.updateGuardian(guardianData.id, updateData)
 
       // Refetch child profile to update displayed guardian info
       const profile = await facilityApi.getChildProfile(childId)
       setChildProfile(profile)
 
       closeGuardianModal()
-      setSystemMessage("Guardian details updated successfully.")
+      setSystemMessage(updatedGuardian.message || "Guardian details updated successfully.")
     } catch (error) {
       console.error("Failed to update guardian:", error)
       setSystemMessage("Failed to update guardian details. Please try again.")
@@ -1026,20 +1021,6 @@ export default function ChildPatientChartPage() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
-        {loadError ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{loadError}</AlertDescription>
-          </Alert>
-        ) : null}
-        
-        {systemMessage ? (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{systemMessage}</AlertDescription>
-          </Alert>
-        ) : null}
-        
         {isLoadingChild ? (
           <Card>
             <CardContent className="py-12 text-center">
@@ -1247,13 +1228,6 @@ export default function ChildPatientChartPage() {
               <CardDescription>Capture anthropometry before today&apos;s vaccines to keep the growth chart accurate.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              {measurementStatus ? (
-                <Alert role="status" className="border-primary/40 bg-primary/10">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  <AlertDescription className="text-foreground/80">{measurementStatus}</AlertDescription>
-                </Alert>
-              ) : null}
-
               <div className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Latest measurement</p>
@@ -1553,6 +1527,39 @@ export default function ChildPatientChartPage() {
         </>
         )}
       </main>
+
+      <NotificationModal
+        open={Boolean(loadError)}
+        title="Unable to load child record"
+        message={loadError || ""}
+        onOpenChange={(open) => {
+          if (!open) {
+            setLoadError(null)
+          }
+        }}
+      />
+
+      <NotificationModal
+        open={Boolean(systemMessage)}
+        title="Notification"
+        message={systemMessage || ""}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSystemMessage(null)
+          }
+        }}
+      />
+
+      <NotificationModal
+        open={Boolean(measurementStatus)}
+        title="Growth monitoring update"
+        message={measurementStatus || ""}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMeasurementStatus(null)
+          }
+        }}
+      />
 
       {selectedDose ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
@@ -1858,11 +1865,10 @@ export default function ChildPatientChartPage() {
                 <select
                   id="guardian-preferredContact"
                   value={guardianForm.preferredContact}
-                  onChange={(e) => handleGuardianFormChange("preferredContact", e.target.value)}
+                  onChange={(e) => handleGuardianFormChange("preferredContact", e.target.value as "sms" | "email")}
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="sms">SMS</option>
-                  <option value="whatsapp">WhatsApp</option>
                   <option value="email">Email</option>
                 </select>
               </div>
@@ -1924,4 +1930,34 @@ function formatDate(dateString: string) {
     month: "short",
     year: "numeric",
   })
+}
+
+function NotificationModal({
+  open,
+  title,
+  message,
+  onOpenChange,
+}: {
+  open: boolean
+  title: string
+  message: string
+  onOpenChange: (open: boolean) => void
+}) {
+  if (!message) {
+    return null
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{message}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="flex justify-end">
+          <AlertDialogAction>OK</AlertDialogAction>
+        </div>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
 }

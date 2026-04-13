@@ -1,6 +1,8 @@
 'use client'
 
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -13,12 +15,12 @@ import { useParentDashboard } from "../dashboard-context"
 import * as parentApi from "@/lib/api/parent"
 import {
   AlertTriangle,
-  CheckCircle2,
   Edit3,
   Globe,
   Loader2,
   Lock,
   Mail,
+  MailCheck,
   MapPin,
   MessageCircle,
   Plus,
@@ -75,20 +77,24 @@ type ContactFormState = {
 
 type ContactErrors = Partial<Record<"name" | "relationship" | "phone", string>>
 
+type StatusVisual = "default" | "email-link"
+
 export default function MotherDetailsPage() {
-  const { userName, motherDetails: apiMotherDetails, isLoading, updateMotherDetails } = useParentDashboard()
+  const {
+    userName,
+    motherDetails: apiMotherDetails,
+    isLoading,
+    updateMotherDetails,
+    requestEmailChangeVerification,
+    verifyEmailChangeToken,
+  } = useParentDashboard()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   
   // Convert API data to local format
   const initialDetails: MotherDetailsLocal = useMemo(() => {
     if (apiMotherDetails) {
-      return {
-        name: apiMotherDetails.name,
-        primaryPhone: apiMotherDetails.primaryPhone || "",
-        secondaryPhone: apiMotherDetails.secondaryPhone || "",
-        email: apiMotherDetails.email || "",
-        address: apiMotherDetails.address || "",
-        preferredContactMethod: apiMotherDetails.preferredContact as ContactMethod || "sms",
-      }
+      return toMotherDetailsLocal(apiMotherDetails, userName || "Parent")
     }
     return {
       name: userName || "Parent",
@@ -104,6 +110,12 @@ export default function MotherDetailsPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [statusTitle, setStatusTitle] = useState("Profile updated")
+  const [statusVisual, setStatusVisual] = useState<StatusVisual>("default")
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
+  const [emailVerificationError, setEmailVerificationError] = useState<string | null>(null)
+  const [isVerifyingEmailChange, setIsVerifyingEmailChange] = useState(false)
+  const [processedEmailToken, setProcessedEmailToken] = useState<string | null>(null)
   const [formErrors, setFormErrors] = useState<ProfileErrors>({})
   const [formState, setFormState] = useState<EditableMotherFields>(() => toEditableState(initialDetails))
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>(() => 
@@ -112,34 +124,74 @@ export default function MotherDetailsPage() {
   const [contactFormState, setContactFormState] = useState<ContactFormState | null>(null)
   const [contactFormErrors, setContactFormErrors] = useState<ContactErrors>({})
   const [contactStatus, setContactStatus] = useState<string | null>(null)
+  const [contactError, setContactError] = useState<string | null>(null)
+  const [primaryUpdatingId, setPrimaryUpdatingId] = useState<string | null>(null)
 
   // Sync with API data when it loads
   useEffect(() => {
     if (apiMotherDetails) {
-      const newDetails: MotherDetailsLocal = {
-        name: apiMotherDetails.name,
-        primaryPhone: apiMotherDetails.primaryPhone || "",
-        secondaryPhone: apiMotherDetails.secondaryPhone || "",
-        email: apiMotherDetails.email || "",
-        address: apiMotherDetails.address || "",
-        preferredContactMethod: apiMotherDetails.preferredContact as ContactMethod || "sms",
-      }
+      const newDetails: MotherDetailsLocal = toMotherDetailsLocal(apiMotherDetails, userName || "Parent")
       setMotherDetails(newDetails)
       setFormState(toEditableState(newDetails))
       setEmergencyContacts(ensurePrimaryContact(apiMotherDetails.emergencyContacts || []))
     }
-  }, [apiMotherDetails])
+  }, [apiMotherDetails, userName])
 
   useEffect(() => {
-    if (!statusMessage) return
-    const timeout = window.setTimeout(() => setStatusMessage(null), 6000)
-    return () => window.clearTimeout(timeout)
+    if (statusMessage) {
+      setIsStatusModalOpen(true)
+    }
   }, [statusMessage])
 
   useEffect(() => {
+    const token = searchParams.get("emailChangeToken")
+    if (!token || token === processedEmailToken) return
+
+    let cancelled = false
+
+    const verifyFromLink = async () => {
+      setIsVerifyingEmailChange(true)
+      setEmailVerificationError(null)
+
+      try {
+        const updated = await verifyEmailChangeToken(token)
+        if (cancelled) return
+
+        const nextDetails: MotherDetailsLocal = toMotherDetailsLocal(
+          updated,
+          motherDetails.name || userName || "Parent",
+        )
+
+        setMotherDetails(nextDetails)
+        setFormState(toEditableState(nextDetails))
+        setStatusTitle("Profile updated")
+        setStatusVisual("default")
+        setStatusMessage("Your new email has been verified and saved successfully.")
+      } catch (error) {
+        if (cancelled) return
+        console.error('Email verification failed:', error)
+        setEmailVerificationError("This verification link is invalid or expired. Please request a new one.")
+      } finally {
+        if (cancelled) return
+        setIsVerifyingEmailChange(false)
+        setProcessedEmailToken(token)
+        router.replace("/parent/dashboard/mother-details")
+      }
+    }
+
+    void verifyFromLink()
+
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, processedEmailToken, verifyEmailChangeToken, router, motherDetails.name, userName])
+
+  useEffect(() => {
     if (!contactStatus) return
-    const timeout = window.setTimeout(() => setContactStatus(null), 6000)
-    return () => window.clearTimeout(timeout)
+    setStatusTitle("Contact updated")
+    setStatusVisual("default")
+    setStatusMessage(contactStatus)
+    setContactStatus(null)
   }, [contactStatus])
 
   const formattedAddress = motherDetails.address || "No address provided"
@@ -148,7 +200,16 @@ export default function MotherDetailsPage() {
     setFormState(toEditableState(motherDetails))
     setFormErrors({})
     setStatusMessage(null)
+    setIsStatusModalOpen(false)
+    setEmailVerificationError(null)
     setIsEditing(true)
+  }
+
+  const closeStatusModal = () => {
+    setIsStatusModalOpen(false)
+    setStatusMessage(null)
+    setStatusTitle("Profile updated")
+    setStatusVisual("default")
   }
 
   const cancelEditing = () => {
@@ -159,6 +220,7 @@ export default function MotherDetailsPage() {
 
   const openContactEditor = (contact?: EmergencyContact) => {
     setContactFormErrors({})
+    setContactError(null)
     setContactFormState(
       contact
         ? {
@@ -265,11 +327,13 @@ export default function MotherDetailsPage() {
       })
 
       setEmergencyContacts(nextContacts)
+      setContactError(null)
       setContactStatus(sanitized.id ? "Emergency contact details saved." : "Emergency contact added to your profile.")
       closeContactEditor()
     } catch (error) {
       console.error('Failed to save emergency contact:', error)
       setContactFormErrors({ name: "Failed to save. Please try again." })
+      setContactError("Failed to save emergency contact. Please try again.")
     } finally {
       setIsSavingContact(false)
     }
@@ -291,17 +355,19 @@ export default function MotherDetailsPage() {
       })
       
       setEmergencyContacts(nextContacts)
+      setContactError(null)
       setContactStatus("Emergency contact removed from your profile.")
       if (contactFormState?.id === contactId) {
         closeContactEditor()
       }
     } catch (error) {
       console.error('Failed to delete emergency contact:', error)
-      setContactStatus("Failed to remove contact. Please try again.")
+      setContactError("Failed to remove contact. Please try again.")
     }
   }
 
   const makePrimary = async (contactId: string) => {
+    setPrimaryUpdatingId(contactId)
     const nextContacts = emergencyContacts.map((contact) => ({
       ...contact,
       isPrimary: contact.id === contactId,
@@ -319,13 +385,16 @@ export default function MotherDetailsPage() {
       })
       
       setEmergencyContacts(nextContacts)
+      setContactError(null)
       setContactStatus("Primary emergency contact updated.")
       if (contactFormState) {
         setContactFormState((previous) => (previous ? { ...previous, isPrimary: previous.id === contactId } : previous))
       }
     } catch (error) {
       console.error('Failed to update primary contact:', error)
-      setContactStatus("Failed to update primary contact. Please try again.")
+      setContactError("Failed to update primary contact. Please try again.")
+    } finally {
+      setPrimaryUpdatingId(null)
     }
   }
 
@@ -355,37 +424,65 @@ export default function MotherDetailsPage() {
 
     const sanitized = sanitizeForm(formState)
     setIsSaving(true)
+    setEmailVerificationError(null)
 
     window.setTimeout(async () => {
-      const nextDetails: MotherDetailsLocal = {
-        ...motherDetails,
-        name: sanitized.name,
-        primaryPhone: sanitized.primaryPhone,
-        secondaryPhone: sanitized.secondaryPhone ? sanitized.secondaryPhone : undefined,
-        email: sanitized.email,
-        address: sanitized.address,
-        preferredContactMethod: sanitized.preferredContactMethod,
-      }
-
-      // Call API to update
       try {
+        const currentEmail = motherDetails.email.trim().toLowerCase()
+        const emailChanged = sanitized.email !== currentEmail
+
         await updateMotherDetails({
           primaryPhone: sanitized.primaryPhone,
           secondaryPhone: sanitized.secondaryPhone || undefined,
-          email: sanitized.email,
           addressLine1: sanitized.address,
           preferredContactMethod: sanitized.preferredContactMethod,
         })
+
+        const nextDetails: MotherDetailsLocal = {
+          ...motherDetails,
+          name: sanitized.name,
+          primaryPhone: sanitized.primaryPhone,
+          secondaryPhone: sanitized.secondaryPhone ? sanitized.secondaryPhone : undefined,
+          // Keep current email until verification is completed from the link.
+          email: emailChanged ? motherDetails.email : sanitized.email,
+          address: sanitized.address,
+          preferredContactMethod: sanitized.preferredContactMethod,
+        }
+
+        setMotherDetails(nextDetails)
+        setFormState(toEditableState(nextDetails))
+        setFormErrors({})
+        setIsEditing(false)
+
+        if (emailChanged) {
+          try {
+            const verification = await requestEmailChangeVerification(sanitized.email)
+            setStatusTitle("Verification link sent")
+            setStatusVisual("email-link")
+            setStatusMessage(verification.message)
+          } catch (verificationError) {
+            console.error('Failed to request email verification:', verificationError)
+            setStatusTitle("Profile updated")
+            setStatusVisual("default")
+            setStatusMessage(
+              "Contact details were saved, but we could not send the verification link. Please try changing the email again.",
+            )
+            setEmailVerificationError(
+              "Could not send verification email right now. Your current email remains unchanged.",
+            )
+          }
+        } else {
+          setStatusTitle("Profile updated")
+          setStatusVisual("default")
+          setStatusMessage("Your profile information has been updated. We will use the latest details for reminders and emergency contact.")
+        }
       } catch (error) {
         console.error('Failed to update profile:', error)
+        setStatusMessage(null)
+        setEmailVerificationError("We could not save your changes. Please try again.")
+      } finally {
+        setIsSaving(false)
       }
-
-      setMotherDetails(nextDetails)
-      setFormState(toEditableState(nextDetails))
-      setIsSaving(false)
-      setIsEditing(false)
-      setFormErrors({})
-      setStatusMessage("Your profile information has been updated. We will use the latest details for reminders and emergency contact.")
     }, 650)
   }
 
@@ -405,11 +502,53 @@ export default function MotherDetailsPage() {
         </CardHeader>
       </Card>
 
-      {statusMessage ? (
+      <Dialog
+        open={isStatusModalOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeStatusModal()
+            return
+          }
+          setIsStatusModalOpen(true)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg">{statusTitle}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="mx-auto h-40 w-40">
+              {statusVisual === "email-link" ? (
+                <div className="flex h-full w-full items-center justify-center rounded-full border border-primary/20 bg-primary/10">
+                  <MailCheck className="size-20 text-primary" />
+                </div>
+              ) : (
+                <DotLottieReact src="/Done.lottie" loop={false} autoplay />
+              )}
+            </div>
+            <p className="text-center text-sm text-muted-foreground">{statusMessage}</p>
+            <Button className="w-full" onClick={closeStatusModal}>
+              Continue
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {isVerifyingEmailChange ? (
         <Alert role="status" className="border-primary/40 bg-primary/10 text-primary-foreground">
-          <CheckCircle2 className="text-primary" />
-          <AlertTitle className="text-foreground">Profile updated</AlertTitle>
-          <AlertDescription className="text-foreground/80">{statusMessage}</AlertDescription>
+          <Loader2 className="animate-spin text-primary" />
+          <AlertTitle className="text-foreground">Verifying new email</AlertTitle>
+          <AlertDescription className="text-foreground/80">
+            Please wait while we verify your email change link.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {emailVerificationError ? (
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertTitle>Email verification failed</AlertTitle>
+          <AlertDescription>{emailVerificationError}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -425,7 +564,8 @@ export default function MotherDetailsPage() {
           <DialogHeader>
             <DialogTitle className="text-lg">Update contact details</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              You can update your primary mobile number and email anytime. Facility staff manage the rest of your profile details
+              You can request an email update anytime. We will send a verification link to your new email before applying the change.
+              Facility staff manage the rest of your profile details
               to keep records consistent across systems.
             </p>
           </DialogHeader>
@@ -466,6 +606,7 @@ export default function MotherDetailsPage() {
                   error={formErrors.email}
                   placeholder="example@email.com"
                   icon={<Mail className="size-4 text-primary" />}
+                  helperText="Email changes require verification through a link sent to the new address."
                 />
               </div>
 
@@ -587,11 +728,11 @@ export default function MotherDetailsPage() {
           <CardDescription>Add trusted contacts who can bring your child for appointments when needed.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {contactStatus ? (
-            <Alert role="status" className="border-primary/40 bg-primary/10 text-primary-foreground">
-              <CheckCircle2 className="text-primary" />
-              <AlertTitle className="text-foreground">Contact updated</AlertTitle>
-              <AlertDescription className="text-foreground/80">{contactStatus}</AlertDescription>
+          {contactError ? (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Contact update failed</AlertTitle>
+              <AlertDescription>{contactError}</AlertDescription>
             </Alert>
           ) : null}
 
@@ -619,8 +760,21 @@ export default function MotherDetailsPage() {
                       <UserCog className="size-4" /> Edit
                     </Button>
                     {!contact.isPrimary ? (
-                      <Button size="sm" variant="outline" onClick={() => makePrimary(contact.id)}>
-                        <ShieldCheck className="size-4" /> Set primary
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => makePrimary(contact.id)}
+                        disabled={primaryUpdatingId !== null}
+                      >
+                        {primaryUpdatingId === contact.id ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" /> Setting...
+                          </>
+                        ) : (
+                          <>
+                            <ShieldCheck className="size-4" /> Set primary
+                          </>
+                        )}
                       </Button>
                     ) : null}
                     <Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteContact(contact.id)}>
@@ -635,79 +789,88 @@ export default function MotherDetailsPage() {
           <Button variant="ghost" size="sm" className="self-start" onClick={() => openContactEditor()}>
             <Plus className="size-4" /> Add another contact
           </Button>
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={Boolean(contactFormState)}
+        onOpenChange={(open) => {
+          if (!open && !isSavingContact) {
+            closeContactEditor()
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg">
+              {contactFormState?.id ? "Edit emergency contact" : "Add emergency contact"}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">Provide someone the clinic can reach quickly when you are unavailable.</p>
+          </DialogHeader>
 
           {contactFormState ? (
-            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">
-                    {contactFormState.id ? "Edit emergency contact" : "Add emergency contact"}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">Provide someone the clinic can reach quickly when you are unavailable.</p>
+            <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleContactSubmit}>
+              <Field
+                id="contactName"
+                label="Full name"
+                value={contactFormState.name}
+                onChange={(event) => updateContactField("name", event.target.value)}
+                error={contactFormErrors.name}
+                placeholder="e.g. Kwame Asante"
+                autoComplete="name"
+              />
+              <Field
+                id="contactRelationship"
+                label="Relationship"
+                value={contactFormState.relationship}
+                onChange={(event) => updateContactField("relationship", event.target.value)}
+                error={contactFormErrors.relationship}
+                placeholder="Father, Auntie, Neighbor"
+                autoComplete="relationship"
+              />
+              <Field
+                id="contactPhone"
+                label="Phone number"
+                value={contactFormState.phone}
+                onChange={(event) => updateContactField("phone", event.target.value)}
+                error={contactFormErrors.phone}
+                placeholder="+233 24 000 0000"
+                autoComplete="tel"
+                icon={<Phone className="size-4 text-primary" />}
+              />
+              <div className="space-y-2">
+                <Label htmlFor="contactPrimary" className="text-sm font-medium text-foreground">
+                  Primary contact
+                </Label>
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                  <input
+                    id="contactPrimary"
+                    type="checkbox"
+                    checked={contactFormState.isPrimary}
+                    onChange={(event) => updateContactField("isPrimary", event.target.checked)}
+                    className="size-4"
+                  />
+                  <span className="text-muted-foreground">Mark as the first person nurses should call.</span>
                 </div>
-                <Button variant="ghost" size="sm" onClick={closeContactEditor}>
+              </div>
+
+              <div className="sm:col-span-2 flex flex-col gap-2 sm:flex-row">
+                <Button type="submit" className="gap-2" disabled={isSavingContact}>
+                  {isSavingContact ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+                  {isSavingContact
+                    ? "Saving..."
+                    : contactFormState.id
+                      ? "Save contact"
+                      : "Add contact"}
+                </Button>
+                <Button type="button" variant="ghost" onClick={closeContactEditor} disabled={isSavingContact}>
                   Cancel
                 </Button>
               </div>
-
-              <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={handleContactSubmit}>
-                <Field
-                  id="contactName"
-                  label="Full name"
-                  value={contactFormState.name}
-                  onChange={(event) => updateContactField("name", event.target.value)}
-                  error={contactFormErrors.name}
-                  placeholder="e.g. Kwame Asante"
-                  autoComplete="name"
-                />
-                <Field
-                  id="contactRelationship"
-                  label="Relationship"
-                  value={contactFormState.relationship}
-                  onChange={(event) => updateContactField("relationship", event.target.value)}
-                  error={contactFormErrors.relationship}
-                  placeholder="Father, Auntie, Neighbor"
-                  autoComplete="relationship"
-                />
-                <Field
-                  id="contactPhone"
-                  label="Phone number"
-                  value={contactFormState.phone}
-                  onChange={(event) => updateContactField("phone", event.target.value)}
-                  error={contactFormErrors.phone}
-                  placeholder="+233 24 000 0000"
-                  autoComplete="tel"
-                  icon={<Phone className="size-4 text-primary" />}
-                />
-                <div className="space-y-2">
-                  <Label htmlFor="contactPrimary" className="text-sm font-medium text-foreground">
-                    Primary contact
-                  </Label>
-                  <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                    <input
-                      id="contactPrimary"
-                      type="checkbox"
-                      checked={contactFormState.isPrimary}
-                      onChange={(event) => updateContactField("isPrimary", event.target.checked)}
-                      className="size-4"
-                    />
-                    <span className="text-muted-foreground">Mark as the first person nurses should call.</span>
-                  </div>
-                </div>
-
-                <div className="sm:col-span-2 flex flex-col gap-2 sm:flex-row">
-                  <Button type="submit" className="gap-2">
-                    <ShieldCheck className="size-4" /> {contactFormState.id ? "Save contact" : "Add contact"}
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={closeContactEditor}>
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </div>
+            </form>
           ) : null}
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -799,6 +962,25 @@ function toEditableState(details: MotherDetailsLocal): EditableMotherFields {
     email: details.email,
     address: details.address,
     preferredContactMethod: details.preferredContactMethod,
+  }
+}
+
+function toMotherDetailsLocal(details: parentApi.MotherDetails, fallbackName: string): MotherDetailsLocal {
+  const normalized = details as parentApi.MotherDetails & {
+    addressLine1?: string
+    preferredContactMethod?: ContactMethod
+  }
+
+  return {
+    name: normalized.name || fallbackName,
+    primaryPhone: normalized.primaryPhone || "",
+    secondaryPhone: normalized.secondaryPhone || "",
+    email: normalized.email || "",
+    address: normalized.address || normalized.addressLine1 || "",
+    preferredContactMethod:
+      (normalized.preferredContact as ContactMethod) ||
+      normalized.preferredContactMethod ||
+      "sms",
   }
 }
 

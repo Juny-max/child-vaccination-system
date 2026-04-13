@@ -291,6 +291,24 @@ export class UpdateMotherDetailsDto {
 }
 
 /**
+ * Request verification link for changing guardian email
+ */
+export class RequestEmailChangeDto {
+  @IsEmail()
+  newEmail: string;
+}
+
+/**
+ * Verify guardian email change token
+ */
+export class VerifyEmailChangeDto {
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(32)
+  token: string;
+}
+
+/**
  * Add/Update emergency contact
  */
 export class EmergencyContactRequestDto {

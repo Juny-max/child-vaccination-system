@@ -94,6 +94,65 @@ export interface BranchDashboardData {
   dropoutData: DropoutData[];
 }
 
+export interface BranchChildLookupResult {
+  id: string;
+  childId: string;
+  childName: string;
+  dateOfBirth: string;
+  age: string;
+  gender: string;
+  guardianName: string;
+  guardianPhone: string;
+  facilityName: string;
+  vaccinationStatus: 'Complete' | 'In Progress' | 'Overdue';
+  completedVaccines: number;
+  upcomingVaccines: number;
+  overdueVaccines: number;
+  nextVaccine: string | null;
+  nextDueDate: string | null;
+  lastVisit: string | null;
+}
+
+export type BranchChildQueueType =
+  | 'overdue'
+  | 'zero-dose'
+  | 'missed'
+  | 'failed-reminder';
+
+export type BranchChildQueuePriority = 'critical' | 'high' | 'medium' | 'low';
+
+export interface BranchChildQueueItem {
+  id: string;
+  queueType: BranchChildQueueType;
+  childId: string;
+  childCvccId: string;
+  childName: string;
+  guardianName: string;
+  guardianPhone: string;
+  reason: string;
+  priority: BranchChildQueuePriority;
+  referenceDate: string | null;
+  daysOpen: number;
+  assignedToUserId?: string | null;
+  assignedToName?: string | null;
+  assignedAt?: string | null;
+}
+
+export interface BranchChildManagementQueues {
+  overdue: BranchChildQueueItem[];
+  zeroDose: BranchChildQueueItem[];
+  missed: BranchChildQueueItem[];
+  failedReminders: BranchChildQueueItem[];
+}
+
+export interface AssignBranchChildFollowUpPayload {
+  childId: string;
+  assigneeUserId: string;
+  queueType: BranchChildQueueType;
+  reason?: string;
+  notes?: string;
+}
+
 export interface GeoJsonGeometry {
   type: 'Polygon' | 'MultiPolygon';
   coordinates: any[];
@@ -163,6 +222,45 @@ export interface ResetExpiringStockResponse {
  */
 export async function getBranchDashboard(): Promise<BranchDashboardData> {
   return apiRequest<BranchDashboardData>('/branch-manager/dashboard');
+}
+
+/**
+ * Search child records scoped to the logged-in branch manager's branch.
+ */
+export async function searchBranchChildren(
+  query: string,
+): Promise<BranchChildLookupResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const params = new URLSearchParams({ query: trimmed });
+  return apiRequest<BranchChildLookupResult[]>(
+    `/branch-manager/children/search?${params.toString()}`,
+  );
+}
+
+/**
+ * Get queue-first child management lists for branch managers.
+ */
+export async function getBranchChildManagementQueues(): Promise<BranchChildManagementQueues> {
+  return apiRequest<BranchChildManagementQueues>('/branch-manager/children/queues');
+}
+
+/**
+ * Assign branch child follow-up to an active nurse/CHW in the branch.
+ */
+export async function assignBranchChildFollowUp(
+  payload: AssignBranchChildFollowUpPayload,
+): Promise<{ success: boolean; message: string }> {
+  return apiRequest<{ success: boolean; message: string }>(
+    '/branch-manager/children/follow-ups/assign',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 /**

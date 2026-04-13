@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { createHmac, randomBytes } from 'crypto';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { SmsService } from '../common/sms.service';
@@ -17,6 +18,7 @@ import {
   GuardianDto,
   TodayAppointmentDto,
   UrgentFollowUpDto,
+  MissedAppointmentReminderDto,
   RegisterGuardianDto,
   RegisteredGuardianDto,
   RegisterChildDto,
@@ -29,6 +31,11 @@ import {
 @Injectable()
 export class FacilityService {
   private readonly logger = new Logger(FacilityService.name);
+  private readonly emailChangeTokenSecret =
+    process.env.EMAIL_CHANGE_TOKEN_SECRET ||
+    process.env.JWT_SECRET ||
+    'cvcc-email-change-secret';
+  private readonly emailChangeTokenTtlMs = 30 * 60 * 1000;
 
   constructor(
     private readonly db: DatabaseService,
@@ -778,14 +785,282 @@ export class FacilityService {
   async updateGuardian(
     guardianId: string,
     dto: UpdateGuardianDto,
+    actorUserId?: string,
+    baseUrl?: string,
   ): Promise<GuardianDto> {
+    const trimmedEmailInput =
+      typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : '';
+    const requestedEmail = trimmedEmailInput.length > 0 ? trimmedEmailInput : null;
+
+    const { data: currentGuardian, error: currentGuardianError } = await this.db.supabase
+      .from('guardians')
+      .select(
+        'id, user_id, full_name, phone_primary, phone_alternate, email, address_line1, landmark, city, region, preferred_contact',
+      )
+      .eq('id', guardianId)
+      .maybeSingle();
+
+    if (currentGuardianError) {
+      throw new BadRequestException(
+        `Failed to load guardian details: ${currentGuardianError.message}`,
+      );
+    }
+
+    if (!currentGuardian) {
+      throw new NotFoundException('Guardian record not found.');
+    }
+
+    const linkedUser = currentGuardian.user_id
+      ? await this.db.getUserById(currentGuardian.user_id).catch(() => null)
+      : null;
+
+    const currentGuardianEmail = currentGuardian.email
+      ? String(currentGuardian.email).trim().toLowerCase()
+      : null;
+    const currentAccountEmail = linkedUser?.email
+      ? String(linkedUser.email).trim().toLowerCase()
+      : null;
+    const effectiveCurrentEmail = currentGuardianEmail || currentAccountEmail;
+
+    if (dto.preferredContact === 'email' && !requestedEmail && !effectiveCurrentEmail) {
+      throw new BadRequestException(
+        'Email address is required when preferred contact method is Email.',
+      );
+    }
+
+    let guardianEmailToPersist: string | null = currentGuardianEmail;
+    let guardianUserIdToPersist: string | null = currentGuardian.user_id || null;
+    let responseMessage: string | undefined;
+    let emailVerificationRequired = false;
+    let credentialsEmailSent = false;
+
+    const isEmailChangeRequested =
+      requestedEmail !== null && requestedEmail !== effectiveCurrentEmail;
+
+    if (isEmailChangeRequested && requestedEmail) {
+      const existingUser = await this.db.getUserByEmail(requestedEmail);
+
+      if (!effectiveCurrentEmail) {
+        if (existingUser && existingUser.id !== guardianUserIdToPersist) {
+          throw new ConflictException('This email is already in use by another account.');
+        }
+
+        let tempPassword: string | null = null;
+
+        if (!guardianUserIdToPersist) {
+          if (existingUser) {
+            guardianUserIdToPersist = existingUser.id;
+          } else {
+            tempPassword = this.generateTempPassword();
+            const passwordHash = await this.hashPassword(tempPassword);
+
+            const { data: createdUser, error: createUserError } = await this.db.supabase
+              .from('users')
+              .insert({
+                email: requestedEmail,
+                phone: dto.phonePrimary,
+                full_name: dto.fullName,
+                role: 'parent',
+                status: 'active',
+                password_hash: passwordHash,
+                must_change_password: true,
+              })
+              .select('id')
+              .single();
+
+            if (createUserError || !createdUser) {
+              if (createUserError?.code === '23505') {
+                throw new ConflictException('This email is already in use by another account.');
+              }
+              throw new BadRequestException(
+                `Failed to create parent account: ${createUserError?.message || 'Unknown error'}`,
+              );
+            }
+
+            guardianUserIdToPersist = createdUser.id;
+          }
+        } else if (currentAccountEmail !== requestedEmail) {
+          if (existingUser && existingUser.id !== guardianUserIdToPersist) {
+            throw new ConflictException('This email is already in use by another account.');
+          }
+
+          const { error: updateUserEmailError } = await this.db.supabase
+            .from('users')
+            .update({
+              email: requestedEmail,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', guardianUserIdToPersist);
+
+          if (updateUserEmailError) {
+            if (updateUserEmailError.code === '23505') {
+              throw new ConflictException('This email is already in use by another account.');
+            }
+            throw new BadRequestException(
+              `Failed to update account email: ${updateUserEmailError.message}`,
+            );
+          }
+        }
+
+        guardianEmailToPersist = requestedEmail;
+
+        if (tempPassword) {
+          credentialsEmailSent = await this.emailService.sendWelcomeEmail(
+            { email: requestedEmail, name: dto.fullName },
+            tempPassword,
+          );
+
+          responseMessage = credentialsEmailSent
+            ? `Guardian details updated. Login credentials sent to ${requestedEmail}.`
+            : 'Guardian details updated. Parent account created, but credential email delivery failed.';
+        }
+      } else {
+        if (!guardianUserIdToPersist) {
+          const tempPassword = this.generateTempPassword();
+          const passwordHash = await this.hashPassword(tempPassword);
+
+          const { data: createdUser, error: createUserError } = await this.db.supabase
+            .from('users')
+            .insert({
+              email: requestedEmail,
+              phone: dto.phonePrimary,
+              full_name: dto.fullName,
+              role: 'parent',
+              status: 'active',
+              password_hash: passwordHash,
+              must_change_password: true,
+            })
+            .select('id')
+            .single();
+
+          if (createUserError || !createdUser) {
+            if (createUserError?.code === '23505') {
+              throw new ConflictException('This email is already in use by another account.');
+            }
+            throw new BadRequestException(
+              `Failed to create parent account: ${createUserError?.message || 'Unknown error'}`,
+            );
+          }
+
+          guardianUserIdToPersist = createdUser.id;
+          guardianEmailToPersist = requestedEmail;
+          credentialsEmailSent = await this.emailService.sendWelcomeEmail(
+            { email: requestedEmail, name: dto.fullName },
+            tempPassword,
+          );
+
+          responseMessage = credentialsEmailSent
+            ? `Guardian details updated. Login credentials sent to ${requestedEmail}.`
+            : 'Guardian details updated. Parent account created, but credential email delivery failed.';
+          const { data: guardian, error } = await this.db.supabase
+            .from('guardians')
+            .update({
+              user_id: guardianUserIdToPersist,
+              full_name: dto.fullName,
+              phone_primary: dto.phonePrimary,
+              phone_alternate: dto.phoneAlternate || null,
+              email: guardianEmailToPersist,
+              address_line1: dto.addressLine1,
+              landmark: dto.landmark || null,
+              city: dto.city,
+              region: dto.region,
+              preferred_contact: dto.preferredContact || 'sms',
+            })
+            .eq('id', guardianId)
+            .select()
+            .single();
+
+          if (error) {
+            this.logger.error(`Failed to update guardian: ${error.message}`);
+            throw new BadRequestException('Failed to update guardian. Please try again.');
+          }
+
+          if (actorUserId) {
+            await this.db.createAuditLog(actorUserId, 'update', 'guardians', guardian.id, {
+              before: {
+                fullName: currentGuardian.full_name,
+                phonePrimary: currentGuardian.phone_primary,
+                email: currentGuardianEmail,
+                preferredContact: currentGuardian.preferred_contact,
+              },
+              after: {
+                fullName: dto.fullName,
+                phonePrimary: dto.phonePrimary,
+                requestedEmail,
+                effectiveCurrentEmail,
+                emailVerificationRequired: false,
+              },
+            });
+          }
+
+          return {
+            id: guardian.id,
+            fullName: guardian.full_name,
+            phonePrimary: guardian.phone_primary,
+            phoneAlternate: guardian.phone_alternate,
+            email: guardian.email,
+            addressLine1: guardian.address_line1,
+            landmark: guardian.landmark,
+            city: guardian.city,
+            region: guardian.region,
+            preferredContact: guardian.preferred_contact === 'email' ? 'email' : 'sms',
+            message: responseMessage,
+            credentialsEmailSent: credentialsEmailSent || undefined,
+          };
+        }
+
+        if (existingUser && existingUser.id !== guardianUserIdToPersist) {
+          throw new ConflictException('This email is already in use by another account.');
+        }
+
+        const verificationToken = this.createEmailChangeToken({
+          userId: guardianUserIdToPersist,
+          guardianId: currentGuardian.id,
+          newEmail: requestedEmail,
+          currentEmail: effectiveCurrentEmail,
+          exp: Date.now() + this.emailChangeTokenTtlMs,
+          nonce: randomBytes(12).toString('hex'),
+        });
+
+        const frontendUrl = baseUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
+        const verificationLink = `${frontendUrl}/parent/dashboard/mother-details?emailChangeToken=${encodeURIComponent(verificationToken)}`;
+
+        const verificationSent = await this.emailService.sendEmailChangeVerificationEmail(
+          {
+            email: requestedEmail,
+            name: dto.fullName || currentGuardian.full_name || 'Parent',
+          },
+          verificationLink,
+        );
+
+        if (!verificationSent) {
+          throw new BadRequestException(
+            'Unable to send email verification right now. Please try again shortly.',
+          );
+        }
+
+        emailVerificationRequired = true;
+        responseMessage =
+          'Verification link sent to the new email. The account email will update after verification.';
+      }
+    }
+
+    if (!requestedEmail && !effectiveCurrentEmail) {
+      guardianEmailToPersist = null;
+    } else if (!requestedEmail && effectiveCurrentEmail) {
+      guardianEmailToPersist = currentGuardianEmail || effectiveCurrentEmail;
+    }
+
     const { data: guardian, error } = await this.db.supabase
       .from('guardians')
       .update({
+        user_id: guardianUserIdToPersist,
         full_name: dto.fullName,
         phone_primary: dto.phonePrimary,
         phone_alternate: dto.phoneAlternate || null,
-        email: dto.email || null,
+        email: emailVerificationRequired
+          ? currentGuardianEmail || effectiveCurrentEmail
+          : guardianEmailToPersist,
         address_line1: dto.addressLine1,
         landmark: dto.landmark || null,
         city: dto.city,
@@ -797,8 +1072,26 @@ export class FacilityService {
       .single();
 
     if (error) {
-      console.error(`Failed to update guardian: ${error.message}`);
-      throw new Error('Failed to update guardian. Please try again.');
+      this.logger.error(`Failed to update guardian: ${error.message}`);
+      throw new BadRequestException('Failed to update guardian. Please try again.');
+    }
+
+    if (actorUserId) {
+      await this.db.createAuditLog(actorUserId, 'update', 'guardians', guardian.id, {
+        before: {
+          fullName: currentGuardian.full_name,
+          phonePrimary: currentGuardian.phone_primary,
+          email: currentGuardianEmail,
+          preferredContact: currentGuardian.preferred_contact,
+        },
+        after: {
+          fullName: dto.fullName,
+          phonePrimary: dto.phonePrimary,
+          requestedEmail,
+          effectiveCurrentEmail,
+          emailVerificationRequired,
+        },
+      });
     }
 
     return {
@@ -811,7 +1104,10 @@ export class FacilityService {
       landmark: guardian.landmark,
       city: guardian.city,
       region: guardian.region,
-      preferredContact: guardian.preferred_contact || 'sms',
+      preferredContact: guardian.preferred_contact === 'email' ? 'email' : 'sms',
+      message: responseMessage,
+      emailVerificationRequired: emailVerificationRequired || undefined,
+      credentialsEmailSent: credentialsEmailSent || undefined,
     };
   }
 
@@ -862,8 +1158,15 @@ export class FacilityService {
 
     return (appointments || []).map((apt: any) => {
       const child = apt.children;
-      const primaryGuardian = child?.child_guardian?.find((cg: any) => cg.is_primary);
-      const guardianData = primaryGuardian?.guardians?.[0];
+      const primaryGuardian =
+        child?.child_guardian?.find((cg: any) => cg.is_primary) ||
+        child?.child_guardian?.[0];
+
+      // Supabase FK join can come back as either an object or a single-item array.
+      const guardianJoin = primaryGuardian?.guardians as any;
+      const guardianData = Array.isArray(guardianJoin)
+        ? guardianJoin[0]
+        : guardianJoin;
 
       return {
         id: apt.id,
@@ -977,6 +1280,100 @@ export class FacilityService {
     return followUps
       .sort((a, b) => b.daysOverdue - a.daysOverdue)
       .slice(0, 10);
+  }
+
+  /**
+   * Get missed appointment reminders for nurse follow-up.
+   */
+  async getMissedAppointmentReminders(
+    facilityId?: string,
+    days = 14,
+  ): Promise<MissedAppointmentReminderDto[]> {
+    const safeDays = Number.isFinite(days) && days > 0 ? Math.min(days, 60) : 14;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - safeDays);
+    const cutoffDate = cutoff.toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
+
+    let query = this.db.supabase
+      .from('appointments')
+      .select(`
+        id,
+        child_id,
+        scheduled_date,
+        scheduled_time,
+        status,
+        children (
+          id,
+          full_name,
+          child_guardian!inner (
+            is_primary,
+            relationship,
+            guardians (
+              id,
+              full_name,
+              phone_primary,
+              phone_alternate,
+              email
+            )
+          )
+        ),
+        vaccines (
+          name
+        )
+      `)
+      .eq('status', 'missed')
+      .gte('scheduled_date', cutoffDate)
+      .lte('scheduled_date', today)
+      .order('scheduled_date', { ascending: false })
+      .order('scheduled_time', { ascending: false });
+
+    if (facilityId) {
+      query = query.eq('facility_id', facilityId);
+    }
+
+    const { data: appointments, error } = await query;
+
+    if (error) {
+      console.error('Error fetching missed appointment reminders:', error);
+      return [];
+    }
+
+    return (appointments || []).map((apt: any) => {
+      const child = apt.children;
+      const primaryGuardian =
+        child?.child_guardian?.find((cg: any) => cg.is_primary) ||
+        child?.child_guardian?.[0];
+
+      const guardianJoin = primaryGuardian?.guardians as any;
+      const guardianData = Array.isArray(guardianJoin)
+        ? guardianJoin[0]
+        : guardianJoin;
+
+      const missedDate = apt.scheduled_date
+        ? new Date(`${apt.scheduled_date}T00:00:00`)
+        : null;
+      const dayDiff = missedDate
+        ? Math.floor((Date.now() - missedDate.getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+
+      return {
+        id: apt.id,
+        childId: child?.id || apt.child_id,
+        childName: child?.full_name || 'Unknown',
+        caregiver: guardianData?.full_name || 'Unknown',
+        contact: guardianData?.phone_primary || 'N/A',
+        scheduledDate: apt.scheduled_date || '',
+        scheduledTime: apt.scheduled_time ? apt.scheduled_time.slice(0, 5) : '—',
+        vaccine: apt.vaccines?.name || 'Make-up dose',
+        daysSinceMissed: Math.max(0, dayDiff),
+        status: apt.status || 'missed',
+        guardianId: guardianData?.id || undefined,
+        phoneAlternate: guardianData?.phone_alternate || undefined,
+        email: guardianData?.email || undefined,
+        relationship: primaryGuardian?.relationship || undefined,
+      };
+    });
   }
 
   /**
@@ -1321,6 +1718,29 @@ export class FacilityService {
   /**
    * Generate a temporary password
    */
+  private encodeBase64Url(input: string): string {
+    return Buffer.from(input, 'utf8').toString('base64url');
+  }
+
+  private signEmailChangePayload(encodedPayload: string): string {
+    return createHmac('sha256', this.emailChangeTokenSecret)
+      .update(encodedPayload)
+      .digest('base64url');
+  }
+
+  private createEmailChangeToken(payload: {
+    userId: string;
+    guardianId: string;
+    newEmail: string;
+    currentEmail: string | null;
+    exp: number;
+    nonce: string;
+  }): string {
+    const encodedPayload = this.encodeBase64Url(JSON.stringify(payload));
+    const signature = this.signEmailChangePayload(encodedPayload);
+    return `${encodedPayload}.${signature}`;
+  }
+
   private generateTempPassword(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
     let password = '';

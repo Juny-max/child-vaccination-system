@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { DatabaseService } from '../common/database/database.service';
 import { SmsService } from '../common/sms.service';
+import { EmailService } from '../common/email.service';
 import {
   ChildProfileDto,
   VaccinationRecordDto,
@@ -13,6 +20,8 @@ import {
   ParentDashboardDto,
   ChildSummaryDto,
   UpdateMotherDetailsDto,
+  RequestEmailChangeDto,
+  VerifyEmailChangeDto,
   CreateAppointmentDto,
   VaccinationStatus,
   CertificateCompletionStatus,
@@ -22,10 +31,16 @@ import {
 export class ParentService {
   private readonly appointmentRetentionDays = 30;
   private readonly appointmentNoShowGraceMinutes = 120;
+  private readonly emailChangeTokenSecret =
+    process.env.EMAIL_CHANGE_TOKEN_SECRET ||
+    process.env.JWT_SECRET ||
+    'cvcc-email-change-secret';
+  private readonly emailChangeTokenTtlMs = 30 * 60 * 1000;
 
   constructor(
     private readonly db: DatabaseService,
     private readonly smsService: SmsService,
+    private readonly emailService: EmailService,
   ) {}
 
   // =========================================================================
@@ -132,6 +147,89 @@ export class ParentService {
     }
 
     return contacts;
+  }
+
+  private encodeBase64Url(input: string): string {
+    return Buffer.from(input, 'utf8').toString('base64url');
+  }
+
+  private decodeBase64Url(input: string): string {
+    return Buffer.from(input, 'base64url').toString('utf8');
+  }
+
+  private signEmailChangePayload(encodedPayload: string): string {
+    return createHmac('sha256', this.emailChangeTokenSecret)
+      .update(encodedPayload)
+      .digest('base64url');
+  }
+
+  private createEmailChangeToken(payload: {
+    userId: string;
+    guardianId: string;
+    newEmail: string;
+    currentEmail: string | null;
+    exp: number;
+    nonce: string;
+  }): string {
+    const encodedPayload = this.encodeBase64Url(JSON.stringify(payload));
+    const signature = this.signEmailChangePayload(encodedPayload);
+    return `${encodedPayload}.${signature}`;
+  }
+
+  private verifyEmailChangeToken(token: string): {
+    userId: string;
+    guardianId: string;
+    newEmail: string;
+    currentEmail: string | null;
+    exp: number;
+    nonce: string;
+  } {
+    const [encodedPayload, providedSignature] = token.split('.');
+
+    if (!encodedPayload || !providedSignature) {
+      throw new BadRequestException('Invalid verification token format.');
+    }
+
+    const expectedSignature = this.signEmailChangePayload(encodedPayload);
+    const providedSignatureBuffer = Buffer.from(providedSignature, 'utf8');
+    const expectedSignatureBuffer = Buffer.from(expectedSignature, 'utf8');
+
+    if (
+      providedSignatureBuffer.length !== expectedSignatureBuffer.length ||
+      !timingSafeEqual(providedSignatureBuffer, expectedSignatureBuffer)
+    ) {
+      throw new BadRequestException('Invalid verification token signature.');
+    }
+
+    let payload: {
+      userId: string;
+      guardianId: string;
+      newEmail: string;
+      currentEmail: string | null;
+      exp: number;
+      nonce: string;
+    };
+
+    try {
+      payload = JSON.parse(this.decodeBase64Url(encodedPayload));
+    } catch {
+      throw new BadRequestException('Invalid verification token payload.');
+    }
+
+    if (
+      !payload?.userId ||
+      !payload?.guardianId ||
+      !payload?.newEmail ||
+      typeof payload?.exp !== 'number'
+    ) {
+      throw new BadRequestException('Malformed verification token.');
+    }
+
+    if (Date.now() > payload.exp) {
+      throw new BadRequestException('Verification link has expired. Please request a new one.');
+    }
+
+    return payload;
   }
 
   /**
@@ -387,7 +485,8 @@ export class ParentService {
         full_name: updates.name || guardian.full_name,
         phone_primary: updates.primaryPhone || guardian.phone_primary,
         phone_alternate: updates.secondaryPhone,
-        email: updates.email,
+        // Email updates are applied only through the verified email-change flow.
+        email: guardian.email,
         address_line1: updates.addressLine1 || guardian.address_line1,
         landmark: updates.landmark,
         city: updates.city || guardian.city,
@@ -408,6 +507,143 @@ export class ParentService {
       guardian.id,
       { before: guardian, after: updates },
     );
+
+    return this.getGuardianProfile(userId);
+  }
+
+  async requestGuardianEmailChange(
+    userId: string,
+    request: RequestEmailChangeDto,
+    baseUrl?: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const guardian = await this.db.getGuardianByUserId(userId);
+
+    if (!guardian) {
+      throw new NotFoundException('Guardian profile not found');
+    }
+
+    const newEmail = request.newEmail.trim().toLowerCase();
+    const currentEmail = guardian.email ? String(guardian.email).trim().toLowerCase() : null;
+
+    if (currentEmail && newEmail === currentEmail) {
+      throw new BadRequestException('This is already your current email address.');
+    }
+
+    const existingUser = await this.db.getUserByEmail(newEmail);
+    if (existingUser && existingUser.id !== guardian.user_id) {
+      throw new ConflictException('This email is already in use by another account.');
+    }
+
+    const verificationToken = this.createEmailChangeToken({
+      userId,
+      guardianId: guardian.id,
+      newEmail,
+      currentEmail,
+      exp: Date.now() + this.emailChangeTokenTtlMs,
+      nonce: randomBytes(12).toString('hex'),
+    });
+
+    const frontendUrl = baseUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const verificationLink = `${frontendUrl}/parent/dashboard/mother-details?emailChangeToken=${encodeURIComponent(verificationToken)}`;
+    const recipientName = guardian.full_name || 'Parent';
+
+    const emailSent = await this.emailService.sendEmailChangeVerificationEmail(
+      { email: newEmail, name: recipientName },
+      verificationLink,
+    );
+
+    if (!emailSent) {
+      throw new BadRequestException(
+        'Unable to send verification email right now. Please try again shortly.',
+      );
+    }
+
+    await this.db.createAuditLog(userId, 'update', 'guardians', guardian.id, {
+      after: {
+        event: 'email_change_requested',
+        previousEmail: currentEmail,
+        requestedEmail: newEmail,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Verification link sent to ${newEmail}. Please verify before the email is updated.`,
+    };
+  }
+
+  async verifyGuardianEmailChange(
+    userId: string,
+    request: VerifyEmailChangeDto,
+  ): Promise<MotherDetailsDto> {
+    const guardian = await this.db.getGuardianByUserId(userId);
+
+    if (!guardian) {
+      throw new NotFoundException('Guardian profile not found');
+    }
+
+    const payload = this.verifyEmailChangeToken(request.token.trim());
+
+    if (payload.userId !== userId || payload.guardianId !== guardian.id) {
+      throw new BadRequestException('This verification link does not match your account.');
+    }
+
+    const normalizedCurrentEmail = guardian.email
+      ? String(guardian.email).trim().toLowerCase()
+      : null;
+
+    if (payload.currentEmail !== normalizedCurrentEmail) {
+      throw new BadRequestException(
+        'This verification link is no longer valid. Please request a new email change.',
+      );
+    }
+
+    const newEmail = payload.newEmail.trim().toLowerCase();
+    const existingUser = await this.db.getUserByEmail(newEmail);
+
+    if (existingUser && existingUser.id !== guardian.user_id) {
+      throw new ConflictException('This email is already in use by another account.');
+    }
+
+    const client = this.db.supabase;
+
+    const { error: guardianUpdateError } = await client
+      .from('guardians')
+      .update({ email: newEmail })
+      .eq('id', guardian.id);
+
+    if (guardianUpdateError) {
+      throw new BadRequestException(
+        `Failed to update guardian email: ${guardianUpdateError.message}`,
+      );
+    }
+
+    if (guardian.user_id) {
+      const { error: userUpdateError } = await client
+        .from('users')
+        .update({
+          email: newEmail,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', guardian.user_id);
+
+      if (userUpdateError) {
+        if (userUpdateError.code === '23505') {
+          throw new ConflictException('This email is already in use by another account.');
+        }
+        throw new BadRequestException(
+          `Failed to update account email: ${userUpdateError.message}`,
+        );
+      }
+    }
+
+    await this.db.createAuditLog(userId, 'update', 'guardians', guardian.id, {
+      before: { email: normalizedCurrentEmail },
+      after: {
+        event: 'email_change_verified',
+        email: newEmail,
+      },
+    });
 
     return this.getGuardianProfile(userId);
   }
