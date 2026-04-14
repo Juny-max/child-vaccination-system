@@ -12,7 +12,7 @@ const DB_VERSION = 1;
 const STORE_NAME = 'chw_vaccinations';
 
 // Sensitive fields that should be encrypted
-const VACCINATION_SENSITIVE_FIELDS = ['childName', 'vaccineName', 'notes'] as const;
+const VACCINATION_SENSITIVE_FIELDS: (keyof CHWVaccinationRecord)[] = ['childName', 'vaccineName', 'notes'];
 
 export type CHWVaccinationRecord = {
   childId: string;

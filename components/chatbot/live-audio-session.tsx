@@ -16,7 +16,7 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
   const [isProcessing, setIsProcessing] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [voicesLoaded, setVoicesLoaded] = useState(false)
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const recognitionRef = useRef<any>(null)
   const lastTranscriptRef = useRef<{text: string; ts: number} | null>(null)
   const bestVoiceRef = useRef<SpeechSynthesisVoice | null>(null)
 
@@ -86,16 +86,16 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
 
   // Setup speech recognition
   useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) return
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognitionAPI) return
 
-    const recog: SpeechRecognition = new SpeechRecognition()
+    const recog = new SpeechRecognitionAPI()
     recog.lang = 'en-US'
     recog.interimResults = false
     recog.maxAlternatives = 1
     recog.continuous = true  // Keep listening continuously
 
-    recog.onresult = async (ev: SpeechRecognitionEvent) => {
+    recog.onresult = async (ev: any) => {
       const transcript = ev.results[0][0].transcript?.trim()
       if (!transcript) return
 
@@ -134,7 +134,7 @@ const LiveAudioSession: React.FC<Props> = ({ messages, chatContext, onAssistantR
       }
     }
 
-    recog.onerror = (event: SpeechRecognitionErrorEvent) => {
+    recog.onerror = (event: any) => {
       // Handle expected errors silently
       if (event.error === 'no-speech') {
         // Silence detected - auto-restart if still active

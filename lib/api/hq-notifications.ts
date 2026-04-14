@@ -4,10 +4,10 @@ export interface NotificationDelivery {
   id: string;
   recipient: string;
   channel: 'sms' | 'email' | 'push';
-  status: 'sent' | 'failed' | 'pending' | 'read';
+  status: 'sent' | 'failed' | 'pending' | 'read' | 'delivered' | string;
   sentAt: string;
   failureReason?: string;
-  messageType: 'reminder' | 'alert' | 'confirmation';
+  messageType: string;
 }
 
 export interface NotificationStats {
@@ -22,7 +22,7 @@ export interface NotificationStats {
  * Get notification delivery status records
  */
 export async function getNotificationDeliveryStatus(
-  status?: 'sent' | 'failed' | 'pending',
+  status?: string,
   limit: number = 50,
 ): Promise<NotificationDelivery[]> {
   const params = new URLSearchParams();

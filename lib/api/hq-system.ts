@@ -49,11 +49,19 @@ export async function getDatabaseStats(): Promise<DatabaseStat[]> {
   return apiRequest<DatabaseStat[]>('/hq-admin/system/database-stats');
 }
 
+export interface BackupRecord {
+  id: string;
+  timestamp: string;
+  size: string;
+  status: 'success' | 'failed' | 'pending';
+  downloadUrl?: string;
+}
+
 /**
  * Get recent backup history
  */
-export async function getBackupHistory() {
-  return apiRequest('/hq-admin/system/backup-history');
+export async function getBackupHistory(): Promise<BackupRecord[]> {
+  return apiRequest<BackupRecord[]>('/hq-admin/system/backup-history');
 }
 
 /**

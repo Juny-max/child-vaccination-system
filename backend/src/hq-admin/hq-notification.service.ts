@@ -23,12 +23,12 @@ export class HqNotificationService {
 
       return (notifications || []).map((notif) => ({
         id: notif.id,
-        recipient: notif.recipient_email || notif.recipient_phone,
+        recipient: notif.recipient_contact,
         channel: notif.channel || 'email',
         status: notif.status,
         sentAt: new Date(notif.created_at).toLocaleString(),
         failureReason: notif.error_message,
-        messageType: notif.notification_type || 'reminder',
+        messageType: notif.template_id || 'unknown',
       }));
     } catch (error) {
       console.error('Failed to get notification delivery status:', error);

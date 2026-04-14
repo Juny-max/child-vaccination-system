@@ -47,6 +47,7 @@ import {
   updateHqBranch,
   updateHqBranchChws,
   updateHqBranchStatus,
+  deleteHqBranch,
   cleanupDuplicateChwAssignments,
 } from "@/lib/api/hq-branches"
 import {
@@ -79,6 +80,7 @@ import {
   getBackupHistory,
   configureBackup,
   getAuditActivity,
+  type BackupRecord as ApiBackupRecord,
 } from "@/lib/api/hq-system"
 import {
   getNotificationDeliveryStatus,
@@ -166,25 +168,24 @@ type SystemMetric = {
   value: number | string
   unit?: string
   status: "normal" | "warning" | "critical"
-  timestamp: string
+  timestamp?: string
+  detail?: string
 }
 
-type BackupRecord = {
-  id: string
-  timestamp: string
-  size: string
-  status: "success" | "failed" | "pending"
-  downloadUrl?: string
-}
+type BackupRecord = ApiBackupRecord
 
 type CatchmentArea = {
   id: string
   name: string
   code: string
   branchId: string
+  branchName?: string | null
   community?: string
   populationEstimate?: number
-  assignedChwId?: string
+  assignedChwId?: string | null
+  assignedChwName?: string | null
+  createdAt?: string
+  updatedAt?: string
 }
 
 type VaccineInventory = {
@@ -293,11 +294,11 @@ type VaccineStock = {
 type NotificationDeliveryStatus = {
   id: string
   recipient: string
-  channel: "sms" | "email" | "push"
-  status: "sent" | "failed" | "pending" | "read"
+  channel: "sms" | "email" | "push" | string
+  status: "sent" | "failed" | "pending" | "read" | "delivered" | string
   sentAt: string
   failureReason?: string
-  messageType: "reminder" | "alert" | "confirmation"
+  messageType: string
 }
 
 type QuickAction = {
@@ -558,10 +559,10 @@ export default function HqDashboardPage() {
 
   // FEATURE 1: Catchment Area Management
   const [catchmentAreas, setCatchmentAreas] = useState<CatchmentArea[]>([])
-  const [selectedBranchForCatchment, setSelectedBranchForCatchment] = useState<string | null>(null)
+  const [selectedBranchForCatchment, setSelectedBranchForCatchment] = useState<Branch | null>(null)
   const [isEditingCatchment, setIsEditingCatchment] = useState(false)
   const [editingCatchmentId, setEditingCatchmentId] = useState<string | null>(null)
-  const [catchmentForm, setCatchmentForm] = useState({ name: "", community: "", populationEstimate: "" })
+  const [catchmentForm, setCatchmentForm] = useState({ name: "", population: "", boundaries: "" })
 
   // FEATURE 2: System Health Metrics
   const [systemMetrics, setSystemMetrics] = useState<SystemMetric[]>([])
@@ -578,6 +579,11 @@ export default function HqDashboardPage() {
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
   const [bulkOperationResult, setBulkOperationResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
   const [selectedBulkOperation, setSelectedBulkOperation] = useState<string>("activate")
+
+  // System Settings (editable)
+  const [rawSystemSettings, setRawSystemSettings] = useState<{ id: string; key: string; value: string; description?: string; readOnly: boolean }[]>([])
+  const [editedSettings, setEditedSettings] = useState<Record<string, string>>({})
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
 
   // FEATURE 5: Database Stats
   const [databaseStats, setDatabaseStats] = useState<DatabaseStat[]>([])
@@ -1013,6 +1019,18 @@ export default function HqDashboardPage() {
             },
           ]
           setSystemStatus(transformedStatus as any)
+
+          // Store raw settings for the settings editor
+          setRawSystemSettings(settingsData.map((s) => ({
+            id: s.id,
+            key: s.key,
+            value: s.value,
+            description: s.description,
+            readOnly: s.readOnly,
+          })))
+          const initialEdits: Record<string, string> = {}
+          settingsData.forEach((s) => { initialEdits[s.id] = s.value })
+          setEditedSettings(initialEdits)
         }
 
         const auditLogItems = auditLogsData?.data ?? []
@@ -1157,6 +1175,19 @@ export default function HqDashboardPage() {
     } catch (error) {
       console.error("Failed to cleanup duplicate CHWs", error)
       setSystemMessage("No duplicate CHW assignments found or cleanup failed.")
+    }
+  }
+
+  const handleDeleteBranch = async (branchId: string, branchName: string) => {
+    if (!window.confirm(`Delete "${branchName}"? This cannot be undone.`)) return
+    try {
+      await deleteHqBranch(branchId)
+      setBranches((prev) => prev.filter((b) => b.id !== branchId))
+      setSystemMessage(`✓ Branch "${branchName}" deleted.`)
+      appendAuditLog({ action: `Deleted branch: ${branchName}`, category: "Branch" })
+    } catch (error) {
+      console.error("Failed to delete branch", error)
+      setSystemMessage("Failed to delete branch.")
     }
   }
 
@@ -1326,9 +1357,10 @@ export default function HqDashboardPage() {
     try {
       const payload = {
         name: catchmentForm.name.trim(),
-        community: catchmentForm.community.trim() || catchmentForm.name.trim(),
-        populationEstimate: catchmentForm.populationEstimate ? parseInt(catchmentForm.populationEstimate) : undefined,
-        branchId: selectedBranchForCatchment,
+        code: catchmentForm.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-').slice(0, 20) + '-' + Date.now().toString().slice(-4),
+        community: catchmentForm.boundaries.trim() || catchmentForm.name.trim(),
+        populationEstimate: catchmentForm.population ? parseInt(catchmentForm.population) : undefined,
+        branchId: selectedBranchForCatchment.id,
       }
       if (isEditingCatchment && editingCatchmentId) {
         await updateHqCatchmentArea(editingCatchmentId, payload)
@@ -1339,7 +1371,7 @@ export default function HqDashboardPage() {
       }
       const areas = await getHqCatchmentAreas()
       setCatchmentAreas(areas)
-      setCatchmentForm({ name: "", community: "", populationEstimate: "" })
+      setCatchmentForm({ name: "", population: "", boundaries: "" })
       setIsEditingCatchment(false)
       setEditingCatchmentId(null)
       appendAuditLog({ action: `${isEditingCatchment ? "Updated" : "Created"} catchment area`, category: "Branch" })
@@ -1364,6 +1396,30 @@ export default function HqDashboardPage() {
   }
 
   // ===== FEATURE 2: SYSTEM METRICS HANDLER =====
+  const handleSaveSettings = async () => {
+    const changed = rawSystemSettings.filter(
+      (s) => !s.readOnly && editedSettings[s.id] !== undefined && editedSettings[s.id] !== s.value
+    )
+    if (changed.length === 0) {
+      setSystemMessage("No changes to save.")
+      return
+    }
+    setIsSavingSettings(true)
+    try {
+      await Promise.all(changed.map((s) => updateHqSystemSetting(s.id, { value: editedSettings[s.id] })))
+      setRawSystemSettings((prev) =>
+        prev.map((s) => (editedSettings[s.id] !== undefined ? { ...s, value: editedSettings[s.id] } : s))
+      )
+      setSystemMessage(`✓ ${changed.length} setting${changed.length > 1 ? "s" : ""} saved.`)
+      appendAuditLog({ action: `Updated ${changed.length} system setting(s)`, category: "System" })
+    } catch (error) {
+      console.error("Failed to save settings", error)
+      setSystemMessage("Failed to save settings.")
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }
+
   const loadSystemMetrics = async () => {
     setIsMetricsLoading(true)
     try {
@@ -1535,13 +1591,13 @@ export default function HqDashboardPage() {
       const stocks: VaccineStock[] = (vaccines || []).map(v => ({
         id: v.id,
         name: v.name,
-        batchNumber: v.batchNumber || `${v.code}-2025-001`,
-        quantity: v.quantity || 0,
-        reorderLevel: v.reorderLevel || 150,
-        expiryDate: v.expiryDate || "2026-12-31",
-        supplier: v.supplier || "WHO",
-        totalUsed: v.totalUsed || 0,
-        daysUntilExpiry: v.daysUntilExpiry || 0,
+        batchNumber: `${v.code ?? v.id.slice(0, 8).toUpperCase()}-2025-001`,
+        quantity: 0,
+        reorderLevel: 150,
+        expiryDate: "2026-12-31",
+        supplier: "WHO",
+        totalUsed: 0,
+        daysUntilExpiry: 0,
       }))
       setVaccineInventory(stocks)
     } catch (error) {
@@ -1647,7 +1703,7 @@ export default function HqDashboardPage() {
             continue
           }
           await createHqUser({
-            name: record.name,
+            fullName: record.name,
             email: record.email,
             role: record.role,
           })
@@ -1720,12 +1776,23 @@ export default function HqDashboardPage() {
 
         const createdUser = await createHqUser(createPayload)
         setUsers((previous) => [createdUser, ...previous])
-        setSystemMessage(`User "${createdUser.name}" created.`)
-        setUserActionNotice({
-          tone: "success",
-          title: "User created",
-          detail: `${createdUser.name} was created succesfull.`,
-        })
+        setSystemMessage(createdUser.message || `User "${createdUser.name}" created.`)
+        if (createdUser.emailSent) {
+          setUserActionNotice({
+            tone: "success",
+            title: "User created",
+            detail: createdUser.message || `${createdUser.name} was created successfully and invite email was sent.`,
+          })
+        } else {
+          const passwordFallback = createdUser.temporaryPassword
+            ? ` Temporary password: ${createdUser.temporaryPassword}`
+            : ""
+          setUserActionNotice({
+            tone: "warning",
+            title: "User created, email failed",
+            detail: `${createdUser.reason || createdUser.message || "Invitation email delivery failed."}${passwordFallback}`,
+          })
+        }
         appendAuditLog({ action: `Provisioned user ${createdUser.name}`, category: "User" })
       }
     } catch (error) {
@@ -2926,6 +2993,14 @@ export default function HqDashboardPage() {
                   >
                     {isInactive ? "Activate" : "Deactivate"}
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:bg-destructive/10"
+                    onClick={() => handleDeleteBranch(branch.id, branch.name)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </div>
             )
@@ -2994,8 +3069,8 @@ export default function HqDashboardPage() {
                         <div key={area.id} className="flex items-start justify-between rounded-lg border border-border bg-muted/30 p-3">
                           <div className="flex-1">
                             <p className="font-medium text-sm">{area.name}</p>
-                            <p className="text-xs text-muted-foreground mt-1">Population: ~{area.population}</p>
-                            <p className="text-xs text-muted-foreground">Boundaries: {area.boundaries}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Population: ~{area.populationEstimate ?? "N/A"}</p>
+                            <p className="text-xs text-muted-foreground">Community: {area.community ?? "—"}</p>
                           </div>
                           <div className="flex gap-2">
                             <Button
@@ -3006,8 +3081,8 @@ export default function HqDashboardPage() {
                                 setEditingCatchmentId(area.id)
                                 setCatchmentForm({
                                   name: area.name,
-                                  population: area.population.toString(),
-                                  boundaries: area.boundaries,
+                                  population: (area.populationEstimate ?? "").toString(),
+                                  boundaries: area.community ?? "",
                                 })
                               }}
                             >
@@ -4573,8 +4648,9 @@ export default function HqDashboardPage() {
                 <p className="text-sm font-semibold mb-3">Resource Utilization</p>
                 <div className="grid gap-3 md:grid-cols-3">
                   {systemMetrics.map((metric) => {
-                    const isWarning = metric.value >= 70 && metric.value < 85
-                    const isCritical = metric.value >= 85
+                    const numVal = Number(metric.value)
+                    const isWarning = numVal >= 70 && numVal < 85
+                    const isCritical = numVal >= 85
                     return (
                       <div key={metric.id} className={`rounded-lg border p-4 ${
                         isCritical ? "border-destructive bg-destructive/5" :
@@ -4652,7 +4728,7 @@ export default function HqDashboardPage() {
                             <td className="px-4 py-3 text-muted-foreground">{backup.timestamp}</td>
                             <td className="px-4 py-3 text-foreground font-medium">{backup.size}</td>
                             <td className="px-4 py-3">
-                              <Badge variant={backup.status === "completed" ? "secondary" : "outline"}>
+                              <Badge variant={backup.status === "success" ? "secondary" : "outline"}>
                                 {backup.status}
                               </Badge>
                             </td>
@@ -4759,6 +4835,53 @@ export default function HqDashboardPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {rawSystemSettings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <ServerCog className="h-5 w-5 text-primary" /> System Configuration
+                </CardTitle>
+                <CardDescription>Edit system-level settings. Read-only values are shown for reference.</CardDescription>
+              </div>
+              <Button
+                size="sm"
+                className="gap-2"
+                onClick={handleSaveSettings}
+                disabled={isSavingSettings}
+              >
+                {isSavingSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Save changes
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {rawSystemSettings.map((setting) => (
+                <div key={setting.id} className="grid grid-cols-[1fr_2fr] gap-4 items-center py-2 border-b border-border last:border-0">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{setting.key}</p>
+                    {setting.description && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{setting.description}</p>
+                    )}
+                  </div>
+                  {setting.readOnly ? (
+                    <p className="text-sm text-muted-foreground font-mono bg-muted/40 px-3 py-1.5 rounded">{setting.value}</p>
+                  ) : (
+                    <Input
+                      className="h-8 text-sm"
+                      value={editedSettings[setting.id] ?? setting.value}
+                      onChange={(e) => setEditedSettings((prev) => ({ ...prev, [setting.id]: e.target.value }))}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 
