@@ -22,9 +22,14 @@ export interface HqAuditLogFilters {
   offset?: number;
 }
 
-export async function getHqAuditLogs(filters?: HqAuditLogFilters): Promise<HqAuditLog[]> {
+export interface HqAuditLogResponse {
+  data: HqAuditLog[];
+  pagination: { limit: number; offset: number; returned: number };
+}
+
+export async function getHqAuditLogs(filters?: HqAuditLogFilters): Promise<HqAuditLogResponse> {
   const params = new URLSearchParams();
-  
+
   if (filters?.action) params.append('action', filters.action);
   if (filters?.entityType) params.append('entityType', filters.entityType);
   if (filters?.category) params.append('category', filters.category);
@@ -35,5 +40,5 @@ export async function getHqAuditLogs(filters?: HqAuditLogFilters): Promise<HqAud
   const queryString = params.toString();
   const url = `/hq-admin/audit-logs${queryString ? `?${queryString}` : ''}`;
 
-  return apiRequest<HqAuditLog[]>(url);
+  return apiRequest<HqAuditLogResponse>(url);
 }

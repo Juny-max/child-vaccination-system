@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -31,6 +31,14 @@ const ROLE_ROUTES: Record<UserRole, string> = {
 }
 
 export default function UnifiedLoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <UnifiedLoginPageContent />
+    </Suspense>
+  )
+}
+
+function UnifiedLoginPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const emailChangeToken = searchParams.get("emailChangeToken")

@@ -2765,7 +2765,7 @@ export class BranchManagerService {
       );
     }
 
-    await this.emailService.sendStaffInviteEmail(
+    const emailDispatch = await this.emailService.sendStaffInviteEmailWithStatus(
       {
         email: normalizedEmail,
         name: dto.fullName.trim(),
@@ -2775,7 +2775,24 @@ export class BranchManagerService {
     );
 
     const users = await this.getHqUsers();
-    return users.find((item) => item.id === createdUser.id);
+    const createdUserRecord = users.find((item) => item.id === createdUser.id);
+
+    if (!createdUserRecord) {
+      throw new InternalServerErrorException({
+        message: 'User created, but failed to load the created user profile.',
+        code: 'HQ_USER_CREATED_BUT_NOT_FETCHED',
+      });
+    }
+
+    return {
+      ...createdUserRecord,
+      emailSent: emailDispatch.success,
+      message: emailDispatch.success
+        ? `User created and temporary password emailed to ${normalizedEmail}.`
+        : `User created, but invitation email delivery failed for ${normalizedEmail}.`,
+      reason: emailDispatch.success ? null : (emailDispatch.errorMessage ?? 'Email delivery failed'),
+      temporaryPassword: emailDispatch.success ? undefined : temporaryPassword,
+    };
   }
 
   async updateHqUser(userId: string, dto: UpdateHqUserDto, actorUserId?: string) {
@@ -3550,12 +3567,12 @@ export class BranchManagerService {
       throw new InternalServerErrorException({ message: 'Failed to register staff. Please try again.', code: 'STAFF_CREATE_FAILED' });
     }
 
-    const emailSent = await this.emailService.sendStaffInviteEmail(
+    const emailDispatch = await this.emailService.sendStaffInviteEmailWithStatus(
       { email: normalizedEmail, name: dto.fullName.trim(), role: dto.role },
       temporaryPassword,
     );
 
-    if (!emailSent) {
+  if (!emailDispatch.success) {
       // Roll back account creation so credentials are never left undisclosed.
       const { error: rollbackError } = await db
         .from('users')
@@ -3573,12 +3590,17 @@ export class BranchManagerService {
         message:
           'Staff account was not created because invitation email could not be sent. Check email settings and try again.',
         code: 'STAFF_INVITE_EMAIL_FAILED',
+        reason: emailDispatch.errorMessage ?? null,
       });
     }
 
-    // Don't return temporaryPassword in API response (security: could be logged by proxies)
-    // The password is sent via email to the user
-    return { id: created.id, email: created.email, emailSent: true };
+    return {
+      id: created.id,
+      email: created.email,
+      emailSent: true,
+      message: `Staff account created and temporary password emailed to ${normalizedEmail}.`,
+      reason: null,
+    };
   }
 
   async getStaffList(branchId: string, filters: { role?: string; status?: string; search?: string }) {
@@ -3805,8 +3827,8 @@ export class BranchManagerService {
       const vaccineSchedules = scheduleMap.get(v.id) ?? [];
       const firstSchedule = vaccineSchedules[0];
       return {
-        id: v.code, // Use code as ID for frontend compatibility
-        dbId: v.id,
+        id: v.id,
+        code: v.code,
         name: v.name,
         schedule: firstSchedule?.schedule_name || v.description || 'Standard schedule',
         dueDays: firstSchedule?.due_days_from_birth ?? 0,
@@ -4033,9 +4055,17 @@ export class BranchManagerService {
     const chwMap = new Map((chwResult.data ?? []).map((c: any) => [c.id, c.full_name]));
 
     return (data ?? []).map((c: any) => ({
-      ...c,
-      branch_name: branchMap.get(c.branch_id) || null,
-      assigned_chw_name: chwMap.get(c.assigned_chw_id) || null,
+      id: c.id,
+      name: c.name,
+      code: c.code,
+      branchId: c.branch_id,
+      branchName: branchMap.get(c.branch_id) || null,
+      community: c.community,
+      populationEstimate: c.population_estimate,
+      assignedChwId: c.assigned_chw_id,
+      assignedChwName: chwMap.get(c.assigned_chw_id) || null,
+      createdAt: c.created_at,
+      updatedAt: c.updated_at,
     }));
   }
 
@@ -4129,7 +4159,26 @@ export class BranchManagerService {
       this.logger.error('Failed to fetch system settings', error);
       throw new InternalServerErrorException('Failed to fetch system settings');
     }
-    return data ?? [];
+    return (data ?? []).map((s: any) => {
+      // value is stored as a JSONB object e.g. { value: 80 } — extract to plain string
+      const rawVal = s.value;
+      const normalizedValue =
+        rawVal !== null && typeof rawVal === 'object' && 'value' in rawVal
+          ? String(rawVal.value)
+          : rawVal !== null && rawVal !== undefined
+          ? String(rawVal)
+          : '';
+      return {
+        id: s.id,
+        key: s.id,          // id column doubles as the setting key
+        value: normalizedValue,
+        description: s.description ?? '',
+        category: s.category ?? 'general',
+        readOnly: s.is_public === false ? false : false, // all settings are editable unless locked
+        updatedAt: s.updated_at,
+        updatedBy: s.updated_by_user_id,
+      };
+    });
   }
 
   async updateHqSystemSetting(

@@ -5,9 +5,13 @@ export interface HqCatchmentArea {
   name: string;
   code: string;
   branchId: string;
+  branchName?: string | null;
   community?: string;
   populationEstimate?: number;
-  assignedChwId?: string;
+  assignedChwId?: string | null;
+  assignedChwName?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CreateHqCatchmentAreaPayload {

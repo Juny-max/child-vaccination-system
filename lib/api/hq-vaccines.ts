@@ -2,6 +2,7 @@ import { apiRequest } from './config';
 
 export interface HqVaccine {
   id: string;
+  code?: string;
   name: string;
   schedule: string;
   dueDays: number;
@@ -38,9 +39,13 @@ export interface HqSchedule {
 
 export interface CreateHqSchedulePayload {
   vaccineId: string;
-  dosage: string;
-  ageMonths: number;
-  route: string;
+  doseNumber: number;
+  scheduleName: string;
+  dueDaysFromBirth: number;
+  minAgeDays?: number;
+  maxAgeDays?: number;
+  isMandatory?: boolean;
+  sortOrder?: number;
 }
 
 export interface UpdateHqSchedulePayload {

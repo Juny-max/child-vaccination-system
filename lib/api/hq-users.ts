@@ -9,6 +9,13 @@ export interface HqUser {
   status: 'active' | 'inactive';
 }
 
+export interface HqUserCreateResponse extends HqUser {
+  emailSent: boolean;
+  message: string;
+  reason?: string | null;
+  temporaryPassword?: string;
+}
+
 export interface CreateHqUserPayload {
   fullName: string;
   email: string;
@@ -33,8 +40,8 @@ export async function getHqUsers(): Promise<HqUser[]> {
   return apiRequest<HqUser[]>('/hq-admin/users');
 }
 
-export async function createHqUser(payload: CreateHqUserPayload): Promise<HqUser> {
-  return apiRequest<HqUser>('/hq-admin/users', {
+export async function createHqUser(payload: CreateHqUserPayload): Promise<HqUserCreateResponse> {
+  return apiRequest<HqUserCreateResponse>('/hq-admin/users', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

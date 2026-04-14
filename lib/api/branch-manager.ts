@@ -322,6 +322,9 @@ export interface RegisterStaffResponse {
   id: string;
   email: string;
   emailSent: boolean;
+  message: string;
+  reason?: string | null;
+  temporaryPassword?: string;
 }
 
 export interface StaffListItem {
@@ -357,7 +360,7 @@ export interface UpdateCatchmentAreaPayload {
 
 /**
  * Register a new staff member (nurse or CHW) at the branch.
- * Returns temporary password that must be sent to the staff member.
+ * Returns email delivery status and a temporary password only if email delivery fails.
  */
 export async function registerStaff(
   payload: RegisterStaffPayload,
