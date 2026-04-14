@@ -41,7 +41,6 @@ export interface StaffMember {
   role: 'Nurse' | 'CHW';
   status: 'active' | 'suspended' | 'inactive';
   lastActive: string;
-  status?: 'active' | 'suspended' | 'inactive';
 }
 
 export interface CHWProductivity {
