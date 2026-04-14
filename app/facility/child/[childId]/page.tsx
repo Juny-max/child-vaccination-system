@@ -309,6 +309,14 @@ export default function ChildPatientChartPage() {
   })
   const [isSavingGuardian, setIsSavingGuardian] = useState(false)
   const [isLoadingGuardian, setIsLoadingGuardian] = useState(false)
+  const [showGuardianOtpModal, setShowGuardianOtpModal] = useState(false)
+  const [guardianOtpCode, setGuardianOtpCode] = useState("")
+  const [guardianOtpToken, setGuardianOtpToken] = useState("")
+  const [guardianOtpNotice, setGuardianOtpNotice] = useState<string | null>(null)
+  const [guardianOtpError, setGuardianOtpError] = useState<string | null>(null)
+  const [isVerifyingGuardianOtp, setIsVerifyingGuardianOtp] = useState(false)
+  const [pendingGuardianUpdate, setPendingGuardianUpdate] =
+    useState<facilityApi.UpdateGuardianRequest | null>(null)
 
   // State for photo upload
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
@@ -901,6 +909,22 @@ export default function ChildPatientChartPage() {
   const closeGuardianModal = () => {
     setShowGuardianModal(false)
     setGuardianData(null)
+    setShowGuardianOtpModal(false)
+    setGuardianOtpCode("")
+    setGuardianOtpToken("")
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
+    setPendingGuardianUpdate(null)
+  }
+
+  const closeGuardianOtpModal = () => {
+    if (isVerifyingGuardianOtp) return
+    setShowGuardianOtpModal(false)
+    setGuardianOtpCode("")
+    setGuardianOtpToken("")
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
+    setPendingGuardianUpdate(null)
   }
 
   const handleGuardianFormChange = (field: keyof typeof guardianForm, value: string) => {
@@ -912,6 +936,8 @@ export default function ChildPatientChartPage() {
     if (!guardianData || isSavingGuardian) return
 
     setIsSavingGuardian(true)
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
 
     try {
       const updateData: facilityApi.UpdateGuardianRequest = {
@@ -928,6 +954,25 @@ export default function ChildPatientChartPage() {
 
       const updatedGuardian = await facilityApi.updateGuardian(guardianData.id, updateData)
 
+      if (updatedGuardian.phoneOtpRequired) {
+        if (!updatedGuardian.phoneOtpToken) {
+          setSystemMessage("Could not initialize phone verification. Please try again.")
+          return
+        }
+
+        setPendingGuardianUpdate(updateData)
+        setGuardianOtpToken(updatedGuardian.phoneOtpToken)
+        setGuardianOtpCode("")
+        setGuardianOtpNotice(
+          updatedGuardian.message ||
+            `OTP sent to ${guardianForm.phonePrimary}. Enter the code to continue.`,
+        )
+        setGuardianOtpError(null)
+        setShowGuardianOtpModal(true)
+        setSystemMessage(null)
+        return
+      }
+
       // Refetch child profile to update displayed guardian info
       const profile = await facilityApi.getChildProfile(childId)
       setChildProfile(profile)
@@ -939,6 +984,96 @@ export default function ChildPatientChartPage() {
       setSystemMessage("Failed to update guardian details. Please try again.")
     } finally {
       setIsSavingGuardian(false)
+    }
+  }
+
+  const handleVerifyGuardianOtp = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!guardianData || !pendingGuardianUpdate || isVerifyingGuardianOtp) {
+      return
+    }
+
+    const enteredOtp = guardianOtpCode.trim()
+    if (!/^\d{6}$/.test(enteredOtp)) {
+      setGuardianOtpError("Enter the 6-digit OTP sent to the guardian's new phone number.")
+      return
+    }
+
+    setIsVerifyingGuardianOtp(true)
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
+
+    try {
+      const updatedGuardian = await facilityApi.updateGuardian(guardianData.id, {
+        ...pendingGuardianUpdate,
+        phoneOtpCode: enteredOtp,
+        phoneOtpToken: guardianOtpToken,
+      })
+
+      if (updatedGuardian.phoneOtpRequired) {
+        if (updatedGuardian.phoneOtpToken) {
+          setGuardianOtpToken(updatedGuardian.phoneOtpToken)
+        }
+        setGuardianOtpCode("")
+        setGuardianOtpNotice(
+          updatedGuardian.message ||
+            "A new OTP has been sent. Enter the latest code to continue.",
+        )
+        setGuardianOtpError(null)
+        return
+      }
+
+      // Refetch child profile to update displayed guardian info
+      const profile = await facilityApi.getChildProfile(childId)
+      setChildProfile(profile)
+
+      closeGuardianModal()
+      setSystemMessage(updatedGuardian.message || "Guardian details updated successfully.")
+    } catch (error) {
+      console.error("Failed to verify guardian OTP:", error)
+      const errorMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to verify OTP. Please try again."
+      setGuardianOtpError(errorMessage)
+    } finally {
+      setIsVerifyingGuardianOtp(false)
+    }
+  }
+
+  const handleResendGuardianOtp = async () => {
+    if (!guardianData || !pendingGuardianUpdate || isVerifyingGuardianOtp) {
+      return
+    }
+
+    setIsVerifyingGuardianOtp(true)
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
+
+    try {
+      const response = await facilityApi.updateGuardian(guardianData.id, pendingGuardianUpdate)
+
+      if (!response.phoneOtpRequired || !response.phoneOtpToken) {
+        setGuardianOtpError("Could not resend OTP right now. Please close and try again.")
+        return
+      }
+
+      setGuardianOtpToken(response.phoneOtpToken)
+      setGuardianOtpCode("")
+      setGuardianOtpNotice(
+        response.message ||
+          `A new OTP has been sent to ${guardianForm.phonePrimary}.`,
+      )
+    } catch (error) {
+      console.error("Failed to resend guardian OTP:", error)
+      const errorMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to resend OTP. Please try again."
+      setGuardianOtpError(errorMessage)
+    } finally {
+      setIsVerifyingGuardianOtp(false)
     }
   }
 
@@ -1713,7 +1848,7 @@ export default function ChildPatientChartPage() {
       ) : null}
 
       {/* Guardian Edit Modal */}
-      {showGuardianModal ? (
+      {showGuardianModal && !showGuardianOtpModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg rounded-lg bg-background p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="mb-4 flex items-center justify-between">
@@ -1886,6 +2021,96 @@ export default function ChildPatientChartPage() {
                   ) : (
                     <>
                       <CheckCircle2 className="h-4 w-4" /> Save Changes
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showGuardianOtpModal ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Verify New Phone Number</h3>
+              <button
+                type="button"
+                onClick={closeGuardianOtpModal}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Close"
+                disabled={isVerifyingGuardianOtp}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mb-3 text-sm text-muted-foreground">
+              We sent a 6-digit OTP to {guardianForm.phonePrimary || "the new phone number"}. Ask the parent for the code,
+              enter it below, and save.
+            </p>
+
+            {guardianOtpNotice ? (
+              <div className="mb-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
+                {guardianOtpNotice}
+              </div>
+            ) : null}
+
+            {guardianOtpError ? (
+              <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {guardianOtpError}
+              </div>
+            ) : null}
+
+            <form onSubmit={handleVerifyGuardianOtp} className="space-y-4">
+              <div>
+                <label htmlFor="guardian-phone-otp" className="block text-sm font-medium">
+                  OTP Code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="guardian-phone-otp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={guardianOtpCode}
+                  onChange={(event) => {
+                    const digitsOnly = event.target.value.replace(/\D/g, "").slice(0, 6)
+                    setGuardianOtpCode(digitsOnly)
+                    if (guardianOtpError) {
+                      setGuardianOtpError(null)
+                    }
+                  }}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-center text-base tracking-[0.35em] focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="000000"
+                  maxLength={6}
+                  required
+                  disabled={isVerifyingGuardianOtp}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">Code expires in 10 minutes.</p>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closeGuardianOtpModal}
+                  disabled={isVerifyingGuardianOtp}
+                >
+                  Cancel
+                </Button>
+                <Button type="button" variant="ghost" onClick={handleResendGuardianOtp} disabled={isVerifyingGuardianOtp}>
+                  {isVerifyingGuardianOtp ? "Please wait..." : "Resend OTP"}
+                </Button>
+                <Button type="submit" className="gap-2" disabled={isVerifyingGuardianOtp}>
+                  {isVerifyingGuardianOtp ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      Verifying...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4" /> Verify & Save
                     </>
                   )}
                 </Button>

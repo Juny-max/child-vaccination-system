@@ -147,6 +147,13 @@ export default function MotherDetailsPage() {
     const token = searchParams.get("emailChangeToken")
     if (!token || token === processedEmailToken) return
 
+    const role = localStorage.getItem("userRole")
+    if (role !== "parent") {
+      setProcessedEmailToken(token)
+      router.replace(`/auth/login?emailChangeToken=${encodeURIComponent(token)}`)
+      return
+    }
+
     let cancelled = false
 
     const verifyFromLink = async () => {
@@ -169,7 +176,6 @@ export default function MotherDetailsPage() {
         setStatusMessage("Your new email has been verified and saved successfully.")
       } catch (error) {
         if (cancelled) return
-        console.error('Email verification failed:', error)
         setEmailVerificationError("This verification link is invalid or expired. Please request a new one.")
       } finally {
         if (cancelled) return

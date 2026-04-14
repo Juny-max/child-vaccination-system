@@ -269,6 +269,8 @@ export interface Guardian {
   message?: string;
   emailVerificationRequired?: boolean;
   credentialsEmailSent?: boolean;
+  phoneOtpRequired?: boolean;
+  phoneOtpToken?: string;
 }
 
 export interface UpdateGuardianRequest {
@@ -281,6 +283,8 @@ export interface UpdateGuardianRequest {
   city: string;
   region: string;
   preferredContact?: 'sms' | 'email';
+  phoneOtpCode?: string;
+  phoneOtpToken?: string;
 }
 
 /**

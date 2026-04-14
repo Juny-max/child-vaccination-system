@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import * as parentApi from "@/lib/api/parent"
 import * as authApi from "@/lib/api/auth"
 
@@ -94,6 +94,9 @@ function getErrorMessage(err: unknown): string {
 
 export function ParentDashboardProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const emailChangeToken = searchParams.get('emailChangeToken')
   const [userName, setUserName] = useState("User")
   const [greeting, setGreeting] = useState("Welcome")
   const [isLoading, setIsLoading] = useState(true)
@@ -249,8 +252,14 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const role = localStorage.getItem('userRole')
     const name = sessionStorage.getItem('userName') || localStorage.getItem('userName')
+    const allowEmailVerificationFlow =
+      pathname === '/parent/dashboard/mother-details' && Boolean(emailChangeToken)
 
     if (role !== 'parent') {
+      if (allowEmailVerificationFlow && emailChangeToken) {
+        router.replace(`/auth/login?emailChangeToken=${encodeURIComponent(emailChangeToken)}`)
+        return
+      }
       router.push('/dashboard')
       return
     }
@@ -261,7 +270,7 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     }
 
     fetchAllData()
-  }, [router, fetchAllData])
+  }, [router, fetchAllData, pathname, emailChangeToken])
 
   const value: ParentDashboardContextValue = {
     userName,

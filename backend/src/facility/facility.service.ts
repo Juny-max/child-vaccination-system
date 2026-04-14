@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { SmsService } from '../common/sms.service';
@@ -36,6 +36,12 @@ export class FacilityService {
     process.env.JWT_SECRET ||
     'cvcc-email-change-secret';
   private readonly emailChangeTokenTtlMs = 30 * 60 * 1000;
+  private readonly phoneChangeOtpSecret =
+    process.env.PHONE_CHANGE_OTP_SECRET ||
+    process.env.JWT_SECRET ||
+    'cvcc-phone-change-otp-secret';
+  private readonly phoneChangeOtpTtlMs = 10 * 60 * 1000;
+  private readonly phoneChangeOtpLength = 6;
 
   constructor(
     private readonly db: DatabaseService,
@@ -808,6 +814,73 @@ export class FacilityService {
 
     if (!currentGuardian) {
       throw new NotFoundException('Guardian record not found.');
+    }
+
+    const currentPrimaryPhone = this.normalizePhoneForOtp(
+      currentGuardian.phone_primary || '',
+    );
+    const requestedPrimaryPhone = this.normalizePhoneForOtp(dto.phonePrimary || '');
+    const isPrimaryPhoneChangeRequested =
+      requestedPrimaryPhone.length > 0 && requestedPrimaryPhone !== currentPrimaryPhone;
+
+    if (isPrimaryPhoneChangeRequested) {
+      const otpCode = (dto.phoneOtpCode || '').trim();
+      const otpToken = (dto.phoneOtpToken || '').trim();
+      const hasOtpCode = otpCode.length > 0;
+      const hasOtpToken = otpToken.length > 0;
+
+      if (hasOtpCode !== hasOtpToken) {
+        throw new BadRequestException(
+          'Both OTP code and OTP session token are required to confirm phone update.',
+        );
+      }
+
+      if (!hasOtpCode) {
+        const generatedOtp = this.generatePhoneChangeOtpCode();
+        const generatedOtpHash = this.hashPhoneChangeOtp(generatedOtp);
+        const phoneOtpToken = this.createPhoneChangeOtpToken({
+          guardianId: currentGuardian.id,
+          phonePrimary: requestedPrimaryPhone,
+          otpHash: generatedOtpHash,
+          exp: Date.now() + this.phoneChangeOtpTtlMs,
+          nonce: randomBytes(12).toString('hex'),
+        });
+
+        const otpSent = await this.smsService.sendSms(
+          dto.phonePrimary,
+          `CVCC verification code: ${generatedOtp}. Share this code with the nurse to confirm your new phone number. Expires in 10 minutes.`,
+        );
+
+        if (!otpSent) {
+          throw new BadRequestException(
+            'Unable to send verification OTP to this phone number. Confirm the number and try again.',
+          );
+        }
+
+        return {
+          id: currentGuardian.id,
+          fullName: currentGuardian.full_name,
+          phonePrimary: currentGuardian.phone_primary,
+          phoneAlternate: currentGuardian.phone_alternate,
+          email: currentGuardian.email,
+          addressLine1: currentGuardian.address_line1,
+          landmark: currentGuardian.landmark,
+          city: currentGuardian.city,
+          region: currentGuardian.region,
+          preferredContact:
+            currentGuardian.preferred_contact === 'email' ? 'email' : 'sms',
+          message: `OTP sent to ${dto.phonePrimary}. Enter the code to confirm this number before saving.`,
+          phoneOtpRequired: true,
+          phoneOtpToken,
+        };
+      }
+
+      this.verifyPhoneChangeOtpToken(
+        otpToken,
+        currentGuardian.id,
+        requestedPrimaryPhone,
+        otpCode,
+      );
     }
 
     const linkedUser = currentGuardian.user_id
@@ -1739,6 +1812,126 @@ export class FacilityService {
     const encodedPayload = this.encodeBase64Url(JSON.stringify(payload));
     const signature = this.signEmailChangePayload(encodedPayload);
     return `${encodedPayload}.${signature}`;
+  }
+
+  private normalizePhoneForOtp(phone: string): string {
+    return String(phone || '').replace(/\D/g, '');
+  }
+
+  private generatePhoneChangeOtpCode(): string {
+    const min = 10 ** (this.phoneChangeOtpLength - 1);
+    const max = 10 ** this.phoneChangeOtpLength;
+    return Math.floor(min + Math.random() * (max - min)).toString();
+  }
+
+  private hashPhoneChangeOtp(code: string): string {
+    return createHmac('sha256', this.phoneChangeOtpSecret)
+      .update(code.trim())
+      .digest('base64url');
+  }
+
+  private signPhoneChangeOtpPayload(encodedPayload: string): string {
+    return createHmac('sha256', this.phoneChangeOtpSecret)
+      .update(encodedPayload)
+      .digest('base64url');
+  }
+
+  private decodeBase64Url(input: string): string {
+    return Buffer.from(input, 'base64url').toString('utf8');
+  }
+
+  private createPhoneChangeOtpToken(payload: {
+    guardianId: string;
+    phonePrimary: string;
+    otpHash: string;
+    exp: number;
+    nonce: string;
+  }): string {
+    const encodedPayload = this.encodeBase64Url(JSON.stringify(payload));
+    const signature = this.signPhoneChangeOtpPayload(encodedPayload);
+    return `${encodedPayload}.${signature}`;
+  }
+
+  private verifyPhoneChangeOtpToken(
+    token: string,
+    expectedGuardianId: string,
+    expectedPhonePrimary: string,
+    otpCode: string,
+  ): void {
+    const [encodedPayload, providedSignature] = token.split('.');
+
+    if (!encodedPayload || !providedSignature) {
+      throw new BadRequestException(
+        'Invalid OTP session. Please request a new verification code.',
+      );
+    }
+
+    const expectedSignature = this.signPhoneChangeOtpPayload(encodedPayload);
+    const providedSignatureBuffer = Buffer.from(providedSignature, 'utf8');
+    const expectedSignatureBuffer = Buffer.from(expectedSignature, 'utf8');
+
+    if (
+      providedSignatureBuffer.length !== expectedSignatureBuffer.length ||
+      !timingSafeEqual(providedSignatureBuffer, expectedSignatureBuffer)
+    ) {
+      throw new BadRequestException(
+        'Invalid OTP session. Please request a new verification code.',
+      );
+    }
+
+    let payload: {
+      guardianId: string;
+      phonePrimary: string;
+      otpHash: string;
+      exp: number;
+      nonce: string;
+    };
+
+    try {
+      payload = JSON.parse(this.decodeBase64Url(encodedPayload));
+    } catch {
+      throw new BadRequestException(
+        'Invalid OTP session. Please request a new verification code.',
+      );
+    }
+
+    if (
+      !payload?.guardianId ||
+      !payload?.phonePrimary ||
+      !payload?.otpHash ||
+      typeof payload?.exp !== 'number'
+    ) {
+      throw new BadRequestException(
+        'Invalid OTP session. Please request a new verification code.',
+      );
+    }
+
+    if (Date.now() > payload.exp) {
+      throw new BadRequestException(
+        'OTP code has expired. Request a new code and try again.',
+      );
+    }
+
+    const normalizedExpectedPhone = this.normalizePhoneForOtp(expectedPhonePrimary);
+    if (
+      payload.guardianId !== expectedGuardianId ||
+      payload.phonePrimary !== normalizedExpectedPhone
+    ) {
+      throw new BadRequestException(
+        'OTP does not match this pending phone number update.',
+      );
+    }
+
+    const submittedOtpHash = this.hashPhoneChangeOtp(otpCode);
+    const submittedOtpHashBuffer = Buffer.from(submittedOtpHash, 'utf8');
+    const payloadOtpHashBuffer = Buffer.from(payload.otpHash, 'utf8');
+
+    if (
+      submittedOtpHashBuffer.length !== payloadOtpHashBuffer.length ||
+      !timingSafeEqual(submittedOtpHashBuffer, payloadOtpHashBuffer)
+    ) {
+      throw new BadRequestException('Invalid OTP code. Please try again.');
+    }
   }
 
   private generateTempPassword(): string {

@@ -404,6 +404,14 @@ export class UpdateGuardianDto {
   @IsOptional()
   @IsIn(['sms', 'email'])
   preferredContact?: 'sms' | 'email';
+
+  @IsString()
+  @IsOptional()
+  phoneOtpCode?: string;
+
+  @IsString()
+  @IsOptional()
+  phoneOtpToken?: string;
 }
 
 /**
@@ -423,6 +431,8 @@ export class GuardianDto {
   message?: string;
   emailVerificationRequired?: boolean;
   credentialsEmailSent?: boolean;
+  phoneOtpRequired?: boolean;
+  phoneOtpToken?: string;
 }
 
 /**

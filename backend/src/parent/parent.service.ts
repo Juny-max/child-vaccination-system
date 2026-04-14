@@ -588,6 +588,35 @@ export class ParentService {
       throw new BadRequestException('This verification link does not match your account.');
     }
 
+    return this.applyVerifiedEmailChange(guardian, userId, payload);
+  }
+
+  async verifyGuardianEmailChangeByToken(
+    request: VerifyEmailChangeDto,
+  ): Promise<MotherDetailsDto> {
+    const payload = this.verifyEmailChangeToken(request.token.trim());
+    const guardian = await this.db.getGuardianByUserId(payload.userId);
+
+    if (!guardian || guardian.id !== payload.guardianId) {
+      throw new BadRequestException('This verification link is invalid or no longer available.');
+    }
+
+    return this.applyVerifiedEmailChange(guardian, payload.userId, payload);
+  }
+
+  private async applyVerifiedEmailChange(
+    guardian: any,
+    userId: string,
+    payload: {
+      userId: string;
+      guardianId: string;
+      newEmail: string;
+      currentEmail: string | null;
+      exp: number;
+      nonce: string;
+    },
+  ): Promise<MotherDetailsDto> {
+
     const normalizedCurrentEmail = guardian.email
       ? String(guardian.email).trim().toLowerCase()
       : null;

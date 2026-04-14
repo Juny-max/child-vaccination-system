@@ -24,6 +24,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { Request as ExpressRequest } from 'express';
 
 /**
@@ -105,12 +106,11 @@ export class ParentController {
    * Verify email change token and persist the new email
    */
   @Post('profile/email-change/verify')
+  @Public()
+  @Roles()
   @HttpCode(HttpStatus.OK)
-  async verifyEmailChange(
-    @Request() req: any,
-    @Body() verifyDto: VerifyEmailChangeDto,
-  ) {
-    return this.parentService.verifyGuardianEmailChange(req.user.id, verifyDto);
+  async verifyEmailChange(@Body() verifyDto: VerifyEmailChangeDto) {
+    return this.parentService.verifyGuardianEmailChangeByToken(verifyDto);
   }
 
   // =========================================================================
