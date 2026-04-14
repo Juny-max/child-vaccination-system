@@ -1,7 +1,7 @@
 'use client'
 
 import type { ComponentType } from "react"
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import Image from "next/image"
@@ -326,10 +326,25 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
   )
 }
 
+function DashboardSearchParamsFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-muted/40">
+      <div className="flex flex-col items-center gap-4">
+        <div className="size-48">
+          <Lottie animationData={loadingAnimation} loop />
+        </div>
+        <p className="text-sm text-muted-foreground">Preparing your dashboard...</p>
+      </div>
+    </div>
+  )
+}
+
 export default function ParentDashboardLayout({ children }: DashboardLayoutProps) {
   return (
-    <ParentDashboardProvider>
-      <DashboardLayoutContent>{children}</DashboardLayoutContent>
-    </ParentDashboardProvider>
+    <Suspense fallback={<DashboardSearchParamsFallback />}>
+      <ParentDashboardProvider>
+        <DashboardLayoutContent>{children}</DashboardLayoutContent>
+      </ParentDashboardProvider>
+    </Suspense>
   )
 }
