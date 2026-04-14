@@ -102,7 +102,7 @@ export class BranchManagerController {
   /**
    * POST /api/branch-manager/staff
    * Register a new staff member (nurse or CHW) at this branch.
-   * Returns the temporary password that should be sent to the staff member.
+    * Returns email delivery status and a one-time temporary password only if delivery fails.
    */
   @Post('staff')
   async registerStaff(

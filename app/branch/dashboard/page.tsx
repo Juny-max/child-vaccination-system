@@ -290,10 +290,14 @@ export default function BranchDashboardPage() {
         catchmentAreaId: staffRole === "chw" ? staffForm.catchmentAreaId.trim() || undefined : undefined,
       }
       const result = await registerStaff(payload)
+      const defaultMessage = result.emailSent
+        ? `Staff registered successfully! Login credentials have been sent to ${result.email}.`
+        : `Staff registered successfully! Please contact ${result.email} to provide their login credentials.`
+      const temporaryPasswordNotice = !result.emailSent && result.temporaryPassword
+        ? ` Temporary password: ${result.temporaryPassword}`
+        : ""
       setStaffFormSuccess(
-        result.emailSent
-          ? `Staff registered successfully! Login credentials have been sent to ${result.email}.`
-          : `Staff registered successfully! Please contact ${result.email} to provide their login credentials.`
+        `${result.message || defaultMessage}${temporaryPasswordNotice}`
       )
       loadDashboard()
     } catch (err: unknown) {

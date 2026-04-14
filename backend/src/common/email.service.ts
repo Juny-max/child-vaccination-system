@@ -1,27 +1,118 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import * as nodemailer from 'nodemailer';
 
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
+type EmailProvider = 'brevo-api' | 'smtp';
 
 type EmailDispatchResult = {
   success: boolean;
   errorMessage?: string;
+  provider?: EmailProvider;
 };
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
+  private smtpTransporter?: nodemailer.Transporter;
+
+  private resolveSenderEmail(): string {
+    const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+    if (!senderEmail) {
+      throw new Error('SMTP_FROM or SMTP_USER is not configured');
+    }
+    return senderEmail;
+  }
+
+  private getErrorMessage(error: any): string {
+    const detail = error?.response?.data ?? error?.message ?? error;
+    return typeof detail === 'string' ? detail : JSON.stringify(detail);
+  }
+
+  private async sendViaBrevoApi(
+    payload: { to: { email: string; name: string }; subject: string; html: string },
+    senderEmail: string,
+    senderName: string,
+    apiKey: string,
+  ): Promise<void> {
+    await axios.post(
+      BREVO_API_URL,
+      {
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: payload.to.email, name: payload.to.name }],
+        subject: payload.subject,
+        htmlContent: payload.html,
+      },
+      {
+        headers: {
+          'api-key': apiKey,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      },
+    );
+  }
+
+  private async sendViaSmtp(
+    payload: { to: { email: string; name: string }; subject: string; html: string },
+    senderEmail: string,
+    senderName: string,
+  ): Promise<void> {
+    const host = process.env.SMTP_HOST;
+    const portRaw = process.env.SMTP_PORT;
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+
+    if (!host || !portRaw || !user || !pass) {
+      throw new Error('SMTP transport is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS.');
+    }
+
+    const port = Number.parseInt(portRaw, 10);
+    if (Number.isNaN(port)) {
+      throw new Error('SMTP_PORT is invalid. It must be a number.');
+    }
+
+    if (!this.smtpTransporter) {
+      this.smtpTransporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: {
+          user,
+          pass,
+        },
+      });
+    }
+
+    await this.smtpTransporter.sendMail({
+      from: `"${senderName}" <${senderEmail}>`,
+      to: `"${payload.to.name}" <${payload.to.email}>`,
+      subject: payload.subject,
+      html: payload.html,
+    });
+  }
 
   getMissingEmailConfig(): string[] {
     const missing: string[] = [];
-
-    if (!process.env.BREVO_API_KEY?.trim()) {
-      missing.push('BREVO_API_KEY');
-    }
+    const hasBrevoApiKey = Boolean(process.env.BREVO_API_KEY?.trim());
+    const hasSmtpHost = Boolean(process.env.SMTP_HOST?.trim());
+    const hasSmtpPort = Boolean(process.env.SMTP_PORT?.trim());
+    const hasSmtpUser = Boolean(process.env.SMTP_USER?.trim());
+    const hasSmtpPass = Boolean(process.env.SMTP_PASS?.trim());
 
     // Allow SMTP_USER as a fallback sender identity when SMTP_FROM is omitted.
     if (!(process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim())) {
       missing.push('SMTP_FROM');
+    }
+
+    // We need at least one provider path:
+    // 1) Brevo API key, or
+    // 2) SMTP transport credentials.
+    if (!hasBrevoApiKey) {
+      if (!hasSmtpHost) missing.push('SMTP_HOST');
+      if (!hasSmtpPort) missing.push('SMTP_PORT');
+      if (!hasSmtpUser) missing.push('SMTP_USER');
+      if (!hasSmtpPass) missing.push('SMTP_PASS');
     }
 
     return missing;
@@ -31,9 +122,9 @@ export class EmailService {
     to: { email: string; name: string };
     subject: string;
     html: string;
-  }): Promise<boolean> {
+  }): Promise<EmailProvider> {
     const apiKey = process.env.BREVO_API_KEY?.trim();
-    const senderEmail = process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim();
+    const senderEmail = this.resolveSenderEmail();
     const senderName = 'Child Vaccination Command Center';
 
     const missing = this.getMissingEmailConfig();
@@ -42,28 +133,25 @@ export class EmailService {
       throw new Error(`Email provider is not configured. Missing: ${missing.join(', ')}`);
     }
 
+    if (apiKey) {
+      try {
+        await this.sendViaBrevoApi(payload, senderEmail, senderName, apiKey);
+        return 'brevo-api';
+      } catch (error: any) {
+        const detail = this.getErrorMessage(error);
+        this.logger.warn(`Brevo API send failed. Falling back to SMTP transport. Reason: ${detail}`);
+      }
+    } else {
+      this.logger.warn('BREVO_API_KEY is not set. Falling back to SMTP transport.');
+    }
+
     try {
-      await axios.post(
-        BREVO_API_URL,
-        {
-          sender: { name: senderName, email: senderEmail },
-          to: [{ email: payload.to.email, name: payload.to.name }],
-          subject: payload.subject,
-          htmlContent: payload.html,
-        },
-        {
-          headers: {
-            'api-key': apiKey,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-        },
-      );
-      return true;
+      await this.sendViaSmtp(payload, senderEmail, senderName);
+      return 'smtp';
     } catch (error: any) {
-      const detail = error?.response?.data ?? error?.message ?? error;
-      this.logger.error(`Brevo API error:`, detail);
-      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      const detail = this.getErrorMessage(error);
+      this.logger.error('SMTP send failed', detail);
+      throw new Error(detail);
     }
   }
 
@@ -72,12 +160,12 @@ export class EmailService {
     tempPassword: string,
   ): Promise<boolean> {
     try {
-      await this.sendEmail({
+      const provider = await this.sendEmail({
         to,
         subject: 'Welcome to Child Vaccination Command Center - Your Login Credentials',
         html: this.getWelcomeEmailTemplate(to.name, to.email, tempPassword),
       });
-      this.logger.log(`Welcome email sent to ${to.email}`);
+      this.logger.log(`Welcome email sent to ${to.email} via ${provider}`);
       return true;
     } catch (error) {
       this.logger.error(`Failed to send welcome email to ${to.email}`, error);
@@ -91,12 +179,12 @@ export class EmailService {
     resetLink: string,
   ): Promise<boolean> {
     try {
-      await this.sendEmail({
+      const provider = await this.sendEmail({
         to,
         subject: 'Reset Your Password - Child Vaccination Command Center',
         html: this.getPasswordResetEmailTemplate(to.name, resetLink),
       });
-      this.logger.log(`Password reset email sent to ${to.email}`);
+      this.logger.log(`Password reset email sent to ${to.email} via ${provider}`);
       return true;
     } catch (error) {
       this.logger.error(`Failed to send password reset email to ${to.email}`, error);
@@ -111,7 +199,7 @@ export class EmailService {
   ): Promise<EmailDispatchResult> {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     try {
-      await this.sendEmail({
+      const provider = await this.sendEmail({
         to,
         subject: 'Password Reset - Child Vaccination Command Center',
         html: `
@@ -129,22 +217,23 @@ export class EmailService {
           </div>
         `,
       });
-      this.logger.log(`Admin password reset email sent to ${to.email}`);
-      return { success: true };
+      this.logger.log(`Admin password reset email sent to ${to.email} via ${provider}`);
+      return { success: true, provider };
     } catch (error: any) {
-      const reason = error?.message || 'Email delivery failed';
+      const reason = this.getErrorMessage(error);
       this.logger.error(`Failed to send admin password reset email to ${to.email}`, error);
       return { success: false, errorMessage: String(reason) };
     }
   }
 
-  async sendStaffInviteEmail(
+  async sendStaffInviteEmailWithStatus(
     to: { email: string; name: string; role: string },
     tempPassword: string,
-  ): Promise<boolean> {
+  ): Promise<EmailDispatchResult> {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
     try {
-      await this.sendEmail({
+      const provider = await this.sendEmail({
         to: { email: to.email, name: to.name },
         subject: 'Your Staff Account - Child Vaccination Command Center',
         html: `
@@ -163,12 +252,21 @@ export class EmailService {
           </div>
         `,
       });
-      this.logger.log(`Staff invite email sent to ${to.email}`);
-      return true;
-    } catch (error) {
+      this.logger.log(`Staff invite email sent to ${to.email} via ${provider}`);
+      return { success: true, provider };
+    } catch (error: any) {
+      const reason = this.getErrorMessage(error);
       this.logger.error(`Failed to send staff invite email to ${to.email}`, error);
-      return false;
+      return { success: false, errorMessage: String(reason) };
     }
+  }
+
+  async sendStaffInviteEmail(
+    to: { email: string; name: string; role: string },
+    tempPassword: string,
+  ): Promise<boolean> {
+    const dispatch = await this.sendStaffInviteEmailWithStatus(to, tempPassword);
+    return dispatch.success;
   }
 
   private getWelcomeEmailTemplate(
