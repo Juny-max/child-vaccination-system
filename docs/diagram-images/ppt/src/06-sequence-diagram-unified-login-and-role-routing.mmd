@@ -1,0 +1,16 @@
+sequenceDiagram
+  actor U as User
+  participant UI as Web App
+  participant API as Auth API
+  participant DB as Database
+
+  U->>UI: Enter email and password
+  UI->>API: POST /auth/login
+  API->>DB: Validate user and password
+  DB-->>API: User record + role
+  API-->>UI: JWT cookie + profile
+  alt mustChangePassword
+    UI-->>U: Redirect to change password
+  else
+    UI-->>U: Redirect to role dashboard
+  end

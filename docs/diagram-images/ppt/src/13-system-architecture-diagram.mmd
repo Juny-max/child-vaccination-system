@@ -1,0 +1,59 @@
+flowchart TD
+  subgraph Client["Client Layer — Browser / Mobile"]
+    ReactUI["React UI\n5 Role Dashboards + Public /verify"]
+    IndexedDB["IndexedDB\nOffline Storage"]
+    ServiceWorker["Service Worker\nBackground Sync"]
+  end
+
+  subgraph NextJS["Frontend — Next.js 16 on Vercel"]
+    AppRouter["App Router\n/app/** pages"]
+    NextAPIRoutes["Next.js API Routes\n/api/verify"]
+    AuthMiddleware["Auth Middleware\nJWT route protection"]
+    LibAPI["lib/api/ helpers\nauto-attach Bearer token"]
+  end
+
+  subgraph NestJS["Backend — NestJS on Render (port 3001)"]
+    AuthMod["Auth Module\nJWT login, Guards, Roles"]
+    ParentMod["Parent Module"]
+    FacilityMod["Facility Module"]
+    CHWMod["CHW Module"]
+    BranchMod["Branch Manager Module"]
+    HQMod["HQ Admin Module"]
+    Common["Common Services\nEmail  SMS  Scheduler  Backup"]
+  end
+
+  subgraph DataLayer["Data Layer — Supabase (PostgreSQL)"]
+    SupabaseDB["21 Core Tables\nusers · children · vaccines\nvaccination_events · certificates\nappointments · visit_logs\naudit_logs · sync_queue ..."]
+  end
+
+  subgraph External["External Services"]
+    Brevo["Brevo\nTransactional Email"]
+    Hubtel["Hubtel\nSMS Gateway"]
+  end
+
+  ReactUI --> AppRouter
+  ReactUI <--> IndexedDB
+  ServiceWorker <--> IndexedDB
+  AppRouter --> AuthMiddleware
+  AppRouter --> LibAPI
+  AppRouter --> NextAPIRoutes
+  AuthMiddleware --> LibAPI
+
+  NextAPIRoutes -->|"Direct query\n(no auth needed)"| SupabaseDB
+  LibAPI --> AuthMod
+
+  AuthMod --> ParentMod
+  AuthMod --> FacilityMod
+  AuthMod --> CHWMod
+  AuthMod --> BranchMod
+  AuthMod --> HQMod
+
+  ParentMod --> SupabaseDB
+  FacilityMod --> SupabaseDB
+  CHWMod --> SupabaseDB
+  BranchMod --> SupabaseDB
+  HQMod --> SupabaseDB
+
+  Common --> Brevo
+  Common --> Hubtel
+  ServiceWorker --> AuthMod

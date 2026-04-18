@@ -1,0 +1,32 @@
+flowchart LR
+  Parent["👤 Parent / Guardian"]
+  Nurse["👩‍⚕️ Facility Nurse"]
+  CHW["🏃 Community Health Worker"]
+  BM["🏥 Branch Manager"]
+  HQ["🏛️ HQ Admin"]
+  Public["🌐 Public User"]
+  SMS["📱 SMS Gateway\n(Hubtel)"]
+  Email["📧 Email Service\n(Brevo)"]
+
+  subgraph CVCC["CVCC System"]
+    System(["Child Vaccination\nCommand Center"])
+  end
+
+  Parent -->|"Login, view child records\ndownload certificate"| System
+  Nurse -->|"Register child, record vaccination\nschedule appointment"| System
+  CHW -->|"Register child offline\nrecord household visit"| System
+  BM -->|"View KPIs, approve CHW visits\nmanage branch staff"| System
+  HQ -->|"Manage users, branches, vaccines\nview audit logs"| System
+  Public -->|"Enter certificate ID or scan QR"| System
+
+  System -->|"Child records, certificates\nappointment schedule"| Parent
+  System -->|"Vaccination history, schedules\nregistration confirmation"| Nurse
+  System -->|"Sync confirmation, CVCC ID\nQR code"| CHW
+  System -->|"Branch analytics, staff list\nvisit logs"| BM
+  System -->|"System reports, audit trail\nuser management"| HQ
+  System -->|"Certificate validity, issued date,\ncompletion status"| Public
+
+  System -->|"Appointment reminders\noverdue alerts"| SMS
+  SMS -->|"Delivery status"| System
+  System -->|"Staff invites\npassword resets"| Email
+  Email -->|"Delivery status"| System

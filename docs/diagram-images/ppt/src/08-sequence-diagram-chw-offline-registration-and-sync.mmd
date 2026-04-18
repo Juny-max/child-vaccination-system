@@ -1,0 +1,31 @@
+sequenceDiagram
+  actor C as CHW
+  participant UI as Mobile Web App
+  participant IDB as IndexedDB (Device)
+  participant SW as Service Worker
+  participant API as NestJS API
+  participant DB as Supabase DB
+
+  C->>UI: Open register child form (offline)
+  UI-->>C: Form loads from cache
+
+  C->>UI: Fill mother and child details, capture GPS
+  UI->>IDB: Save record locally with status=pending
+  IDB-->>UI: Saved
+  UI-->>C: Show — Saved offline, will sync when online
+
+  Note over SW,API: Later — when network is restored
+
+  SW->>IDB: Check for pending sync items
+  IDB-->>SW: Return pending records
+
+  loop For each pending record
+    SW->>API: POST /chw/offline-registrations
+    API->>DB: Insert guardian + child records
+    DB-->>API: Return new CVCC ID and QR code payload
+    API-->>SW: 201 Created with server IDs
+    SW->>IDB: Update local record — status=synced, add server ID
+  end
+
+  SW-->>UI: Sync complete notification
+  UI-->>C: Show — All records synced

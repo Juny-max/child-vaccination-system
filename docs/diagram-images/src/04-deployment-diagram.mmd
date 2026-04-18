@@ -1,0 +1,29 @@
+flowchart LR
+  subgraph Client
+    U[User Device\nBrowser]
+  end
+
+  subgraph Frontend
+    FE[Next.js App\nVercel]
+  end
+
+  subgraph Backend
+    API[NestJS API\nRender]
+  end
+
+  subgraph Data
+    DB[(Supabase\nPostgreSQL)]
+  end
+
+  subgraph External Services
+    SMS[Hubtel SMS]
+    Email[Brevo SMTP]
+    Maps[OpenStreetMap Tiles]
+  end
+
+  U --> FE
+  FE --> API
+  API --> DB
+  API --> SMS
+  API --> Email
+  FE --> Maps

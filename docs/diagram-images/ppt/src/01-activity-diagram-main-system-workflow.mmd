@@ -1,0 +1,26 @@
+flowchart TD
+  A([Start]) --> B[Open login page]
+  B --> C[Enter credentials]
+  C --> D{Valid?}
+  D -- No --> E[Show error] --> B
+  D -- Yes --> F[Identify role]
+  F --> G{Role}
+  G -- Parent --> H[Open parent dashboard]
+  G -- Nurse --> I[Open facility dashboard]
+  G -- CHW --> J[Open CHW dashboard]
+  G -- Branch Manager --> BM[Open branch dashboard]
+  G -- HQ Admin --> HQ[Open HQ dashboard]
+  H --> K[View child records or certificate]
+  I --> L[Register child or record vaccination]
+  J --> M[Record visit or vaccination]
+  BM --> BM2[View KPIs, approve CHW visits, manage staff]
+  HQ --> HQ2[Manage users, branches, vaccines, audit logs]
+  M --> N[Save locally if offline]
+  N --> O[Sync when online]
+  K --> P[Save updates]
+  L --> P
+  O --> P
+  BM2 --> P
+  HQ2 --> P
+  P --> Q[Send notification if needed]
+  Q --> R([End])

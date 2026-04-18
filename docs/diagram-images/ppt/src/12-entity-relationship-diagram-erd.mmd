@@ -1,0 +1,134 @@
+erDiagram
+  users {
+    uuid id PK
+    string email
+    string role
+    string status
+    uuid branch_id FK
+  }
+  branches {
+    uuid id PK
+    string name
+    string code
+    string region
+    uuid manager_id FK
+  }
+  catchment_areas {
+    uuid id PK
+    string name
+    uuid branch_id FK
+    uuid assigned_chw_id FK
+  }
+  guardians {
+    uuid id PK
+    uuid user_id FK
+    string full_name
+    string phone_primary
+    uuid catchment_area_id FK
+  }
+  children {
+    uuid id PK
+    string cvcc_id
+    string full_name
+    date date_of_birth
+    string gender
+    uuid primary_facility_id FK
+  }
+  child_guardian {
+    uuid id PK
+    uuid child_id FK
+    uuid guardian_id FK
+    string relationship
+    bool is_primary
+  }
+  vaccines {
+    uuid id PK
+    string code
+    string name
+    string status
+  }
+  vaccination_schedules {
+    uuid id PK
+    uuid vaccine_id FK
+    int dose_number
+    string schedule_name
+    int due_days_from_birth
+  }
+  vaccination_events {
+    uuid id PK
+    uuid child_id FK
+    uuid vaccine_id FK
+    date administered_date
+    uuid administered_by_user_id FK
+    uuid facility_id FK
+    string batch_number
+    bool is_synced
+  }
+  aefi_reports {
+    uuid id PK
+    uuid vaccination_event_id FK
+    uuid child_id FK
+    string severity
+    string status
+  }
+  certificates {
+    uuid id PK
+    string certificate_id
+    uuid child_id FK
+    uuid issued_by_facility_id FK
+    string completion_status
+    string status
+  }
+  appointments {
+    uuid id PK
+    uuid child_id FK
+    uuid guardian_id FK
+    uuid vaccine_id FK
+    uuid facility_id FK
+    date scheduled_date
+    string status
+  }
+  visit_logs {
+    uuid id PK
+    uuid chw_id FK
+    uuid child_id FK
+    uuid catchment_area_id FK
+    date visit_date
+    string status
+  }
+  sync_queue {
+    uuid id PK
+    uuid user_id FK
+    string entity_type
+    string operation
+    string status
+  }
+  audit_logs {
+    uuid id PK
+    uuid user_id FK
+    string action
+    string entity_type
+    timestamp created_at
+  }
+
+  branches ||--o{ users : "employs"
+  branches ||--o| users : "managed by"
+  branches ||--o{ catchment_areas : "has zones"
+  users ||--o{ catchment_areas : "CHW assigned to"
+  users ||--o| guardians : "parent login"
+  guardians ||--o{ child_guardian : "linked via"
+  children ||--o{ child_guardian : "linked via"
+  children ||--o{ vaccination_events : "receives"
+  vaccines ||--o{ vaccination_events : "administered as"
+  vaccines ||--o{ vaccination_schedules : "scheduled in"
+  vaccination_events ||--o| aefi_reports : "may trigger"
+  children ||--o| certificates : "issued"
+  children ||--o{ appointments : "scheduled for"
+  guardians ||--o{ appointments : "booked by"
+  vaccines ||--o{ appointments : "for vaccine"
+  branches ||--o{ appointments : "at facility"
+  users ||--o{ visit_logs : "CHW records"
+  children ||--o{ visit_logs : "visited during"
+  catchment_areas ||--o{ visit_logs : "in zone"
+  users ||--o{ sync_queue : "queues offline data"
+  users ||--o{ audit_logs : "actions logged"

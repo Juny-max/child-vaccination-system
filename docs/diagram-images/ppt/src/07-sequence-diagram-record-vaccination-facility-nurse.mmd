@@ -1,0 +1,32 @@
+sequenceDiagram
+  actor N as Facility Nurse
+  participant UI as Web App
+  participant API as NestJS API
+  participant DB as Supabase DB
+  participant SMS as SMS Gateway
+
+  N->>UI: Open child patient chart
+  UI->>API: GET /facility/children/:id
+  API->>DB: Fetch child + vaccination schedule
+  DB-->>API: Child record + due vaccines
+  API-->>UI: Child data
+  UI-->>N: Display vaccination schedule
+
+  N->>UI: Select vaccine, enter batch number and site
+  UI->>API: POST /facility/children/:id/vaccinations
+  API->>DB: Insert vaccination_event record
+  DB-->>API: Saved event
+
+  API->>DB: Check if all schedule doses completed
+  alt All doses complete
+    DB-->>API: Schedule complete
+    API->>DB: Create or update certificate record
+    DB-->>API: Certificate issued
+  else More doses pending
+    DB-->>API: Schedule incomplete
+  end
+
+  API->>SMS: Send appointment reminder to guardian
+  SMS-->>API: Sent confirmation
+  API-->>UI: Success response
+  UI-->>N: Show success — vaccination recorded

@@ -34,49 +34,81 @@ flowchart TD
 ## Use Case Diagram (All 5 Roles)
 
 ```mermaid
-flowchart LR
-  Parent[Parent] --> UC1((Login))
-  Parent --> UC2((View child records))
-  Parent --> UC3((Download certificate))
-
-  Nurse[Facility Nurse] --> UC1
-  Nurse --> UC4((Register child))
-  Nurse --> UC5((Record vaccination))
-  Nurse --> UC6((Schedule appointment))
-
-  CHW[CHW] --> UC1
-  CHW --> UC7((Offline capture))
-  CHW --> UC8((Sync data))
-
-  BM[Branch Manager] --> UC1
-  BM --> UC9((View branch KPIs))
-  BM --> UC10((Approve CHW visits))
-  BM --> UC11((Manage staff))
-
-  HQA[HQ Admin] --> UC1
-  HQA --> UC12((Manage users))
-  HQA --> UC13((Manage branches))
-  HQA --> UC14((View audit logs))
-
-  Public[Public / Anyone] --> UC15((Verify certificate))
-
-  subgraph CVCC System
-    UC1
-    UC2
-    UC3
-    UC4
-    UC5
-    UC6
-    UC7
-    UC8
-    UC9
-    UC10
-    UC11
-    UC12
-    UC13
-    UC14
-    UC15
+flowchart TB
+  subgraph Actors[Actors]
+    direction LR
+    Parent[Parent]
+    Nurse[Facility Nurse]
+    CHW[CHW]
+    BM[Branch Manager]
+    HQA[HQ Admin]
+    Public[Public / Anyone]
   end
+
+  subgraph CVCC[CVCC System]
+    direction TB
+
+    subgraph A[Access]
+      direction LR
+      UC1((Login))
+    end
+
+    subgraph C[Care Delivery]
+      direction LR
+      UC4((Register child))
+      UC5((Record vaccination))
+      UC6((Schedule appointment))
+      UC7((Offline capture))
+      UC8((Sync data))
+    end
+
+    subgraph M[Branch and HQ Management]
+      direction LR
+      UC9((View branch KPIs))
+      UC10((Approve CHW visits))
+      UC11((Manage staff))
+      UC12((Manage users))
+      UC13((Manage branches))
+      UC14((View audit logs))
+    end
+
+    subgraph P[Parent and Public Services]
+      direction LR
+      UC2((View child records))
+      UC3((Download certificate))
+      UC15((Verify certificate))
+    end
+  end
+
+  Parent --> UC1
+  Parent --> UC2
+  Parent --> UC3
+
+  Nurse --> UC1
+  Nurse --> UC4
+  Nurse --> UC5
+  Nurse --> UC6
+
+  CHW --> UC1
+  CHW --> UC7
+  CHW --> UC8
+
+  BM --> UC1
+  BM --> UC9
+  BM --> UC10
+  BM --> UC11
+
+  HQA --> UC1
+  HQA --> UC12
+  HQA --> UC13
+  HQA --> UC14
+
+  Public --> UC15
+
+  classDef actor fill:#eef1ff,stroke:#6b6de3,color:#1f2440,stroke-width:1px
+  classDef usecase fill:#f6f8ff,stroke:#7b68ee,color:#20243a,stroke-width:1px
+  class Parent,Nurse,CHW,BM,HQA,Public actor
+  class UC1,UC2,UC3,UC4,UC5,UC6,UC7,UC8,UC9,UC10,UC11,UC12,UC13,UC14,UC15 usecase
 ```
 
 ## State Diagram (CHW Offline Capture and Sync)
@@ -290,7 +322,7 @@ sequenceDiagram
   IDB-->>SW: Return pending records
 
   loop For each pending record
-    SW->>API: POST /chw/register-child
+    SW->>API: POST /chw/offline-registrations
     API->>DB: Insert guardian + child records
     DB-->>API: Return new CVCC ID and QR code payload
     API-->>SW: 201 Created with server IDs
@@ -330,17 +362,17 @@ sequenceDiagram
   DB-->>NR: Certificate row or empty
 
   alt Certificate found and issued
-    NR-->>VP: found=true, isValid=true, child name, vaccines
-    VP-->>P: Show VALID CERTIFICATE — child name, DOB, vaccines completed
-  else Certificate found but revoked
+    NR-->>VP: found=true, isValid=true, isPending=false, issuedDate, completionStatus, vaccinesCompleted
+    VP-->>P: Show VALID CERTIFICATE — cert details only (no child personal data)
+  else Certificate found but revoked/expired
     NR-->>VP: found=true, isValid=false, status=revoked
     VP-->>P: Show CERTIFICATE REVOKED
-  else Child registered but vaccines incomplete
+  else Child registered but certificate pending
     NR-->>VP: found=false — fallback to children table
     NR->>DB: Query children by cvcc_id
-    DB-->>NR: Child record with partial vaccines
-    NR-->>VP: isPending=true, vaccinesCompleted list
-    VP-->>P: Show VACCINATION INCOMPLETE — progress shown
+    DB-->>NR: Child record exists
+    NR-->>VP: found=true, isPending=true, isValid=false
+    VP-->>P: Show VACCINATION IN PROGRESS
   else Not found
     NR-->>VP: found=false
     VP-->>P: Show CERTIFICATE NOT FOUND
@@ -363,7 +395,6 @@ flowchart LR
   Public["🌐 Public User"]
   SMS["📱 SMS Gateway\n(Hubtel)"]
   Email["📧 Email Service\n(Brevo)"]
-  Gemini["🤖 AI Chatbot\n(Google Gemini)"]
 
   subgraph CVCC["CVCC System"]
     System(["Child Vaccination\nCommand Center"])
@@ -381,14 +412,12 @@ flowchart LR
   System -->|"Sync confirmation, CVCC ID\nQR code"| CHW
   System -->|"Branch analytics, staff list\nvisit logs"| BM
   System -->|"System reports, audit trail\nuser management"| HQ
-  System -->|"Certificate validity result\nchild name and vaccines"| Public
+  System -->|"Certificate validity, issued date,\ncompletion status"| Public
 
   System -->|"Appointment reminders\noverdue alerts"| SMS
   SMS -->|"Delivery status"| System
   System -->|"Staff invites\npassword resets"| Email
   Email -->|"Delivery status"| System
-  System -->|"User query"| Gemini
-  Gemini -->|"AI response"| System
 ```
 
 ---
@@ -424,6 +453,7 @@ flowchart TD
     ViewSched["3.1 Load Vaccination\nSchedule"]
     RecordDose["3.2 Record\nDose Given"]
     IssueCert["3.3 Issue / Update\nCertificate"]
+    VerifyCert["3.4 Verify\nCertificate Status"]
   end
 
   subgraph P4["Process 4 — Notifications & Reminders"]
@@ -490,7 +520,8 @@ flowchart TD
   Manager -->|create / update user| UserMgmt
   UserMgmt --> DS1
 
-  PublicUser -->|certificate ID| P3
+  PublicUser -->|certificate ID| VerifyCert
+  VerifyCert --> DS3
   DS3 -->|certificate status| PublicUser
 ```
 
@@ -649,7 +680,7 @@ flowchart TD
 
   subgraph NextJS["Frontend — Next.js 16 on Vercel"]
     AppRouter["App Router\n/app/** pages"]
-    NextAPIRoutes["Next.js API Routes\n/api/verify  /api/chatbot"]
+    NextAPIRoutes["Next.js API Routes\n/api/verify"]
     AuthMiddleware["Auth Middleware\nJWT route protection"]
     LibAPI["lib/api/ helpers\nauto-attach Bearer token"]
   end
@@ -665,13 +696,12 @@ flowchart TD
   end
 
   subgraph DataLayer["Data Layer — Supabase (PostgreSQL)"]
-    SupabaseDB[("21 Tables\nusers · children · vaccines\nvaccination_events · certificates\nappointments · visit_logs\naudit_logs · sync_queue ...")]
+    SupabaseDB["21 Core Tables\nusers · children · vaccines\nvaccination_events · certificates\nappointments · visit_logs\naudit_logs · sync_queue ..."]
   end
 
   subgraph External["External Services"]
     Brevo["Brevo\nTransactional Email"]
     Hubtel["Hubtel\nSMS Gateway"]
-    Gemini["Google Gemini\nAI Chatbot"]
   end
 
   ReactUI --> AppRouter
@@ -700,5 +730,4 @@ flowchart TD
   Common --> Brevo
   Common --> Hubtel
   ServiceWorker --> AuthMod
-  AppRouter --> Gemini
 ```

@@ -1,0 +1,75 @@
+flowchart TB
+  subgraph Actors[Actors]
+    direction LR
+    Parent[Parent]
+    Nurse[Facility Nurse]
+    CHW[CHW]
+    BM[Branch Manager]
+    HQA[HQ Admin]
+    Public[Public / Anyone]
+  end
+
+  subgraph CVCC[CVCC System]
+    direction TB
+
+    subgraph A[Access]
+      direction LR
+      UC1((Login))
+    end
+
+    subgraph C[Care Delivery]
+      direction LR
+      UC4((Register child))
+      UC5((Record vaccination))
+      UC6((Schedule appointment))
+      UC7((Offline capture))
+      UC8((Sync data))
+    end
+
+    subgraph M[Branch and HQ Management]
+      direction LR
+      UC9((View branch KPIs))
+      UC10((Approve CHW visits))
+      UC11((Manage staff))
+      UC12((Manage users))
+      UC13((Manage branches))
+      UC14((View audit logs))
+    end
+
+    subgraph P[Parent and Public Services]
+      direction LR
+      UC2((View child records))
+      UC3((Download certificate))
+      UC15((Verify certificate))
+    end
+  end
+
+  Parent --> UC1
+  Parent --> UC2
+  Parent --> UC3
+
+  Nurse --> UC1
+  Nurse --> UC4
+  Nurse --> UC5
+  Nurse --> UC6
+
+  CHW --> UC1
+  CHW --> UC7
+  CHW --> UC8
+
+  BM --> UC1
+  BM --> UC9
+  BM --> UC10
+  BM --> UC11
+
+  HQA --> UC1
+  HQA --> UC12
+  HQA --> UC13
+  HQA --> UC14
+
+  Public --> UC15
+
+  classDef actor fill:#eef1ff,stroke:#6b6de3,color:#1f2440,stroke-width:1px
+  classDef usecase fill:#f6f8ff,stroke:#7b68ee,color:#20243a,stroke-width:1px
+  class Parent,Nurse,CHW,BM,HQA,Public actor
+  class UC1,UC2,UC3,UC4,UC5,UC6,UC7,UC8,UC9,UC10,UC11,UC12,UC13,UC14,UC15 usecase

@@ -1,0 +1,70 @@
+classDiagram
+  class User {
+    +id
+    +email
+    +role
+    +status
+  }
+
+  class Guardian {
+    +id
+    +fullName
+    +phonePrimary
+  }
+
+  class Child {
+    +id
+    +cvccId
+    +fullName
+    +dateOfBirth
+  }
+
+  class Vaccine {
+    +id
+    +name
+  }
+
+  class VaccinationEvent {
+    +id
+    +date
+    +batchNumber
+  }
+
+  class Appointment {
+    +id
+    +scheduledDate
+    +status
+  }
+
+  class Certificate {
+    +id
+    +issuedDate
+  }
+
+  class Branch {
+    +id
+    +name
+    +region
+  }
+
+  class CatchmentArea {
+    +id
+    +name
+  }
+
+  class Notification {
+    +id
+    +channel
+    +status
+  }
+
+  User "1" --> "0..1" Guardian : profile
+  Guardian "1" --> "0..*" Child : cares_for
+  Child "1" --> "0..*" VaccinationEvent
+  Vaccine "1" --> "0..*" VaccinationEvent
+  Child "1" --> "0..*" Appointment
+  Child "1" --> "0..1" Certificate
+  Branch "1" --> "0..*" User
+  Branch "1" --> "0..*" CatchmentArea
+  CatchmentArea "1" --> "0..*" Child
+  Guardian "1" --> "0..*" Notification

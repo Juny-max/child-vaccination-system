@@ -1,0 +1,39 @@
+sequenceDiagram
+  actor P as Public User
+  participant LP as Landing Page
+  participant VP as Verify Page (/verify)
+  participant NR as Next.js Route Handler (/api/verify)
+  participant DB as Supabase DB
+
+  P->>LP: Click Verify Certificate button
+  LP-->>P: Navigate to /verify
+
+  alt Scan QR Code
+    P->>VP: Click Scan QR Code
+    VP-->>P: Open device camera
+    P->>VP: Point camera at certificate QR code
+    VP-->>P: QR payload detected — extract certificate ID
+  else Manual Entry
+    P->>VP: Type certificate ID manually
+  end
+
+  VP->>NR: GET /api/verify?id=CERT-GH-2025-001234
+  NR->>DB: Query certificates table by certificate_id
+  DB-->>NR: Certificate row or empty
+
+  alt Certificate found and issued
+    NR-->>VP: found=true, isValid=true, isPending=false, issuedDate, completionStatus, vaccinesCompleted
+    VP-->>P: Show VALID CERTIFICATE — cert details only (no child personal data)
+  else Certificate found but revoked/expired
+    NR-->>VP: found=true, isValid=false, status=revoked
+    VP-->>P: Show CERTIFICATE REVOKED
+  else Child registered but certificate pending
+    NR-->>VP: found=false — fallback to children table
+    NR->>DB: Query children by cvcc_id
+    DB-->>NR: Child record exists
+    NR-->>VP: found=true, isPending=true, isValid=false
+    VP-->>P: Show VACCINATION IN PROGRESS
+  else Not found
+    NR-->>VP: found=false
+    VP-->>P: Show CERTIFICATE NOT FOUND
+  end
