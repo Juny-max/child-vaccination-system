@@ -13,19 +13,25 @@ flowchart TD
   G -- Parent --> H[Open parent dashboard]
   G -- Nurse --> I[Open facility dashboard]
   G -- CHW --> J[Open CHW dashboard]
+  G -- Branch Manager --> BM[Open branch dashboard]
+  G -- HQ Admin --> HQ[Open HQ dashboard]
   H --> K[View child records or certificate]
   I --> L[Register child or record vaccination]
   J --> M[Record visit or vaccination]
+  BM --> BM2[View KPIs, approve CHW visits, manage staff]
+  HQ --> HQ2[Manage users, branches, vaccines, audit logs]
   M --> N[Save locally if offline]
   N --> O[Sync when online]
   K --> P[Save updates]
   L --> P
   O --> P
+  BM2 --> P
+  HQ2 --> P
   P --> Q[Send notification if needed]
   Q --> R([End])
 ```
 
-## Use Case Diagram (Parent, Nurse, CHW)
+## Use Case Diagram (All 5 Roles)
 
 ```mermaid
 flowchart LR
@@ -42,6 +48,18 @@ flowchart LR
   CHW --> UC7((Offline capture))
   CHW --> UC8((Sync data))
 
+  BM[Branch Manager] --> UC1
+  BM --> UC9((View branch KPIs))
+  BM --> UC10((Approve CHW visits))
+  BM --> UC11((Manage staff))
+
+  HQA[HQ Admin] --> UC1
+  HQA --> UC12((Manage users))
+  HQA --> UC13((Manage branches))
+  HQA --> UC14((View audit logs))
+
+  Public[Public / Anyone] --> UC15((Verify certificate))
+
   subgraph CVCC System
     UC1
     UC2
@@ -51,6 +69,13 @@ flowchart LR
     UC6
     UC7
     UC8
+    UC9
+    UC10
+    UC11
+    UC12
+    UC13
+    UC14
+    UC15
   end
 ```
 

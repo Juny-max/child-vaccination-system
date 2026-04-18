@@ -53,16 +53,12 @@ flowchart TD
     CheckRole -->|Branch Manager| BranchDash[Redirect to<br/>Branch Dashboard]
     CheckRole -->|Facility Nurse| FacilityDash[Redirect to<br/>Facility Dashboard]
     CheckRole -->|CHW| CHWDash[Redirect to<br/>CHW Dashboard]
-    CheckRole -->|Data Officer| DataDash[Redirect to<br/>Data Officer Dashboard]
-    CheckRole -->|PHA| PHADash[Redirect to<br/>PHA Dashboard]
     
     ParentDash --> End2([Login Complete])
     HQDash --> End2
     BranchDash --> End2
     FacilityDash --> End2
     CHWDash --> End2
-    DataDash --> End2
-    PHADash --> End2
 ```
 
 ### 📋 Copy-Ready Version (For Mermaid Live Editor)
@@ -94,16 +90,12 @@ flowchart TD
     CheckRole -->|Branch Manager| BranchDash[Redirect to<br/>Branch Dashboard]
     CheckRole -->|Facility Nurse| FacilityDash[Redirect to<br/>Facility Dashboard]
     CheckRole -->|CHW| CHWDash[Redirect to<br/>CHW Dashboard]
-    CheckRole -->|Data Officer| DataDash[Redirect to<br/>Data Officer Dashboard]
-    CheckRole -->|PHA| PHADash[Redirect to<br/>PHA Dashboard]
     
     ParentDash --> End2([Login Complete])
     HQDash --> End2
     BranchDash --> End2
     FacilityDash --> End2
     CHWDash --> End2
-    DataDash --> End2
-    PHADash --> End2
 ```
 
 ---
@@ -202,22 +194,19 @@ flowchart TD
 
 ---
 
-## 4. Verify Certificate Module (PHA - Port Health Authority)
+## 4. Verify Certificate Module (Public - No Login Required)
+
+Accessible from the landing page at `/verify` — anyone can scan or enter a certificate ID.
 
 ```mermaid
 flowchart TD
-    Start([PHA Opens Verify Certificate Page])
-    Start --> CheckAuth{User Authenticated<br/>& PHA Role?}
-    
-    CheckAuth -->|No| RedirectLogin[Redirect to Login Page]
-    RedirectLogin --> End1([Access Denied])
-    
-    CheckAuth -->|Yes| ShowOptions[Display Verification Options]
+    Start([Anyone Opens /verify Page<br/>from Landing Page])
+    Start --> ShowOptions[Display Verification Options<br/>No Login Required]
     
     ShowOptions --> ChooseMethod{Select Verification<br/>Method}
     
     ChooseMethod -->|Manual Entry| EnterID[Enter Certificate ID<br/>Manually]
-    ChooseMethod -->|QR Scan| OpenScanner[Open QR Code Scanner]
+    ChooseMethod -->|QR Scan| OpenScanner[Open QR Code Scanner<br/>on Device Camera]
     
     OpenScanner --> ScanQR[Scan Certificate<br/>QR Code]
     ScanQR --> QRSuccess{QR Code<br/>Detected?}
@@ -225,33 +214,32 @@ flowchart TD
     QRSuccess -->|No| ScanError[Show Scan Error]
     ScanError --> OpenScanner
     
-    QRSuccess -->|Yes| ExtractID[Extract Certificate ID<br/>from QR Code]
+    QRSuccess -->|Yes| ExtractID[Extract Certificate ID<br/>from QR Payload]
     ExtractID --> VerifyData
     
     EnterID --> CheckID{Certificate ID<br/>Entered?}
     CheckID -->|No| ShowIDError[Show Error:<br/>ID Required]
     ShowIDError --> EnterID
     
-    CheckID -->|Yes| VerifyData[Send Verification Request<br/>to Backend]
+    CheckID -->|Yes| VerifyData[Send Request to<br/>Next.js Route Handler]
     
-    VerifyData --> QueryDB[Query Database for<br/>Certificate Record]
+    VerifyData --> QueryDB[Query Supabase Database<br/>Directly - No Auth Needed]
     QueryDB --> RecordExists{Certificate<br/>Exists?}
     
-    RecordExists -->|No| ShowInvalid[Display:<br/>INVALID Certificate]
-    ShowInvalid --> LogAttempt1[Log Verification Attempt]
-    LogAttempt1 --> End2([Verification Complete])
+    RecordExists -->|No| ShowNotFound[Display:<br/>CERTIFICATE NOT FOUND]
+    ShowNotFound --> End2([Verification Complete])
     
-    RecordExists -->|Yes| CheckDetails[Check Child Details<br/>& Vaccination Records]
-    CheckDetails --> VerifyStatus{Certificate<br/>Valid & Current?}
+    RecordExists -->|Yes| CheckStatus{Certificate<br/>Status?}
     
-    VerifyStatus -->|No| ShowExpired[Display:<br/>EXPIRED or INVALID]
-    ShowExpired --> LogAttempt2[Log Verification Attempt]
-    LogAttempt2 --> End2
+    CheckStatus -->|Revoked| ShowRevoked[Display:<br/>CERTIFICATE REVOKED]
+    ShowRevoked --> End2
     
-    VerifyStatus -->|Yes| ShowValid[Display:<br/>VALID Certificate]
-    ShowValid --> DisplayDetails[Show Child Name,<br/>DOB, Vaccinations]
-    DisplayDetails --> LogAttempt3[Log Verification Attempt]
-    LogAttempt3 --> End3([Verification Complete])
+    CheckStatus -->|Pending - Incomplete Vaccines| ShowPending[Display:<br/>VACCINATION INCOMPLETE<br/>Show completed vs remaining]
+    ShowPending --> End2
+    
+    CheckStatus -->|Valid & Complete| ShowValid[Display:<br/>VALID CERTIFICATE]
+    ShowValid --> DisplayDetails[Show Child Name, DOB,<br/>Vaccines Completed, Issue Date]
+    DisplayDetails --> End3([Verification Complete])
 ```
 
 ---
@@ -339,7 +327,7 @@ flowchart TD
 
 ---
 
-## 7. Generate Reports Module (Data Officer/Admin)
+## 7. Generate Reports Module (Branch Manager / HQ Admin)
 
 ```mermaid
 flowchart TD
@@ -558,10 +546,10 @@ flowchart TD
 1. **Login Module**: Shows how all users (parents and staff) log in and get redirected to their specific dashboards
 2. **Register Child Module (CHW)**: Demonstrates the offline-first registration process for door-to-door field work - saves locally first, then syncs to server when network is available
 3. **Record Vaccination Module (Facility Nurse)**: Shows the online-with-offline-fallback design for recording vaccinations at facilities - handles power cuts and network interruptions gracefully
-4. **Verify Certificate Module**: Shows how Port Health Authority can verify certificates using QR scan or manual entry
+4. **Verify Certificate Module (Public)**: Shows how anyone can verify a certificate from the landing page using QR scan or manual entry — no login required
 5. **Change Password Module**: Explains the first-time login password change flow
 6. **Parent Dashboard**: How parents view their children's vaccination records
-7. **Generate Reports**: How administrators and data officers generate various reports
+7. **Generate Reports**: How Branch Managers and HQ Admins generate various reports
 8. **SMS Reminder System**: Automated daily process for sending vaccination reminders
 9. **Offline Sync Module**: How the system handles offline mode and synchronizes data
 10. **Search Child Module**: How staff search for children using different methods
@@ -573,7 +561,7 @@ flowchart TD
 - ✅ **GPS tracking** for community health worker registrations
 - ✅ **SMS reminders** for vaccination due dates
 - ✅ **Multi-method search** (ID, name, guardian, QR code)
-- ✅ **Certificate verification** for port health authority
+- ✅ **Certificate verification** — public page, no login required
 - ✅ **Report generation** with multiple export formats
 
 ### Important Implementation Details:
