@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { QRScanner } from "@/components/pha/qr-scanner"
+import { QRScanner } from "@/components/shared/qr-scanner"
 import type { PHACertificateVerifyResult } from "@/lib/api/pha"
 
 async function verifyCertificate(id: string): Promise<PHACertificateVerifyResult> {

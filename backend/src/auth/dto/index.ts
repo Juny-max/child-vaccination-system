@@ -10,8 +10,6 @@ export enum UserRole {
   BRANCH_MANAGER = 'branch-manager',
   FACILITY_NURSE = 'facility-nurse',
   CHW = 'chw',
-  DATA_OFFICER = 'data-officer',
-  PHA = 'pha',
 }
 
 // ============================================

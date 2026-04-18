@@ -53,22 +53,6 @@ export class HqRoleService {
         createdAt: null,
       },
       {
-        id: 'data-officer',
-        name: 'Data Officer',
-        description: 'Manages data quality, resolves duplicates and sync conflicts',
-        permissions: ['view_audit_logs', 'export_data'],
-        isSystem: true,
-        createdAt: null,
-      },
-      {
-        id: 'pha',
-        name: 'Public Health Authority',
-        description: 'Read-only oversight of analytics, dashboards, and national reports',
-        permissions: ['view_analytics', 'export_data'],
-        isSystem: true,
-        createdAt: null,
-      },
-      {
         id: 'parent',
         name: 'Parent / Guardian',
         description: 'Views child vaccination records, certificates, and appointments',

@@ -47,7 +47,7 @@ const discoverDestinations = [
       "Charts rest on translucent clay pedestals, balancing depth with export-ready clarity for cabinet briefings.",
       "Drill-through narratives explain why metrics shift, referencing events, outreach pushes and supply interventions.",
     ],
-    href: "/pha/reports",
+    href: "/hq/dashboard",
     accent: "from-indigo-200/60 via-indigo-100/40 to-indigo-50/30",
     icon: BarChart3,
     contextLabel: "Executive-ready visuals",

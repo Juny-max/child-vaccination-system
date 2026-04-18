@@ -367,8 +367,6 @@ const mapUserRoleToApiRole = (role: string): string => {
     "Branch Manager": "branch-manager",
     "Facility Nurse": "facility-nurse",
     "Community Health Worker": "chw",
-    "Data Officer": "data-officer",
-    "Public Health Authority": "pha",
     "Parent": "parent",
   }
 
@@ -2789,7 +2787,7 @@ export default function HqDashboardPage() {
         <Card className="border-amber-500/60 bg-amber-50/70">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg text-amber-800">
-              <ShieldAlert className="h-5 w-5" /> Conflicts escalated by Data Officers
+              <ShieldAlert className="h-5 w-5" /> Sync conflicts awaiting HQ resolution
             </CardTitle>
             <CardDescription className="text-xs text-amber-800/90">
               Sync collisions awaiting HQ resolution after being queued from the field.
@@ -3398,9 +3396,7 @@ export default function HqDashboardPage() {
                 {lockRoleSelection ? <option>HQ Admin</option> : null}
                 <option>Branch Manager</option>
                 <option>Facility Nurse</option>
-                <option>Data Officer</option>
                 <option>Community Health Worker</option>
-                <option>Public Health Authority</option>
                 <option>Parent</option>
               </select>
               {lockRoleSelection ? (
