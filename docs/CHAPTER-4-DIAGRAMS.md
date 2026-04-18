@@ -349,6 +349,153 @@ sequenceDiagram
 
 ---
 
+## Data Flow Diagram — Level 0 (Context Diagram)
+
+Shows the entire system as a single process and all external entities that interact with it.
+
+```mermaid
+flowchart LR
+  Parent["👤 Parent / Guardian"]
+  Nurse["👩‍⚕️ Facility Nurse"]
+  CHW["🏃 Community Health Worker"]
+  BM["🏥 Branch Manager"]
+  HQ["🏛️ HQ Admin"]
+  Public["🌐 Public User"]
+  SMS["📱 SMS Gateway\n(Hubtel)"]
+  Email["📧 Email Service\n(Brevo)"]
+  Gemini["🤖 AI Chatbot\n(Google Gemini)"]
+
+  subgraph CVCC["CVCC System"]
+    System(["Child Vaccination\nCommand Center"])
+  end
+
+  Parent -->|"Login, view child records\ndownload certificate"| System
+  Nurse -->|"Register child, record vaccination\nschedule appointment"| System
+  CHW -->|"Register child offline\nrecord household visit"| System
+  BM -->|"View KPIs, approve CHW visits\nmanage branch staff"| System
+  HQ -->|"Manage users, branches, vaccines\nview audit logs"| System
+  Public -->|"Enter certificate ID or scan QR"| System
+
+  System -->|"Child records, certificates\nappointment schedule"| Parent
+  System -->|"Vaccination history, schedules\nregistration confirmation"| Nurse
+  System -->|"Sync confirmation, CVCC ID\nQR code"| CHW
+  System -->|"Branch analytics, staff list\nvisit logs"| BM
+  System -->|"System reports, audit trail\nuser management"| HQ
+  System -->|"Certificate validity result\nchild name and vaccines"| Public
+
+  System -->|"Appointment reminders\noverdue alerts"| SMS
+  SMS -->|"Delivery status"| System
+  System -->|"Staff invites\npassword resets"| Email
+  Email -->|"Delivery status"| System
+  System -->|"User query"| Gemini
+  Gemini -->|"AI response"| System
+```
+
+---
+
+## Data Flow Diagram — Level 1 (Main Processes)
+
+Breaks the system into its five core processes and shows how data flows between them.
+
+```mermaid
+flowchart TD
+  subgraph Actors["External Entities"]
+    Guardian["Guardian"]
+    Staff["Clinic Staff\n(Nurse / CHW)"]
+    Manager["Branch Manager\n/ HQ Admin"]
+    PublicUser["Public User"]
+    SMSGateway["SMS Gateway"]
+    EmailSvc["Email Service"]
+  end
+
+  subgraph P1["Process 1 — Authentication"]
+    Login["1.1 Validate\nCredentials"]
+    JWT["1.2 Issue\nJWT Token"]
+    RoleRoute["1.3 Route to\nRole Dashboard"]
+  end
+
+  subgraph P2["Process 2 — Child Registration"]
+    RegChild["2.1 Capture Child\n& Guardian Details"]
+    GenID["2.2 Generate\nCVCC ID + QR Code"]
+    SyncQ["2.3 Offline Queue\n& Sync"]
+  end
+
+  subgraph P3["Process 3 — Vaccination Management"]
+    ViewSched["3.1 Load Vaccination\nSchedule"]
+    RecordDose["3.2 Record\nDose Given"]
+    IssueCert["3.3 Issue / Update\nCertificate"]
+  end
+
+  subgraph P4["Process 4 — Notifications & Reminders"]
+    Scheduler["4.1 Daily Scheduler\n(Cron Job)"]
+    BuildMsg["4.2 Build\nReminder Message"]
+    Dispatch["4.3 Dispatch via\nSMS or Email"]
+  end
+
+  subgraph P5["Process 5 — Reporting & Administration"]
+    Analytics["5.1 Branch\nAnalytics + KPIs"]
+    AuditLog["5.2 Audit\nLog Trail"]
+    UserMgmt["5.3 User &\nBranch Management"]
+  end
+
+  subgraph DS["Data Stores"]
+    DS1[("users\nbranches")]
+    DS2[("children\nguardians\nchild_guardian")]
+    DS3[("vaccines\nvaccination_events\ncertificates\nappointments")]
+    DS4[("notifications\nnotification_templates")]
+    DS5[("audit_logs\nsystem_settings")]
+  end
+
+  Guardian -->|credentials| Login
+  Staff -->|credentials| Login
+  Manager -->|credentials| Login
+  Login --> DS1
+  DS1 -->|user record + role| JWT
+  JWT --> RoleRoute
+  RoleRoute -->|auth token| Guardian
+  RoleRoute -->|auth token| Staff
+  RoleRoute -->|auth token| Manager
+
+  Staff -->|mother & child info| RegChild
+  RegChild --> DS2
+  DS2 -->|saved record| GenID
+  GenID -->|CVCC ID + QR| DS2
+  GenID -->|offline data| SyncQ
+  SyncQ --> DS2
+
+  Staff -->|open child chart| ViewSched
+  DS3 -->|schedule + history| ViewSched
+  ViewSched -->|due vaccines| Staff
+  Staff -->|dose details + batch no| RecordDose
+  RecordDose --> DS3
+  DS3 -->|all doses complete?| IssueCert
+  IssueCert --> DS3
+  IssueCert -->|certificate issued| Guardian
+
+  Scheduler -->|fetch due children| DS3
+  DS3 -->|due list| BuildMsg
+  DS2 -->|guardian phone / email| BuildMsg
+  BuildMsg -->|message payload| Dispatch
+  Dispatch --> SMSGateway
+  Dispatch --> EmailSvc
+  SMSGateway -->|delivery status| DS4
+  EmailSvc -->|delivery status| DS4
+
+  Manager -->|request report| Analytics
+  DS3 -->|vaccination data| Analytics
+  DS2 -->|child counts| Analytics
+  Analytics -->|KPIs + charts| Manager
+  DS5 -->|audit trail| AuditLog
+  AuditLog -->|filtered logs| Manager
+  Manager -->|create / update user| UserMgmt
+  UserMgmt --> DS1
+
+  PublicUser -->|certificate ID| P3
+  DS3 -->|certificate status| PublicUser
+```
+
+---
+
 ## Entity-Relationship Diagram (ERD)
 
 ```mermaid
