@@ -1,6 +1,6 @@
 <!-- markdownlint-disable -->
 
-# Nungua Child Vaccination Command Center (CVCC)
+# Child Vaccination Command Center (CVCC)
 
 **Vaccination Tracking System for Nungua and Surrounding Communities, Greater Accra**
 
@@ -344,7 +344,6 @@ git push origin main
 - [x] Supabase setup and configuration
 - [x] JWT Authentication with role-based guards
 - [x] Email notifications (Brevo)
-- [x] AI Chatbot (Google Gemini)
 - [x] Public certificate verification page (`/verify`)
 - [ ] HQ Admin backend endpoints
 - [ ] Branch Manager backend endpoints

@@ -421,21 +421,15 @@ export default function ParentDashboardOverview() {
             <CardTitle className="flex items-center gap-2 text-lg">
               <MessageCircle className="size-5" /> Need assistance?
             </CardTitle>
-            <CardDescription>Chat with our virtual nurse at any time</CardDescription>
+            <CardDescription>Contact your clinic or find vaccination guidance</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">
             <p>
-              Get quick answers about post-vaccination care, fever management, upcoming appointments, and how to update your child&apos;s
-              information.
+              Get information about post-vaccination care, upcoming appointments, and how to reach your clinic for urgent matters.
             </p>
-            <div className="space-y-2 rounded-lg bg-muted/60 p-4">
-              <p>• &ldquo;What should I expect after the MMR shot?&rdquo;</p>
-              <p>• &ldquo;Send me a reminder three days before the next vaccine.&rdquo;</p>
-              <p>• &ldquo;How do I update my child&apos;s allergy information?&rdquo;</p>
-            </div>
             <Button asChild className="gap-2">
               <Link href="/parent/dashboard/support">
-                Open chatbot
+                View support
                 <ChevronRight className="size-4" />
               </Link>
             </Button>

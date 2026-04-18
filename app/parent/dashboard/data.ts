@@ -256,9 +256,3 @@ export const emergencyContactsTemplate: EmergencyContact[] = [
     isPrimary: false,
   },
 ]
-
-export const chatbotPrompts: string[] = [
-  '"What should I expect after the MMR shot?"',
-  '"Send me a reminder three days before the next vaccine."',
-  '"How do I update my child\'s allergy information?"',
-]

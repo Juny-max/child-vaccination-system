@@ -178,7 +178,7 @@ INSERT INTO system_settings (id, category, value, description, is_public) VALUES
   ('reminder_days_before', 'notifications', '{"value": 3}', 'Send reminders X days before due date', TRUE),
   ('overdue_threshold_days', 'notifications', '{"value": 3}', 'Flag vaccine as overdue after X days', TRUE),
   ('duplicate_similarity_threshold', 'data_quality', '{"value": 80}', 'Minimum similarity score to flag duplicates (0-100)', FALSE),
-  ('system_name', 'general', '{"value": "Nungua Child Vaccination Command Center"}', 'System display name', TRUE),
+  ('system_name', 'general', '{"value": "Child Vaccination Command Center"}', 'System display name', TRUE),
   ('national_helpline', 'general', '{"value": "+233 302 711 234"}', 'Facility helpline number (Nungua Health Centre)', TRUE);
 
 -- ============================================================================
