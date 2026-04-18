@@ -388,9 +388,9 @@ git push origin main
 - [x] Parent Portal backend endpoints
 - [x] Facility Nurse backend endpoints
 - [x] CHW backend endpoints (offline registration + sync)
-- [ ] PDF certificate generation
-- [ ] Offline sync via Service Workers
-- [ ] SMS notifications
+- [x] PDF certificate generation (jsPDF)
+- [x] Offline sync via Service Workers + IndexedDB (CHW module)
+- [x] SMS notifications (Hubtel via SmsService)
 
 ---
 
