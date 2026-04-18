@@ -2,7 +2,7 @@
 
 # Child Vaccination Command Center (CVCC)
 
-**Vaccination Tracking System for Nungua and Surrounding Communities, Greater Accra**
+**Vaccination Tracking System for Ghana — currently piloting in Nungua and surrounding communities, Greater Accra**
 
 ## 🚀 Project Status
 
@@ -14,9 +14,9 @@
 
 ## 🗺️ Scope
 
-This system is scoped to **Nungua and its surrounding communities** in the Ledzokuku-Krowor district, Greater Accra.
+The system is built to support **any number of facilities and communities** across Ghana. The current seed data covers the Nungua pilot in the Ledzokuku-Krowor district, Greater Accra. New facilities can be added through the HQ Admin dashboard without any code changes.
 
-### Facilities (Branches)
+### Pilot Facilities (Seed Data)
 
 | Facility | Code | Community |
 |---|---|---|
@@ -377,7 +377,7 @@ git push origin main
 
 - [x] Frontend dashboards (5 roles)
 - [x] Database schema (21 tables)
-- [x] Seed data scoped to Nungua (pilot deployment)
+- [x] Seed data for Nungua pilot (new facilities added via HQ Admin — no code changes needed)
 - [x] Supabase setup and configuration
 - [x] JWT Authentication with role-based guards
 - [x] Email notifications (Brevo)

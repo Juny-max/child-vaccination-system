@@ -109,11 +109,11 @@ export default function SupportPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-base font-semibold text-foreground">Nungua Health Centre</p>
-            <p>Support line: +233 302 711 234 (Mon – Fri, 8:00 AM – 5:00 PM)</p>
+            <p className="text-base font-semibold text-foreground">Your registered facility</p>
+            <p>Contact your facility nurse or branch manager for support.</p>
           </div>
           <Button asChild variant="outline" className="gap-2">
-            <a href="tel:+233302711234" aria-label="Call the clinic">
+            <a href="tel:" aria-label="Call the clinic">
               <PhoneCall className="size-4" /> Call the clinic
             </a>
           </Button>
