@@ -5,7 +5,6 @@ import Image from "next/image"
 import Link from "next/link"
 import { Fredoka } from "next/font/google"
 import { useTheme } from "next-themes"
-import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { MorphNavbar } from "@/components/morph-navbar"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
@@ -155,6 +154,12 @@ export default function Home() {
             <div className="hidden md:inline-flex">
               <ThemeToggle />
             </div>
+            <Link href="/verify" className="hidden sm:inline-flex">
+              <Button variant="outline" className="gap-2">
+                <QrCode className="h-4 w-4" />
+                Verify Certificate
+              </Button>
+            </Link>
             <Link href="/auth/login">
               <Button className="gap-2">
                 Portal Login
@@ -539,8 +544,8 @@ export default function Home() {
                 <Link href={withAuthRedirect("/dashboard/reports")} prefetch={false} className="transition hover:text-foreground">
                   Impact Reports
                 </Link>
-                <Link href={withAuthRedirect("/pha/dashboard")} prefetch={false} className="transition hover:text-foreground">
-                  PHA Console
+                <Link href="/verify" className="transition hover:text-foreground">
+                  Verify Certificate
                 </Link>
                 <Link href={withAuthRedirect("/parent/dashboard")} prefetch={false} className="transition hover:text-foreground">
                   Parent Portal

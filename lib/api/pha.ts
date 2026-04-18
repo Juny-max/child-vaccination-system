@@ -1,4 +1,4 @@
-import { apiRequest } from './config';
+import { apiRequest, API_BASE_URL, handleResponse } from './config';
 
 // ============================================================
 // Response types — mirrors what the backend returns
@@ -104,7 +104,7 @@ export interface PHACertificateVerifyResult {
 
 /**
  * Verify a certificate by its ID against the live database.
- * Returns only non-PII fields — no child name or guardian data.
+ * Requires a PHA JWT — used by the PHA portal.
  */
 export async function verifyPHACertificate(
   certificateId: string,
@@ -113,4 +113,20 @@ export async function verifyPHACertificate(
   return apiRequest<PHACertificateVerifyResult>(
     `/pha/certificates/verify?${params}`,
   );
+}
+
+/**
+ * Public certificate verification — no login required.
+ * Calls /api/public/certificates/verify which has no auth guard.
+ * Does NOT attach auth headers or redirect to login on failure.
+ */
+export async function verifyPublicCertificate(
+  certificateId: string,
+): Promise<PHACertificateVerifyResult> {
+  const params = new URLSearchParams({ id: certificateId });
+  const response = await fetch(
+    `${API_BASE_URL}/public/certificates/verify?${params}`,
+    { headers: { 'Content-Type': 'application/json' } },
+  );
+  return handleResponse<PHACertificateVerifyResult>(response, true);
 }
