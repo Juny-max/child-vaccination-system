@@ -182,7 +182,7 @@ npx ts-node scripts/delete-user.ts
 
 ## 👤 User Roles
 
-The system has **5 active roles** (Data Officer and PHA removed from this scope):
+The system has **5 active roles**:
 
 | Role | Portal | Responsibility |
 |---|---|---|
@@ -251,49 +251,86 @@ app/
 
 ---
 
-## 🏗️ Backend Structure (Julius's Modules)
+## 🏗️ Backend Structure
 
 ```
 backend/src/
 ├── auth/                       # JWT auth, role guards
 ├── hq-admin/                   # Julius: HQ Admin endpoints
 ├── chw/                        # Julius: CHW endpoints
-├── branch-manager/             # Juny: Branch Manager endpoints
+├── branch-manager/             # Juny: Branch Manager + shared HQ endpoints
 ├── facility/                   # Juny: Facility Nurse endpoints
 ├── parent/                     # Juny: Parent portal endpoints
 └── common/                     # Shared services, guards, database
 ```
 
+### Auth Endpoints
+
+- `POST /auth/login` — Login, returns JWT + user profile
+- `POST /auth/register` — Register new user
+- `GET /auth/profile` — Current user profile
+- `POST /auth/change-password` — Change password
+- `POST /auth/forgot-password` — Request password reset email
+- `POST /auth/reset-password` — Reset password with token
+
 ### HQ Admin Endpoints (Julius)
 
-- `GET /hq-admin/branches` — List all branches
-- `POST /hq-admin/branches` — Create branch
-- `PUT /hq-admin/branches/:id` — Update branch
-- `DELETE /hq-admin/branches/:id` — Delete branch
-- `GET /hq-admin/users` — List all users
-- `POST /hq-admin/users` — Create user
-- `PUT /hq-admin/users/:id` — Update user
-- `DELETE /hq-admin/users/:id` — Deactivate user
-- `GET /hq-admin/vaccines` — List vaccines
-- `GET /hq-admin/audit-logs` — Audit trail
-- `GET /hq-admin/system-settings` — System config
-- `PUT /hq-admin/system-settings` — Update config
+- `GET /hq-admin/roles` — List all system roles
+- `GET /hq-admin/roles/permissions` — List available permissions
+- `GET /hq-admin/notifications/delivery-status` — Notification delivery log
+- `GET /hq-admin/notifications/stats` — Notification statistics
+- `POST /hq-admin/notifications/:id/retry` — Retry failed notification
+- `GET /hq-admin/system/metrics` — System health metrics
+- `GET /hq-admin/system/database-stats` — Database statistics
+- `GET /hq-admin/system/audit-activity` — Audit activity log
 
 ### Branch Manager Endpoints (Juny)
 
-- `GET /branch-manager/:branchId/analytics` — Branch dashboard metrics
-- `GET /branch-manager/:branchId/staff` — Staff list
-- `GET /branch-manager/:branchId/visit-logs` — CHW activity
-- `POST /branch-manager/:branchId/visit-logs/:id/approve` — Approve visit
-- `GET /branch-manager/:branchId/appointments` — Appointments
+- `GET /branch-manager/dashboard` — Branch dashboard metrics
+- `GET /branch-manager/vaccines` — Vaccine list for branch
+- `POST /branch-manager/stock` — Add vaccine stock
+- `GET /branch-manager/staff` — Staff list
+- `POST /branch-manager/staff` — Create staff member
+- `PATCH /branch-manager/staff/:id` — Update staff
+- `PATCH /branch-manager/staff/:id/status` — Activate/deactivate staff
+- `GET /branch-manager/catchment-areas` — List catchment zones
+- `POST /branch-manager/catchment-areas` — Create zone
+- `PATCH /branch-manager/catchment-areas/:id/assign` — Assign CHW to zone
+
+### Facility Nurse Endpoints (Juny)
+
+- `GET /facility/search` — Search children
+- `GET /facility/children/:childId` — Child patient chart
+- `GET /facility/children/:childId/vaccinations` — Vaccination history
+- `GET /facility/children/:childId/scheduled` — Due vaccinations
+- `POST /facility/children/:childId/vaccinations` — Record dose
+- `POST /facility/children/:childId/measurements` — Record measurements
+- `POST /facility/guardians` — Register guardian
+- `POST /facility/children` — Register child
+- `GET /facility/appointments/today` — Today's appointments
+- `PATCH /facility/appointments/:id/status` — Update appointment status
 
 ### CHW Endpoints (Julius)
 
-- `GET /chw/dashboard` — CHW field dashboard
-- `POST /chw/register-child` — Register child during visit
-- `GET /chw/find-child` — Search child by name or ID
-- `POST /chw/visit-logs` — Submit door-to-door visit record
-- `GET /chw/activity` — View own activity log
+- `GET /chw/dashboard/summary` — CHW dashboard
+- `GET /chw/children/search` — Search children in catchment
+- `GET /chw/mothers/search` — Search guardians
+- `POST /chw/offline-registrations` — Submit offline registration
+- `POST /chw/vaccinations/sync` — Sync offline vaccination records
+- `GET /chw/children/:childId/chart` — Child chart
+
+### Parent Endpoints (Juny)
+
+- `GET /parent/dashboard` — Parent dashboard
+- `GET /parent/children` — List children
+- `GET /parent/children/:childId` — Child details
+- `GET /parent/children/:childId/vaccinations` — Vaccination records
+- `GET /parent/children/:childId/certificates` — Child certificates
+- `GET /parent/appointments` — Upcoming appointments
+- `POST /parent/appointments` — Book appointment
+- `DELETE /parent/appointments/:id` — Cancel appointment
+- `GET /parent/missed-vaccinations` — Overdue vaccines
+- `GET /parent/notifications` — Notification history
 
 ---
 
@@ -340,19 +377,19 @@ git push origin main
 
 - [x] Frontend dashboards (5 roles)
 - [x] Database schema (21 tables)
-- [x] Seed data scoped to Nungua
+- [x] Seed data scoped to Nungua (pilot deployment)
 - [x] Supabase setup and configuration
 - [x] JWT Authentication with role-based guards
 - [x] Email notifications (Brevo)
 - [x] Public certificate verification page (`/verify`)
-- [ ] HQ Admin backend endpoints
-- [ ] Branch Manager backend endpoints
-- [ ] Parent Portal backend endpoints
-- [ ] Facility Nurse backend endpoints
-- [ ] CHW backend endpoints
+- [x] QR code scanning on `/verify` page
+- [x] HQ Admin backend endpoints
+- [x] Branch Manager backend endpoints
+- [x] Parent Portal backend endpoints
+- [x] Facility Nurse backend endpoints
+- [x] CHW backend endpoints (offline registration + sync)
 - [ ] PDF certificate generation
-- [ ] QR code scanning and verification
-- [ ] Offline sync (Service Workers)
+- [ ] Offline sync via Service Workers
 - [ ] SMS notifications
 
 ---
