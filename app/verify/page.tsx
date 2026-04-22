@@ -100,7 +100,7 @@ function extractCertificateIdentifier(rawValue: string): string {
     value = value.split("|")[0].trim()
   }
 
-  value = value.trim().slice(0, 100).replace(/[^A-Za-z0-9-]/g, "")
+  value = value.trim().slice(0, 300)
 
   if (/^(qrc-(ch|cert)-|cert-gh-|cvcc-|temp-)/i.test(value)) {
     value = value.toUpperCase()
@@ -135,7 +135,7 @@ export default function PublicVerifyPage() {
           setCertificateId(parsedId)
           // Auto-verify after a short delay to ensure token is set
           setTimeout(() => {
-            runVerify(parsedId)
+            runVerify(certId)
           }, 100)
         }
       } catch (error) {
@@ -148,8 +148,9 @@ export default function PublicVerifyPage() {
   }, [])
 
   const runVerify = async (id: string) => {
-    const normalizedId = extractCertificateIdentifier(id)
-    if (!normalizedId) {
+    const rawLookupInput = id.trim()
+    const normalizedId = extractCertificateIdentifier(rawLookupInput)
+    if (!rawLookupInput || !normalizedId) {
       toast.error("Invalid certificate QR payload. Please scan again or enter a valid certificate ID.")
       return
     }
@@ -163,7 +164,7 @@ export default function PublicVerifyPage() {
     setVerificationResult(null)
 
     try {
-      const res: PHACertificateVerifyResult = await verifyCertificate(normalizedId, verificationToken)
+      const res: PHACertificateVerifyResult = await verifyCertificate(rawLookupInput, verificationToken)
 
       if (!res.found) {
         setVerificationResult({ status: "not-found", certificateId: normalizedId })
@@ -233,7 +234,7 @@ export default function PublicVerifyPage() {
     setCertificateId(certId)
     setShowQRScanner(false)
     toast.success(`QR code scanned: ${certId}`)
-    setTimeout(() => runVerify(certId), 500)
+    setTimeout(() => runVerify(decodedText), 500)
   }
 
   const handleReset = () => {
