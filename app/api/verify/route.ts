@@ -5,10 +5,18 @@ import { isTokenValid } from '@/lib/verify-token'
 const CHILD_QR_TOKEN_REGEX = /^QRC-CH-[A-Z0-9-]{10,64}$/i
 const CERT_QR_TOKEN_REGEX = /^QRC-CERT-[A-Z0-9-]{10,64}$/i
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServerKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+const supabase = createClient(supabaseUrl, supabaseServerKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+})
 
 const CERTIFICATE_SELECT_FIELDS = `
   certificate_id,
