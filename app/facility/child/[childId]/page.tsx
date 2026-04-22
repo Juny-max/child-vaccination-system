@@ -2402,7 +2402,7 @@ export default function ChildPatientChartPage() {
                     </div>
                   </>
                 )
-              }, [childId, childRecord.name, groupedSchedule.completed])
+              }, [childId, childRecord.name, groupedSchedule.completed])}
             </div>
 
             {/* Actions */}
