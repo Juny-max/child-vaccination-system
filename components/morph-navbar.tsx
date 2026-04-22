@@ -17,6 +17,7 @@ type MorphNavbarProps = {
   cta?: React.ReactNode
   mobileMenuUtility?: React.ReactNode
   className?: string
+  onCollapsedChange?: (collapsed: boolean) => void
 }
 
 const DEFAULT_ITEMS: MorphNavbarItem[] = [
@@ -36,6 +37,7 @@ export function MorphNavbar({
   cta,
   mobileMenuUtility,
   className,
+  onCollapsedChange,
 }: MorphNavbarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -103,6 +105,10 @@ export function MorphNavbar({
     window.addEventListener("scroll", handleScroll, { passive: true })
     return () => window.removeEventListener("scroll", handleScroll)
   }, [isMobile])
+
+  useEffect(() => {
+    onCollapsedChange?.(collapsed)
+  }, [collapsed, onCollapsedChange])
 
   return (
     <motion.header

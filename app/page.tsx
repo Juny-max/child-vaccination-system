@@ -100,6 +100,7 @@ export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [activeMoment, setActiveMoment] = useState(0)
+  const [navCollapsed, setNavCollapsed] = useState(false)
   const { resolvedTheme } = useTheme()
 
   useEffect(() => {
@@ -141,6 +142,7 @@ export default function Home() {
     <div className="min-h-screen bg-background text-foreground">
       <MorphNavbar
         items={topNavItems}
+        onCollapsedChange={setNavCollapsed}
         brand={
           <div className="flex items-center gap-3">
             <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-primary/30 bg-primary/5">
@@ -156,9 +158,9 @@ export default function Home() {
               <ThemeToggle />
             </div>
             <Link href="/verify" className="hidden sm:inline-flex">
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className={navCollapsed ? "px-2.5" : "gap-2"} aria-label="Verify Certificate">
                 <QrCode className="h-4 w-4" />
-                Verify Certificate
+                {!navCollapsed && <span>Verify Certificate</span>}
               </Button>
             </Link>
             <Link href="/auth/login">
