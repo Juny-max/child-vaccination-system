@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import QRCode from "qrcode.react"
+import { QRCodeCanvas } from "qrcode.react"
 import {
   AlertCircle,
   ArrowLeft,
@@ -2363,7 +2363,7 @@ export default function ChildPatientChartPage() {
                     {/* QR Code - Links only to CVCC verification page */}
                     <div className="flex flex-col items-center py-6 space-y-3">
                       <div className="p-4 border-2 border-emerald-200 rounded-lg bg-white">
-                        <QRCode
+                        <QRCodeCanvas
                           value={`${typeof window !== 'undefined' ? window.location.origin : 'https://cvcc.example.com'}/verify?cert=${serialNumber}`}
                           size={220}
                           level="H"
