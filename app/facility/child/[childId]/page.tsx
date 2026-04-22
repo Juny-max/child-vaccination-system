@@ -1117,30 +1117,220 @@ export default function ChildPatientChartPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
         {loadError ? (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="mb-4">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{loadError}</AlertDescription>
           </Alert>
         ) : null}
-        
+
         {systemMessage ? (
-          <Alert>
+          <Alert className="mb-4">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{systemMessage}</AlertDescription>
           </Alert>
         ) : null}
-        
+
         {isLoadingChild ? (
           <Card>
-            <CardContent className="py-12 text-center">
+            <CardContent className="py-8 text-center">
               <p className="text-sm text-muted-foreground">Loading child profile...</p>
             </CardContent>
           </Card>
         ) : (
           <>
-        <section className="mt-6 grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
+        {/* Single Page Dashboard Layout */}
+        <section className="space-y-4">
+          {/* Header Card - Child Info */}
+          <Card className="border-primary/40">
+            <CardContent className="p-4">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold">Name</p>
+                  <p className="font-semibold text-sm">{childRecord.name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold">CVCC ID</p>
+                  <p className="font-mono text-sm font-bold">{childId}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold">DOB</p>
+                  <p className="text-sm">{new Date(childRecord.dateOfBirth).toLocaleDateString('en-GB')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold">Age</p>
+                  <p className="text-sm">{childRecord.age}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold">Gender</p>
+                  <p className="text-sm">{childRecord.gender}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Vaccination Status Grid */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {/* Overdue */}
+            <Card className={groupedSchedule.overdue.length > 0 ? "border-destructive/50" : ""}>
+              <CardContent className="p-4">
+                <p className="text-xs font-semibold text-muted-foreground mb-2">OVERDUE</p>
+                <p className="text-2xl font-bold text-destructive">{groupedSchedule.overdue.length}</p>
+                <div className="mt-3 space-y-1 max-h-24 overflow-y-auto">
+                  {groupedSchedule.overdue.slice(0, 2).map((v) => (
+                    <div key={v.id} className="text-xs text-foreground truncate" title={v.vaccine}>
+                      • {v.vaccine}
+                    </div>
+                  ))}
+                  {groupedSchedule.overdue.length > 2 && (
+                    <p className="text-xs text-muted-foreground">+{groupedSchedule.overdue.length - 2} more</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Due Today */}
+            <Card className={groupedSchedule.dueToday.length > 0 ? "border-amber-500/50" : ""}>
+              <CardContent className="p-4">
+                <p className="text-xs font-semibold text-muted-foreground mb-2">DUE TODAY</p>
+                <p className="text-2xl font-bold text-amber-600">{groupedSchedule.dueToday.length}</p>
+                <div className="mt-3 space-y-1 max-h-24 overflow-y-auto">
+                  {groupedSchedule.dueToday.slice(0, 2).map((v) => (
+                    <div key={v.id} className="text-xs text-foreground truncate" title={v.vaccine}>
+                      • {v.vaccine}
+                    </div>
+                  ))}
+                  {groupedSchedule.dueToday.length > 2 && (
+                    <p className="text-xs text-muted-foreground">+{groupedSchedule.dueToday.length - 2} more</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Upcoming */}
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs font-semibold text-muted-foreground mb-2">UPCOMING</p>
+                <p className="text-2xl font-bold text-blue-600">{groupedSchedule.upcoming.length}</p>
+                <div className="mt-3 space-y-1 max-h-24 overflow-y-auto">
+                  {groupedSchedule.upcoming.slice(0, 2).map((v) => (
+                    <div key={v.id} className="text-xs text-foreground truncate" title={v.vaccine}>
+                      • {v.vaccine}
+                    </div>
+                  ))}
+                  {groupedSchedule.upcoming.length > 2 && (
+                    <p className="text-xs text-muted-foreground">+{groupedSchedule.upcoming.length - 2} more</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Completed */}
+            <Card className="border-emerald-500/50">
+              <CardContent className="p-4">
+                <p className="text-xs font-semibold text-muted-foreground mb-2">COMPLETED</p>
+                <p className="text-2xl font-bold text-emerald-600">{groupedSchedule.completed.length}</p>
+                <p className="text-xs text-muted-foreground mt-3">
+                  {Math.round((groupedSchedule.completed.length / (groupedSchedule.completed.length + groupedSchedule.overdue.length + groupedSchedule.dueToday.length + groupedSchedule.upcoming.length || 1)) * 100)}% complete
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Quick Actions Grid */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Button onClick={() => setShowAdministerModal(true)} className="gap-2" size="sm" variant="default">
+              <Syringe className="h-4 w-4" />
+              Administer
+            </Button>
+            <Button onClick={() => setShowGrowthMonitoringModal(true)} className="gap-2" size="sm" variant="outline">
+              <Ruler className="h-4 w-4" />
+              Growth
+            </Button>
+            <Button onClick={() => setShowCertificateModal(true)} className="gap-2" size="sm" variant="outline">
+              <BadgeCheck className="h-4 w-4" />
+              Certificate
+            </Button>
+            <Button onClick={() => setShowChildDetailsModal(true)} className="gap-2" size="sm" variant="outline">
+              <FileText className="h-4 w-4" />
+              Details
+            </Button>
+          </div>
+
+          {/* Compact Vaccine Timeline */}
+          {(groupedSchedule.overdue.length > 0 || groupedSchedule.dueToday.length > 0) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">Action Required</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="space-y-2">
+                  {[...groupedSchedule.overdue, ...groupedSchedule.dueToday].map((vaccine) => (
+                    <div key={vaccine.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50 hover:bg-muted transition">
+                      <div>
+                        <p className="font-semibold text-sm">{vaccine.vaccine}</p>
+                        <p className="text-xs text-muted-foreground">{vaccine.scheduledDate}</p>
+                      </div>
+                      <Button
+                        onClick={() => {
+                          setSelectedDose(vaccine)
+                          openAdministerModal(vaccine)
+                        }}
+                        size="sm"
+                        variant="default"
+                      >
+                        Give
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Latest Growth & Notes */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {latestMeasurement && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Latest Measurement</CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Weight</p>
+                      <p className="font-semibold">{latestMeasurement.weightKg} kg</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Height</p>
+                      <p className="font-semibold">{latestMeasurement.lengthCm} cm</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-muted-foreground">Date</p>
+                      <p className="font-semibold">{new Date(latestMeasurement.date).toLocaleDateString('en-GB')}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {sessionNotes.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Latest Notes ({sessionNotes.length})</CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <p className="text-sm text-foreground line-clamp-3">{sessionNotes[0]?.notes}</p>
+                  <p className="text-xs text-muted-foreground mt-2">{new Date(sessionNotes[0]?.recordedAt || '').toLocaleDateString('en-GB')}</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </section>
+
+        {/* Original card sections moved - keep hidden but available */}
+        <section className="mt-6 hidden lg:grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
           <Card className="border-primary/40">
             <CardHeader className="space-y-2">
               <CardTitle className="flex items-center gap-2 text-lg">
