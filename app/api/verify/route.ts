@@ -1,14 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isTokenValid } from '@/lib/verify-token'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const CHILD_QR_TOKEN_REGEX = /^QRC-CH-[A-Z0-9-]{10,64}$/i
 const CERT_QR_TOKEN_REGEX = /^QRC-CERT-[A-Z0-9-]{10,64}$/i
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+
+function readBackendEnvServiceKey(): string | null {
+  try {
+    const backendEnvPath = resolve(process.cwd(), 'backend', '.env')
+    if (!existsSync(backendEnvPath)) return null
+
+    const content = readFileSync(backendEnvPath, 'utf8')
+    const line = content
+      .split(/\r?\n/)
+      .find((entry) => /^SUPABASE_SERVICE_ROLE_KEY=/.test(entry.trim()))
+
+    if (!line) return null
+
+    const value = line.slice(line.indexOf('=') + 1).trim()
+    if (!value) return null
+
+    // Support quoted .env values
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      return value.slice(1, -1)
+    }
+
+    return value
+  } catch {
+    return null
+  }
+}
+
 const supabaseServerKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
+  readBackendEnvServiceKey() ||
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 const supabase = createClient(supabaseUrl, supabaseServerKey, {
