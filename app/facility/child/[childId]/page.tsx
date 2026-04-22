@@ -36,6 +36,7 @@ import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
 import { supabase } from "@/lib/supabase"
 import * as offlineSync from "@/lib/offline-vaccination-sync"
+import { getVaccineSite, getSiteDescription } from "@/lib/ghana-epi-schedule"
 import { toast } from "sonner"
 
 type VaccineStatus = "overdue" | "dueToday" | "upcoming" | "completed"
@@ -120,20 +121,38 @@ const sampleChildren: Record<string, ChildRecord> = {
   },
 }
 
+// Ghana EPI Schedule Sample Data
 const defaultSchedule: VaccineEntry[] = [
-  { id: "BCG", vaccine: "BCG", scheduledDate: "2025-07-20", status: "completed", administeredDate: "2025-07-20", batchNumber: "BCG-44721" },
-  { id: "OPV-0", vaccine: "OPV 0", scheduledDate: "2025-07-20", status: "completed", administeredDate: "2025-07-20", batchNumber: "OPV-55019" },
-  { id: "PENTA-1", vaccine: "Pentavalent 1", scheduledDate: "2025-08-18", status: "completed", administeredDate: "2025-08-18", batchNumber: "PEN-33011" },
-  { id: "PCV-1", vaccine: "Pneumococcal 1", scheduledDate: "2025-08-18", status: "completed", administeredDate: "2025-08-18" },
-  { id: "ROTA-1", vaccine: "Rotavirus 1", scheduledDate: "2025-08-18", status: "completed", administeredDate: "2025-08-18" },
-  { id: "PENTA-2", vaccine: "Pentavalent 2", scheduledDate: "2025-09-18", status: "completed", administeredDate: "2025-09-18" },
-  { id: "PCV-2", vaccine: "Pneumococcal 2", scheduledDate: "2025-09-18", status: "completed", administeredDate: "2025-09-18" },
-  { id: "ROTA-2", vaccine: "Rotavirus 2", scheduledDate: "2025-09-18", status: "completed", administeredDate: "2025-09-18" },
-  { id: "PENTA-3", vaccine: "Pentavalent 3", scheduledDate: "2025-10-18", status: "dueToday", notes: "Prepare vaccine and review cold chain log." },
-  { id: "PCV-3", vaccine: "Pneumococcal 3", scheduledDate: "2025-10-18", status: "dueToday" },
-  { id: "ROTA-3", vaccine: "Rotavirus 3", scheduledDate: "2025-10-18", status: "overdue", notes: "Child missed last clinic day." },
-  { id: "MEASLES-1", vaccine: "Measles-Rubella 1", scheduledDate: "2025-12-18", status: "upcoming" },
-  { id: "YF", vaccine: "Yellow Fever", scheduledDate: "2025-12-18", status: "upcoming" },
+  // Birth (0 weeks)
+  { id: "BCG", vaccine: "BCG", scheduledDate: "2025-07-18", status: "completed", administeredDate: "2025-07-18", batchNumber: "BCG-44721" },
+  { id: "OPV-0", vaccine: "OPV", scheduledDate: "2025-07-18", status: "completed", administeredDate: "2025-07-18", batchNumber: "OPV-55019" },
+  { id: "HEPB-0", vaccine: "Hepatitis B", scheduledDate: "2025-07-18", status: "completed", administeredDate: "2025-07-18" },
+
+  // 6 weeks
+  { id: "OPV-1", vaccine: "OPV", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29" },
+  { id: "PENTA-1", vaccine: "Pentavalent", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29", batchNumber: "PEN-33011" },
+  { id: "PCV-1", vaccine: "PCV", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29" },
+  { id: "ROTA-1", vaccine: "Rotavirus", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29" },
+  { id: "HEPB-1", vaccine: "Hepatitis B", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29" },
+
+  // 10 weeks
+  { id: "OPV-2", vaccine: "OPV", scheduledDate: "2025-09-26", status: "completed", administeredDate: "2025-09-26" },
+  { id: "PENTA-2", vaccine: "Pentavalent", scheduledDate: "2025-09-26", status: "completed", administeredDate: "2025-09-26" },
+  { id: "PCV-2", vaccine: "PCV", scheduledDate: "2025-09-26", status: "completed", administeredDate: "2025-09-26" },
+  { id: "ROTA-2", vaccine: "Rotavirus", scheduledDate: "2025-09-26", status: "completed", administeredDate: "2025-09-26" },
+
+  // 14 weeks
+  { id: "OPV-3", vaccine: "OPV", scheduledDate: "2025-10-24", status: "dueToday", notes: "Prepare vaccine and review cold chain log." },
+  { id: "PENTA-3", vaccine: "Pentavalent", scheduledDate: "2025-10-24", status: "dueToday" },
+  { id: "PCV-3", vaccine: "PCV", scheduledDate: "2025-10-24", status: "dueToday" },
+
+  // 9 months
+  { id: "MEASLES-1", vaccine: "Measles-Rubella", scheduledDate: "2026-04-18", status: "upcoming" },
+  { id: "YF", vaccine: "Yellow Fever", scheduledDate: "2026-04-18", status: "upcoming" },
+
+  // 18 months
+  { id: "MEASLES-2", vaccine: "Measles-Rubella", scheduledDate: "2026-01-18", status: "overdue", notes: "Schedule appointment urgently" },
+  { id: "MENA", vaccine: "Meningitis A", scheduledDate: "2026-01-18", status: "overdue" },
 ]
 
 type AnthropometricMeasurement = {
@@ -306,6 +325,19 @@ export default function ChildPatientChartPage() {
   // State for photo upload
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
+
+  // State for completed vaccines modal
+  const [showCompletedModal, setShowCompletedModal] = useState(false)
+
+  // State for child details modal
+  const [showChildDetailsModal, setShowChildDetailsModal] = useState(false)
+
+  // State for vaccine group modals
+  const [showOverdueModal, setShowOverdueModal] = useState(false)
+  const [showDueTodayModal, setShowDueTodayModal] = useState(false)
+  const [showUpcomingModal, setShowUpcomingModal] = useState(false)
+  const [showGrowthMonitoringModal, setShowGrowthMonitoringModal] = useState(false)
+  const [showRecordGrowthForm, setShowRecordGrowthForm] = useState(false)
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -564,7 +596,10 @@ export default function ChildPatientChartPage() {
 
   const schedule = useMemo<VaccineEntry[]>(() => {
     const entries: VaccineEntry[] = []
-    
+
+    // Get set of administered vaccine names for quick lookup
+    const administeredVaccines = new Set(vaccinationHistory.map((vax) => vax.vaccineName))
+
     // Add completed vaccinations from history
     vaccinationHistory.forEach((vax) => {
       entries.push({
@@ -577,15 +612,20 @@ export default function ChildPatientChartPage() {
         notes: vax.notes || undefined,
       })
     })
-    
-    // Add scheduled vaccinations
+
+    // Add scheduled vaccinations (excluding already administered ones)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    
+
     scheduledVaccines.forEach((vax) => {
+      // Skip if this vaccine has already been administered
+      if (administeredVaccines.has(vax.vaccineName)) {
+        return
+      }
+
       const dueDate = new Date(vax.dueDate)
       dueDate.setHours(0, 0, 0, 0)
-      
+
       let status: VaccineStatus
       if (vax.isOverdue) {
         status = "overdue"
@@ -594,7 +634,7 @@ export default function ChildPatientChartPage() {
       } else {
         status = "upcoming"
       }
-      
+
       entries.push({
         id: `scheduled-${vax.vaccineName}-${vax.dueDate}`,
         vaccine: vax.vaccineName,
@@ -603,7 +643,7 @@ export default function ChildPatientChartPage() {
         notes: vax.isOverdue ? "Overdue - administer as soon as possible" : undefined,
       })
     })
-    
+
     return entries
   }, [vaccinationHistory, scheduledVaccines])
 
@@ -734,11 +774,21 @@ export default function ChildPatientChartPage() {
   const openAdministerModal = async (entry: VaccineEntry) => {
     setSelectedDose(entry)
     setStockFromInventory(false)
+
+    // Get the dose number for this vaccine (how many times has it been given already)
+    const administeredCount = vaccinationHistory.filter(
+      (vax) => vax.vaccineName === entry.vaccine
+    ).length
+    const doseNumber = administeredCount + 1
+
+    // Auto-fill injection site based on vaccine and dose number
+    const autoSite = getVaccineSite(entry.vaccine, doseNumber) || ""
+
     setAdministerForm({
       batchNumber: entry.batchNumber ?? "",
       dateAdministered: new Date().toISOString().split("T")[0],
       expiryDate: "",
-      site: "",
+      site: autoSite,
       administeredBy: userName || "Facility Nurse",
       aefiFlag: false,
       aefiNotes: "",
@@ -1017,7 +1067,7 @@ export default function ChildPatientChartPage() {
                 {pendingSyncCount} pending sync
               </Badge>
             )}
-            <div className="flex flex-col items-end">
+            <div className="flex flex-col items-end gap-1">
               <span className="text-sm text-muted-foreground">{userName}</span>
               <span className="text-xs text-muted-foreground/80">Facility Nurse</span>
             </div>
@@ -1120,76 +1170,24 @@ export default function ChildPatientChartPage() {
                     }}
                   />
                 </div>
-                <div className="flex-1 space-y-1">
+                <div className="flex-1 space-y-2">
                   <p className="text-base font-semibold text-foreground">{childRecord.name}</p>
-                  <p className="text-sm text-muted-foreground">DOB: {childRecord.dateOfBirth || "Pending"}</p>
-                  <p className="text-sm text-muted-foreground">Age: {childRecord.age}</p>
                   {childRecord.criticalNotes ? (
                     <div className="inline-flex items-center gap-2 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive">
                       <ShieldAlert className="h-3 w-3" /> {childRecord.criticalNotes}
                     </div>
                   ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => setShowChildDetailsModal(true)}
+                  >
+                    More Details
+                  </Button>
                 </div>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-lg border border-border bg-background/70 p-4">
-                  <p className="text-sm font-semibold text-foreground">Birth details</p>
-                  <p className="mt-2 text-xs text-muted-foreground">Weight: {childRecord.birthDetails.weight || "Pending"}</p>
-                  <p className="text-xs text-muted-foreground">Length: {childRecord.birthDetails.length || "Pending"}</p>
-                  <p className="text-xs text-muted-foreground">Place: {childRecord.birthDetails.place || "Pending"}</p>
-                  <p className="text-xs text-muted-foreground">Delivery: {childRecord.birthDetails.deliveryType || "Pending"}</p>
-                </div>
-                <div className="rounded-lg border border-border bg-background/70 p-4">
-                  <p className="text-sm font-semibold text-foreground">Clinic notes</p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Last visit: {childRecord.lastVisit}. Record anthropometry and Vitamin A once the child is 6 months.
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Allergies: {childRecord.allergies.length > 0 ? childRecord.allergies.join(", ") : "None recorded"}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="space-y-2">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <User className="h-5 w-5 text-primary" /> Guardian details
-              </CardTitle>
-              <CardDescription>Preferred contact for reminders and follow-ups.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p className="text-foreground">{childRecord.guardian.name}</p>
-              <p>Phone: {childRecord.guardian.phone || "Not captured"}</p>
-              <p>Address: {childRecord.guardian.address}</p>
-              <p>Preferred contact: {childRecord.guardian.preferredContact.toUpperCase()}</p>
-              <div className="flex gap-2 pt-2">
-                <Button size="sm" variant="outline" asChild>
-                  <Link href={`tel:${childRecord.guardian.phone.replace(/\s+/g, "")}`}>
-                    Call guardian
-                  </Link>
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="ghost" 
-                  className="gap-2" 
-                  onClick={openGuardianModal}
-                  disabled={isLoadingGuardian}
-                >
-                  {isLoadingGuardian ? (
-                    <>
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      Loading...
-                    </>
-                  ) : (
-                    <>
-                      <ClipboardList className="h-4 w-4" /> Update details
-                    </>
-                  )}
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </section>
@@ -1209,275 +1207,93 @@ export default function ChildPatientChartPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-6 lg:grid-cols-2">
-              {renderScheduleGroup(
-                "Overdue",
-                groupedSchedule.overdue,
-                "border-destructive/40",
-                "No overdue vaccines. Maintain adherence to the EPI schedule."
-              )}
-              {renderScheduleGroup(
-                "Due today",
-                groupedSchedule.dueToday,
-                "border-amber-300/50",
-                "No vaccines scheduled for today."
-              )}
-              {renderScheduleGroup(
-                "Upcoming",
-                groupedSchedule.upcoming,
-                "border-sky-300/60",
-                "Upcoming vaccines will appear here."
-              )}
-              {renderScheduleGroup(
-                "Completed",
-                groupedSchedule.completed,
-                "border-emerald-300/60",
-                "Completed vaccinations will display once recorded."
+            <div className="space-y-6">
+              {/* Vaccine Status Buttons Row */}
+              <div className="grid gap-3 md:grid-cols-4">
+                {/* Overdue Button */}
+                <div className="rounded-lg border-2 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-4 text-left flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-sm font-semibold text-red-700 dark:text-red-200">Overdue</p>
+                    <p className="text-2xl font-bold text-red-700 dark:text-red-200 mt-1">{groupedSchedule.overdue.length}</p>
+                    <p className="text-xs text-red-600/70 dark:text-red-300/70 mt-1">vaccine{groupedSchedule.overdue.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <button
+                    onClick={() => setShowOverdueModal(true)}
+                    className="text-xs font-medium text-red-700 dark:text-red-200 bg-red-100 dark:bg-red-900/50 px-3 py-1.5 rounded hover:bg-red-200 dark:hover:bg-red-900/70 transition self-end mt-3"
+                  >
+                    View
+                  </button>
+                </div>
+
+                {/* Due Today Button */}
+                <div className="rounded-lg border-2 border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 p-4 text-left flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-200">Due Today</p>
+                    <p className="text-2xl font-bold text-amber-700 dark:text-amber-200 mt-1">{groupedSchedule.dueToday.length}</p>
+                    <p className="text-xs text-amber-600/70 dark:text-amber-300/70 mt-1">vaccine{groupedSchedule.dueToday.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <button
+                    onClick={() => setShowDueTodayModal(true)}
+                    className="text-xs font-medium text-amber-700 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/50 px-3 py-1.5 rounded hover:bg-amber-200 dark:hover:bg-amber-900/70 transition self-end mt-3"
+                  >
+                    View
+                  </button>
+                </div>
+
+                {/* Upcoming Button */}
+                <div className="rounded-lg border-2 border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 p-4 text-left flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-sm font-semibold text-blue-700 dark:text-blue-200">Upcoming</p>
+                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-200 mt-1">{groupedSchedule.upcoming.length}</p>
+                    <p className="text-xs text-blue-600/70 dark:text-blue-300/70 mt-1">vaccine{groupedSchedule.upcoming.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <button
+                    onClick={() => setShowUpcomingModal(true)}
+                    className="text-xs font-medium text-blue-700 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/50 px-3 py-1.5 rounded hover:bg-blue-200 dark:hover:bg-blue-900/70 transition self-end mt-3"
+                  >
+                    View
+                  </button>
+                </div>
+
+                {/* Growth Monitoring Button */}
+                <div className="rounded-lg border-2 border-purple-200 dark:border-purple-900 bg-purple-50 dark:bg-purple-950/30 p-4 text-left flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-sm font-semibold text-purple-700 dark:text-purple-200">Growth Monitoring</p>
+                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-200 mt-1">{measurements.length}</p>
+                    <p className="text-xs text-purple-600/70 dark:text-purple-300/70 mt-1">record{measurements.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <button
+                    onClick={() => setShowGrowthMonitoringModal(true)}
+                    className="text-xs font-medium text-purple-700 dark:text-purple-200 bg-purple-100 dark:bg-purple-900/50 px-3 py-1.5 rounded hover:bg-purple-200 dark:hover:bg-purple-900/70 transition self-end mt-3"
+                  >
+                    View
+                  </button>
+                </div>
+              </div>
+
+              {/* Completed Button */}
+              {groupedSchedule.completed.length > 0 && (
+                <div className="w-full rounded-lg border-2 border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/30 p-4 text-left flex flex-col justify-between h-full">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-green-700 dark:text-green-200">Completed</p>
+                      <p className="text-2xl font-bold text-green-700 dark:text-green-200 mt-1">{groupedSchedule.completed.length}</p>
+                      <p className="text-xs text-green-600/70 dark:text-green-300/70 mt-1">vaccine{groupedSchedule.completed.length !== 1 ? "s" : ""}</p>
+                    </div>
+                    <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
+                  </div>
+                  <button
+                    onClick={() => setShowCompletedModal(true)}
+                    className="text-xs font-medium text-green-700 dark:text-green-200 bg-green-100 dark:bg-green-900/50 px-3 py-1.5 rounded hover:bg-green-200 dark:hover:bg-green-900/70 transition self-end mt-3"
+                  >
+                    View
+                  </button>
+                </div>
               )}
             </div>
           )}
         </section>
 
-        <section className="mt-8">
-          <Card className="border-primary/30">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Scale className="h-5 w-5 text-primary" /> Growth monitoring
-              </CardTitle>
-              <CardDescription>Capture anthropometry before today&apos;s vaccines to keep the growth chart accurate.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {measurementStatus ? (
-                <Alert role="status" className="border-primary/40 bg-primary/10">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  <AlertDescription className="text-foreground/80">{measurementStatus}</AlertDescription>
-                </Alert>
-              ) : null}
-
-              <div className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Latest measurement</p>
-                  <p className="text-sm font-semibold text-foreground">
-                    {latestMeasurement ? formatDate(latestMeasurement.date) : "No record yet"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {latestMeasurement ? `Recorded by ${latestMeasurement.recordedBy}` : "Weigh and measure the child before administering vaccines."}
-                  </p>
-                </div>
-                {latestMeasurement ? (
-                  <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground sm:grid-cols-3">
-                    <span className="inline-flex items-center gap-1 text-foreground">
-                      <Scale className="h-4 w-4 text-primary" /> {formatMeasurement(latestMeasurement.weightKg, 2)} kg
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Ruler className="h-4 w-4 text-primary" /> {formatMeasurement(latestMeasurement.lengthCm)} cm
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Ruler className="h-4 w-4 text-primary" /> HC {formatMeasurement(latestMeasurement.headCircumferenceCm)} cm
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Ruler className="h-4 w-4 text-primary" /> MUAC {formatMeasurement(latestMeasurement.muacCm)} cm
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Thermometer className="h-4 w-4 text-primary" /> {formatTemperature(latestMeasurement.temperatureC)}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-
-              <form className="grid gap-4 md:grid-cols-3" onSubmit={handleMeasurementSubmit}>
-                <div className="space-y-2">
-                  <Label htmlFor="measurement-date">Measurement date</Label>
-                  <DatePicker
-                    date={measurementForm.date ? new Date(`${measurementForm.date}T00:00:00`) : undefined}
-                    onDateChange={(selectedDate) =>
-                      handleMeasurementChange("date", selectedDate ? formatDateForInput(selectedDate) : "")
-                    }
-                    toYear={new Date().getFullYear() + 5}
-                  />
-                  {measurementErrors.date ? (
-                    <p className="text-xs text-destructive">{measurementErrors.date}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Use the clinic date the child was weighed.</p>
-                  )}
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="measurement-recorded-by">Recorded by</Label>
-                  <Input
-                    id="measurement-recorded-by"
-                    placeholder="Enter your full name"
-                    value={measurementForm.recordedBy}
-                    onChange={(event) => handleMeasurementChange("recordedBy", event.target.value)}
-                    aria-invalid={measurementErrors.recordedBy ? "true" : undefined}
-                    required
-                  />
-                  {measurementErrors.recordedBy ? (
-                    <p className="text-xs text-destructive">{measurementErrors.recordedBy}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">The name will appear in the measurement history.</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="measurement-weight">Weight (kg)</Label>
-                  <Input
-                    id="measurement-weight"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={measurementForm.weightKg}
-                    onChange={(event) => handleMeasurementChange("weightKg", event.target.value)}
-                    aria-invalid={measurementErrors.weightKg ? "true" : undefined}
-                    required
-                  />
-                  {measurementErrors.weightKg ? (
-                    <p className="text-xs text-destructive">{measurementErrors.weightKg}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Record from the calibrated infant scale.</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="measurement-length">Length / height (cm)</Label>
-                  <Input
-                    id="measurement-length"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={measurementForm.lengthCm}
-                    onChange={(event) => handleMeasurementChange("lengthCm", event.target.value)}
-                    aria-invalid={measurementErrors.lengthCm ? "true" : undefined}
-                  />
-                  {measurementErrors.lengthCm ? (
-                    <p className="text-xs text-destructive">{measurementErrors.lengthCm}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Measure length under 2 years, height thereafter.</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="measurement-hc">Head circumference (cm)</Label>
-                  <Input
-                    id="measurement-hc"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={measurementForm.headCircumferenceCm}
-                    onChange={(event) => handleMeasurementChange("headCircumferenceCm", event.target.value)}
-                    aria-invalid={measurementErrors.headCircumferenceCm ? "true" : undefined}
-                  />
-                  {measurementErrors.headCircumferenceCm ? (
-                    <p className="text-xs text-destructive">{measurementErrors.headCircumferenceCm}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Optional but recommended for infants under 1 year.</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="measurement-muac">MUAC (cm)</Label>
-                  <Input
-                    id="measurement-muac"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={measurementForm.muacCm}
-                    onChange={(event) => handleMeasurementChange("muacCm", event.target.value)}
-                    aria-invalid={measurementErrors.muacCm ? "true" : undefined}
-                  />
-                  {measurementErrors.muacCm ? (
-                    <p className="text-xs text-destructive">{measurementErrors.muacCm}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Use MUAC tape for children 6 months and older.</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="measurement-temp">Temperature (°C)</Label>
-                  <Input
-                    id="measurement-temp"
-                    type="number"
-                    step="0.1"
-                    value={measurementForm.temperatureC}
-                    onChange={(event) => handleMeasurementChange("temperatureC", event.target.value)}
-                    aria-invalid={measurementErrors.temperatureC ? "true" : undefined}
-                  />
-                  {measurementErrors.temperatureC ? (
-                    <p className="text-xs text-destructive">{measurementErrors.temperatureC}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Capture axillary temperature if fever is suspected.</p>
-                  )}
-                </div>
-                <div className="space-y-2 md:col-span-3">
-                  <Label htmlFor="measurement-notes">Measurement notes</Label>
-                  <textarea
-                    id="measurement-notes"
-                    placeholder="E.g. Child restless during measurement, counselled mother on nutrition."
-                    className="min-h-[96px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    value={measurementForm.notes}
-                    onChange={(event) => handleMeasurementChange("notes", event.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-2 md:col-span-3 md:flex-row">
-                  <Button type="submit" className="gap-2" disabled={isSavingMeasurement}>
-                    {isSavingMeasurement ? (
-                      <>
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                        Recording...
-                      </>
-                    ) : (
-                      <>
-                        <Scale className="h-4 w-4" /> Record measurements
-                      </>
-                    )}
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={resetMeasurementForm} disabled={isSavingMeasurement}>
-                    Clear
-                  </Button>
-                </div>
-              </form>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-foreground">Measurement history</h3>
-                  <Badge variant="outline" className="text-xs">
-                    {measurements.length} record{measurements.length === 1 ? "" : "s"}
-                  </Badge>
-                </div>
-                {measurements.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No measurements captured yet. Record today&apos;s weight to start trend tracking.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-xs sm:text-sm">
-                      <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                        <tr>
-                          <th className="py-2 pr-4">Date</th>
-                          <th className="py-2 pr-4">Weight (kg)</th>
-                          <th className="py-2 pr-4">Length / height (cm)</th>
-                          <th className="py-2 pr-4">Head circ. (cm)</th>
-                          <th className="py-2 pr-4">MUAC (cm)</th>
-                          <th className="py-2 pr-4">Temp (°C)</th>
-                          <th className="py-2 pr-4">Recorded by</th>
-                          <th className="py-2 pr-4">Notes</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border text-foreground">
-                        {measurements.map((measurement) => (
-                          <tr key={measurement.id}>
-                            <td className="py-2 pr-4">{formatDate(measurement.date)}</td>
-                            <td className="py-2 pr-4">{formatMeasurement(measurement.weightKg, 2)}</td>
-                            <td className="py-2 pr-4">{formatMeasurement(measurement.lengthCm)}</td>
-                            <td className="py-2 pr-4">{formatMeasurement(measurement.headCircumferenceCm)}</td>
-                            <td className="py-2 pr-4">{formatMeasurement(measurement.muacCm)}</td>
-                            <td className="py-2 pr-4">{formatTemperature(measurement.temperatureC)}</td>
-                            <td className="py-2 pr-4 text-xs text-muted-foreground">{measurement.recordedBy}</td>
-                            <td className="py-2 pr-4 text-xs text-muted-foreground">
-                              {measurement.notes ? measurement.notes : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </section>
 
         <section className="mt-8 grid gap-6 lg:grid-cols-2">
           <Card>
@@ -1619,7 +1435,7 @@ export default function ChildPatientChartPage() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="site">Site of injection</Label>
+                  <Label htmlFor="site">Site of injection (Ghana EPI standard)</Label>
                   <select
                     id="site"
                     required
@@ -1628,14 +1444,17 @@ export default function ChildPatientChartPage() {
                     onChange={(event) => handleAdministerChange("site", event.target.value)}
                   >
                     <option value="">Select site</option>
-                    <option value="left-thigh">Left thigh</option>
-                    <option value="right-thigh">Right thigh</option>
-                    <option value="left-arm-upper">Left arm (upper)</option>
-                    <option value="right-arm-upper">Right arm (upper)</option>
-                    <option value="oral">Oral</option>
-                    <option value="intranasal">Intranasal</option>
-                    <option value="other">Other</option>
+                    <option value="left-arm">Left upper arm</option>
+                    <option value="right-arm">Right upper arm</option>
+                    <option value="left-thigh">Left upper thigh</option>
+                    <option value="right-thigh">Right upper thigh</option>
+                    <option value="oral">Oral (by mouth)</option>
                   </select>
+                  {administerForm.site && (
+                    <p className="text-xs text-green-600 dark:text-green-400">
+                      ✓ Auto-filled per Ghana EPI guidelines: {getSiteDescription(administerForm.site as any)}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1885,6 +1704,521 @@ export default function ChildPatientChartPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Child Details Modal */}
+      {showChildDetailsModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
+            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Child Information</h3>
+              <button
+                type="button"
+                onClick={() => setShowChildDetailsModal(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Birth Details */}
+              <div className="rounded-lg border border-border bg-background/70 p-4">
+                <p className="text-sm font-semibold text-foreground mb-3">Birth Details</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Date of Birth:</span>
+                    <span className="text-foreground font-medium">{childRecord.dateOfBirth || "Pending"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Age:</span>
+                    <span className="text-foreground font-medium">{childRecord.age}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Birth Weight:</span>
+                    <span className="text-foreground font-medium">{childRecord.birthDetails.weight}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Birth Length:</span>
+                    <span className="text-foreground font-medium">{childRecord.birthDetails.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Place of Birth:</span>
+                    <span className="text-foreground font-medium">{childRecord.birthDetails.place}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Delivery Type:</span>
+                    <span className="text-foreground font-medium">{childRecord.birthDetails.deliveryType}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Guardian Details */}
+              <div className="rounded-lg border border-border bg-background/70 p-4">
+                <p className="text-sm font-semibold text-foreground mb-3">Guardian Details</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Name:</span>
+                    <span className="text-foreground font-medium">{childRecord.guardian.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Phone:</span>
+                    <span className="text-foreground font-medium">{childRecord.guardian.phone}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Address:</span>
+                    <span className="text-foreground font-medium text-right">{childRecord.guardian.address}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Preferred Contact:</span>
+                    <span className="text-foreground font-medium uppercase">{childRecord.guardian.preferredContact}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Allergies */}
+              {childRecord.allergies.length > 0 && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+                  <p className="text-sm font-semibold text-destructive mb-2">⚠️ Allergies</p>
+                  <p className="text-sm text-destructive">{childRecord.allergies.join(", ")}</p>
+                </div>
+              )}
+
+              {/* Last Visit */}
+              <div className="rounded-lg border border-border bg-background/70 p-4">
+                <p className="text-sm font-semibold text-foreground mb-1">Last Visit</p>
+                <p className="text-sm text-muted-foreground">{childRecord.lastVisit}</p>
+              </div>
+            </div>
+
+            <div className="border-t border-border p-6 flex justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowChildDetailsModal(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Overdue Vaccines Modal */}
+      {showOverdueModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
+            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Overdue Vaccines</h3>
+                <p className="text-sm text-muted-foreground">{groupedSchedule.overdue.length} vaccine{groupedSchedule.overdue.length === 1 ? "" : "s"}</p>
+              </div>
+              <button onClick={() => setShowOverdueModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3">
+              {groupedSchedule.overdue.map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-destructive/40 bg-background/80 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
+                      <p className="text-xs text-muted-foreground">Due: {entry.scheduledDate}</p>
+                      {entry.notes && <p className="mt-2 text-xs text-destructive">{entry.notes}</p>}
+                    </div>
+                    <Button size="sm" variant="destructive" className="gap-2" onClick={() => { setShowOverdueModal(false); openAdministerModal(entry); }}>
+                      <Syringe className="h-4 w-4" /> Administer
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-border p-6 flex justify-end">
+              <Button variant="outline" onClick={() => setShowOverdueModal(false)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Due Today Vaccines Modal */}
+      {showDueTodayModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
+            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Due Today</h3>
+                <p className="text-sm text-muted-foreground">{groupedSchedule.dueToday.length} vaccine{groupedSchedule.dueToday.length === 1 ? "" : "s"}</p>
+              </div>
+              <button onClick={() => setShowDueTodayModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3">
+              {groupedSchedule.dueToday.map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-amber-300/50 bg-background/80 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
+                      <p className="text-xs text-muted-foreground">Scheduled: {entry.scheduledDate}</p>
+                      {entry.notes && <p className="mt-2 text-xs text-muted-foreground">{entry.notes}</p>}
+                    </div>
+                    <Button size="sm" variant="default" className="gap-2" onClick={() => { setShowDueTodayModal(false); openAdministerModal(entry); }}>
+                      <Syringe className="h-4 w-4" /> Administer
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-border p-6 flex justify-end">
+              <Button variant="outline" onClick={() => setShowDueTodayModal(false)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Upcoming Vaccines Modal */}
+      {showUpcomingModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
+            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Upcoming Vaccines</h3>
+                <p className="text-sm text-muted-foreground">{groupedSchedule.upcoming.length} vaccine{groupedSchedule.upcoming.length === 1 ? "" : "s"}</p>
+              </div>
+              <button onClick={() => setShowUpcomingModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3">
+              {groupedSchedule.upcoming.map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-sky-300/60 bg-background/80 p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
+                    <p className="text-xs text-muted-foreground">Scheduled: {entry.scheduledDate}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-border p-6 flex justify-end">
+              <Button variant="outline" onClick={() => setShowUpcomingModal(false)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Completed Vaccines Modal */}
+      {showCompletedModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
+            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Vaccination History</h3>
+                <p className="text-sm text-muted-foreground">{groupedSchedule.completed.length} vaccine{groupedSchedule.completed.length === 1 ? "" : "s"} completed</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCompletedModal(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-3">
+              {groupedSchedule.completed.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">No completed vaccinations yet.</p>
+              ) : (
+                groupedSchedule.completed.map((entry) => (
+                  <div key={entry.id} className="rounded-lg border border-border bg-background/80 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
+                        <p className="text-xs text-muted-foreground">Scheduled: {entry.scheduledDate}</p>
+                        {entry.administeredDate ? (
+                          <p className="text-xs text-muted-foreground">Administered: {entry.administeredDate}</p>
+                        ) : null}
+                        {entry.batchNumber ? (
+                          <p className="text-xs text-muted-foreground">Batch: {entry.batchNumber}</p>
+                        ) : null}
+                        {entry.notes ? <p className="mt-2 text-xs text-muted-foreground">{entry.notes}</p> : null}
+                      </div>
+                      <Badge variant="secondary" className="w-fit">✓ Completed</Badge>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="border-t border-border p-6 flex justify-end">
+              <Button variant="outline" onClick={() => setShowCompletedModal(false)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Growth Monitoring Modal */}
+      {showGrowthMonitoringModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-4xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
+            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Growth Monitoring</h3>
+                <p className="text-sm text-muted-foreground">{measurements.length} record{measurements.length !== 1 ? "s" : ""}</p>
+              </div>
+              <button onClick={() => setShowGrowthMonitoringModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {measurements.length > 0 ? (
+                <div className="flex flex-col gap-3 rounded-lg border border-dashed border-violet-300/40 bg-violet-50/30 dark:bg-violet-950/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Latest measurement</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {latestMeasurement ? formatDate(latestMeasurement.date) : "No record yet"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {latestMeasurement ? `Recorded by ${latestMeasurement.recordedBy}` : ""}
+                    </p>
+                  </div>
+                  {latestMeasurement ? (
+                    <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground sm:grid-cols-3">
+                      <span className="inline-flex items-center gap-1 text-foreground">
+                        <Scale className="h-4 w-4 text-violet-600 dark:text-violet-400" /> {formatMeasurement(latestMeasurement.weightKg, 2)} kg
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Ruler className="h-4 w-4 text-violet-600 dark:text-violet-400" /> {formatMeasurement(latestMeasurement.lengthCm)} cm
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Ruler className="h-4 w-4 text-violet-600 dark:text-violet-400" /> HC {formatMeasurement(latestMeasurement.headCircumferenceCm)} cm
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Ruler className="h-4 w-4 text-violet-600 dark:text-violet-400" /> MUAC {formatMeasurement(latestMeasurement.muacCm)} cm
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Thermometer className="h-4 w-4 text-violet-600 dark:text-violet-400" /> {formatTemperature(latestMeasurement.temperatureC)}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {showRecordGrowthForm && (
+                <div className="rounded-lg border border-violet-300/40 bg-violet-50/30 dark:bg-violet-950/10 p-4 space-y-4">
+                  <h4 className="font-semibold text-foreground">Record New Measurement</h4>
+                  <form className="grid gap-4 md:grid-cols-3" onSubmit={handleMeasurementSubmit}>
+                    <div className="space-y-2">
+                      <Label htmlFor="measurement-date">Measurement date</Label>
+                      <DatePicker
+                        date={measurementForm.date ? new Date(`${measurementForm.date}T00:00:00`) : undefined}
+                        onDateChange={(selectedDate) =>
+                          handleMeasurementChange("date", selectedDate ? formatDateForInput(selectedDate) : "")
+                        }
+                        toYear={new Date().getFullYear() + 5}
+                      />
+                      {measurementErrors.date ? (
+                        <p className="text-xs text-destructive">{measurementErrors.date}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Use the clinic date the child was weighed.</p>
+                      )}
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="measurement-recorded-by">Recorded by</Label>
+                      <Input
+                        id="measurement-recorded-by"
+                        placeholder="Enter your full name"
+                        value={measurementForm.recordedBy}
+                        onChange={(event) => handleMeasurementChange("recordedBy", event.target.value)}
+                        aria-invalid={measurementErrors.recordedBy ? "true" : undefined}
+                        required
+                      />
+                      {measurementErrors.recordedBy ? (
+                        <p className="text-xs text-destructive">{measurementErrors.recordedBy}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">The name will appear in the measurement history.</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="measurement-weight">Weight (kg)</Label>
+                      <Input
+                        id="measurement-weight"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={measurementForm.weightKg}
+                        onChange={(event) => handleMeasurementChange("weightKg", event.target.value)}
+                        aria-invalid={measurementErrors.weightKg ? "true" : undefined}
+                        required
+                      />
+                      {measurementErrors.weightKg ? (
+                        <p className="text-xs text-destructive">{measurementErrors.weightKg}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Record from the calibrated infant scale.</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="measurement-length">Length / height (cm)</Label>
+                      <Input
+                        id="measurement-length"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={measurementForm.lengthCm}
+                        onChange={(event) => handleMeasurementChange("lengthCm", event.target.value)}
+                        aria-invalid={measurementErrors.lengthCm ? "true" : undefined}
+                      />
+                      {measurementErrors.lengthCm ? (
+                        <p className="text-xs text-destructive">{measurementErrors.lengthCm}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Measure length under 2 years, height thereafter.</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="measurement-hc">Head circumference (cm)</Label>
+                      <Input
+                        id="measurement-hc"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={measurementForm.headCircumferenceCm}
+                        onChange={(event) => handleMeasurementChange("headCircumferenceCm", event.target.value)}
+                        aria-invalid={measurementErrors.headCircumferenceCm ? "true" : undefined}
+                      />
+                      {measurementErrors.headCircumferenceCm ? (
+                        <p className="text-xs text-destructive">{measurementErrors.headCircumferenceCm}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Measure with soft tape above eyebrows.</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="measurement-muac">MUAC (cm)</Label>
+                      <Input
+                        id="measurement-muac"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={measurementForm.muacCm}
+                        onChange={(event) => handleMeasurementChange("muacCm", event.target.value)}
+                        aria-invalid={measurementErrors.muacCm ? "true" : undefined}
+                      />
+                      {measurementErrors.muacCm ? (
+                        <p className="text-xs text-destructive">{measurementErrors.muacCm}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Use MUAC tape for children 6 months and older.</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="measurement-temp">Temperature (°C)</Label>
+                      <Input
+                        id="measurement-temp"
+                        type="number"
+                        step="0.1"
+                        value={measurementForm.temperatureC}
+                        onChange={(event) => handleMeasurementChange("temperatureC", event.target.value)}
+                        aria-invalid={measurementErrors.temperatureC ? "true" : undefined}
+                      />
+                      {measurementErrors.temperatureC ? (
+                        <p className="text-xs text-destructive">{measurementErrors.temperatureC}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Capture axillary temperature if fever is suspected.</p>
+                      )}
+                    </div>
+                    <div className="space-y-2 md:col-span-3">
+                      <Label htmlFor="measurement-notes">Measurement notes</Label>
+                      <textarea
+                        id="measurement-notes"
+                        placeholder="E.g. Child restless during measurement, counselled mother on nutrition."
+                        className="min-h-[96px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        value={measurementForm.notes}
+                        onChange={(event) => handleMeasurementChange("notes", event.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2 md:col-span-3 md:flex-row">
+                      <Button type="submit" className="gap-2" disabled={isSavingMeasurement}>
+                        {isSavingMeasurement ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            Recording...
+                          </>
+                        ) : (
+                          <>
+                            <Scale className="h-4 w-4" /> Record measurements
+                          </>
+                        )}
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => {
+                        resetMeasurementForm()
+                        setShowRecordGrowthForm(false)
+                      }} disabled={isSavingMeasurement}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-foreground">Measurement history</h3>
+                  <Badge variant="outline" className="text-xs">
+                    {measurements.length} record{measurements.length === 1 ? "" : "s"}
+                  </Badge>
+                </div>
+                {measurements.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No measurements captured yet. Record measurements in the form below.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs sm:text-sm">
+                      <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="py-2 pr-4">Date</th>
+                          <th className="py-2 pr-4">Weight (kg)</th>
+                          <th className="py-2 pr-4">Length / height (cm)</th>
+                          <th className="py-2 pr-4">Head circ. (cm)</th>
+                          <th className="py-2 pr-4">MUAC (cm)</th>
+                          <th className="py-2 pr-4">Temp (°C)</th>
+                          <th className="py-2 pr-4">Recorded by</th>
+                          <th className="py-2 pr-4">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border text-foreground">
+                        {measurements.map((measurement) => (
+                          <tr key={measurement.id}>
+                            <td className="py-2 pr-4">{formatDate(measurement.date)}</td>
+                            <td className="py-2 pr-4">{formatMeasurement(measurement.weightKg, 2)}</td>
+                            <td className="py-2 pr-4">{formatMeasurement(measurement.lengthCm)}</td>
+                            <td className="py-2 pr-4">{formatMeasurement(measurement.headCircumferenceCm)}</td>
+                            <td className="py-2 pr-4">{formatMeasurement(measurement.muacCm)}</td>
+                            <td className="py-2 pr-4">{formatTemperature(measurement.temperatureC)}</td>
+                            <td className="py-2 pr-4 text-xs text-muted-foreground">{measurement.recordedBy}</td>
+                            <td className="py-2 pr-4 text-xs text-muted-foreground">
+                              {measurement.notes ? measurement.notes : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-border p-6 flex justify-end gap-3">
+              <Button
+                variant="default"
+                onClick={() => setShowRecordGrowthForm(!showRecordGrowthForm)}
+                className="gap-2"
+              >
+                <Scale className="h-4 w-4" /> Record Growth
+              </Button>
+              <Button variant="outline" onClick={() => setShowGrowthMonitoringModal(false)}>Close</Button>
+            </div>
           </div>
         </div>
       ) : null}

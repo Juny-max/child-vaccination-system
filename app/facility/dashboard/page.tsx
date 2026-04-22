@@ -71,6 +71,7 @@ export default function FacilityDashboardPage() {
   const [isLoadingFollowUps, setIsLoadingFollowUps] = useState(true)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [contactDetail, setContactDetail] = useState<facilityApi.UrgentFollowUp | null>(null)
+  const [showUrgentFollowUpsModal, setShowUrgentFollowUpsModal] = useState(false)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [pendingAppointmentRequestsCount, setPendingAppointmentRequestsCount] = useState(0)
 
@@ -388,6 +389,31 @@ export default function FacilityDashboardPage() {
           </Alert>
         ) : null}
 
+        {/* Registration Quick Actions - Top of Page */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Button asChild size="lg" className="gap-2">
+            <Link href="/facility/register-mother">
+              <User className="h-5 w-5" /> Register New Mother
+            </Link>
+          </Button>
+          <Button asChild size="lg" className="gap-2">
+            <Link href="/facility/register-child">
+              <FilePlus2 className="h-5 w-5" /> Register New Child
+            </Link>
+          </Button>
+          <Button asChild size="lg" className="gap-2" variant="default">
+            <Link href="/facility/offline-sync">
+              <Syringe className="h-5 w-5" />
+              Manage Offline Vaccinations
+              {pendingSyncCount > 0 && (
+                <Badge variant="secondary" className="ml-auto">
+                  {pendingSyncCount}
+                </Badge>
+              )}
+            </Link>
+          </Button>
+        </div>
+
         <section className="flex flex-col gap-6 lg:flex-row">
           <Card className="flex-1 border-primary/40">
             <CardHeader className="space-y-2">
@@ -560,19 +586,9 @@ export default function FacilityDashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Quick actions</CardTitle>
-                <CardDescription>Kick off common clinic workflows.</CardDescription>
+                <CardDescription>Manage appointments and offline sync.</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-2">
-                <Button asChild className="gap-2">
-                  <Link href="/facility/register-mother">
-                    <User className="h-4 w-4" /> Register new mother
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="gap-2">
-                  <Link href="/facility/register-child">
-                    <FilePlus2 className="h-4 w-4" /> Register new child
-                  </Link>
-                </Button>
                 <Button asChild variant="outline" className="gap-2">
                   <Link href="/facility/dashboard/appointments">
                     <CalendarCheck className="h-4 w-4" />
@@ -641,21 +657,71 @@ export default function FacilityDashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-destructive/50">
+          <Card className="border-destructive/50 cursor-pointer hover:bg-destructive/5 transition-colors" onClick={() => setShowUrgentFollowUpsModal(true)}>
             <CardHeader className="space-y-1">
               <CardTitle className="flex items-center gap-2 text-lg text-destructive">
                 <AlertTriangle className="h-5 w-5" /> Urgent follow-ups
               </CardTitle>
-              <CardDescription>Prioritise these children if they attend clinic today.</CardDescription>
+              <CardDescription>Click to view {todaysFollowUps.length} flagged children. Prioritise if they attend clinic today.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
+            {!isLoadingFollowUps && todaysFollowUps.length > 0 && (
+              <CardContent>
+                <p className="text-sm font-semibold text-destructive">{todaysFollowUps.length} child{todaysFollowUps.length !== 1 ? "ren" : ""} requiring follow-up</p>
+              </CardContent>
+            )}
+          </Card>
+        </section>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Stethoscope className="h-5 w-5 text-primary" /> Clinic checklist
+            </CardTitle>
+            <CardDescription>Ensure cold chain readiness, consent forms, and vaccine stock are in place before session starts.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-lg border border-border bg-background/70 p-4">
+              <p className="text-sm font-semibold text-foreground">Review vaccine fridge log</p>
+              <p className="mt-1 text-xs text-muted-foreground">Confirm morning temperature check and chart in the cold chain book.</p>
+            </div>
+            <div className="rounded-lg border border-border bg-background/70 p-4">
+              <p className="text-sm font-semibold text-foreground">Prepare consent cards</p>
+              <p className="mt-1 text-xs text-muted-foreground">Lay out maternal health record books and ensure ink pads are available.</p>
+            </div>
+            <div className="rounded-lg border border-border bg-background/70 p-4">
+              <p className="text-sm font-semibold text-foreground">Sync digital registers</p>
+              <p className="mt-1 text-xs text-muted-foreground">Confirm tablets are online and overnight data sync completed.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+
+      {/* Urgent Follow-ups Modal */}
+      {showUrgentFollowUpsModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowUrgentFollowUpsModal(false)}>
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-xl border border-border bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-destructive" /> Urgent Follow-ups
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">Prioritise these children if they attend clinic today</p>
+              </div>
+              <button onClick={() => setShowUrgentFollowUpsModal(false)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="space-y-3 px-5 py-5 overflow-y-auto flex-1 min-h-0">
               {isLoadingFollowUps ? (
-                <div className="flex items-center justify-center py-4">
+                <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-destructive" />
                   <span className="ml-2 text-sm text-muted-foreground">Loading follow-ups...</span>
                 </div>
               ) : todaysFollowUps.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No flagged children for today.</p>
+                <p className="text-sm text-muted-foreground text-center py-8">No flagged children for today.</p>
               ) : (
                 todaysFollowUps.map((followUp, index) => (
                   <div key={`${followUp.id}-${index}`} className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
@@ -683,48 +749,15 @@ export default function FacilityDashboardPage() {
                   </div>
                 ))
               )}
-            </CardContent>
-          </Card>
-        </section>
+            </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Stethoscope className="h-5 w-5 text-primary" /> Clinic checklist
-            </CardTitle>
-            <CardDescription>Ensure cold chain readiness, consent forms, and vaccine stock are in place before session starts.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-lg border border-border bg-background/70 p-4">
-              <p className="text-sm font-semibold text-foreground">Review vaccine fridge log</p>
-              <p className="mt-1 text-xs text-muted-foreground">Confirm morning temperature check and chart in the cold chain book.</p>
+            {/* Footer */}
+            <div className="border-t border-border px-5 py-3 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowUrgentFollowUpsModal(false)}>Close</Button>
             </div>
-            <div className="rounded-lg border border-border bg-background/70 p-4">
-              <p className="text-sm font-semibold text-foreground">Prepare consent cards</p>
-              <p className="mt-1 text-xs text-muted-foreground">Lay out maternal health record books and ensure ink pads are available.</p>
-            </div>
-            <div className="rounded-lg border border-border bg-background/70 p-4">
-              <p className="text-sm font-semibold text-foreground">Sync digital registers</p>
-              <p className="mt-1 text-xs text-muted-foreground">Confirm tablets are online and overnight data sync completed.</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Offline Sync Management Button */}
-        <div className="flex justify-center pb-4">
-          <Button asChild variant="outline" size="lg" className="gap-2">
-            <Link href="/facility/offline-sync">
-              <Syringe className="h-5 w-5" />
-              Manage Offline Vaccinations
-              {pendingSyncCount > 0 && (
-                <Badge variant="default" className="ml-2">
-                  {pendingSyncCount} pending
-                </Badge>
-              )}
-            </Link>
-          </Button>
+          </div>
         </div>
-      </main>
+      )}
 
       {/* Guardian Contact Details Modal */}
       {contactDetail && (

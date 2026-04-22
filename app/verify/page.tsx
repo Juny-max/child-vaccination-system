@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import {
@@ -26,9 +26,15 @@ import { Label } from "@/components/ui/label"
 import { QRScanner } from "@/components/shared/qr-scanner"
 import type { PHACertificateVerifyResult } from "@/lib/api/pha"
 
-async function verifyCertificate(id: string): Promise<PHACertificateVerifyResult> {
-  const res = await fetch(`/api/verify?id=${encodeURIComponent(id)}`)
-  if (!res.ok) throw new Error('Verification request failed')
+async function verifyCertificate(id: string, token: string): Promise<PHACertificateVerifyResult> {
+  const res = await fetch(`/api/verify?id=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}`)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    if (res.status === 401) {
+      throw new Error('Verification session expired. Please refresh the page and try again.')
+    }
+    throw new Error(error.error || 'Verification request failed')
+  }
   return res.json()
 }
 
@@ -49,13 +55,38 @@ export default function PublicVerifyPage() {
   const [isVerifying, setIsVerifying] = useState(false)
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null)
   const [showQRScanner, setShowQRScanner] = useState(false)
+  const [verificationToken, setVerificationToken] = useState<string>("")
+  const [tokenError, setTokenError] = useState<string>("")
+
+  // Generate verification token on component mount
+  useEffect(() => {
+    const generateToken = async () => {
+      try {
+        const res = await fetch('/api/verify/token', { method: 'POST' })
+        if (!res.ok) throw new Error('Failed to generate verification token')
+        const data = await res.json()
+        setVerificationToken(data.token)
+        setTokenError("")
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to initialize verification'
+        setTokenError(message)
+        toast.error(message)
+      }
+    }
+    generateToken()
+  }, [])
 
   const runVerify = async (id: string) => {
+    if (!verificationToken) {
+      toast.error("Verification session not initialized. Please refresh the page.")
+      return
+    }
+
     setIsVerifying(true)
     setVerificationResult(null)
 
     try {
-      const res: PHACertificateVerifyResult = await verifyCertificate(id.trim())
+      const res: PHACertificateVerifyResult = await verifyCertificate(id.trim(), verificationToken)
 
       if (!res.found) {
         setVerificationResult({ status: "not-found", certificateId: id.trim() })
@@ -90,14 +121,19 @@ export default function PublicVerifyPage() {
         })
         toast.success("Certificate verified successfully")
       }
-    } catch {
-      toast.error("Verification failed. Check your connection and try again.")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Verification failed. Check your connection and try again."
+      toast.error(message)
     } finally {
       setIsVerifying(false)
     }
   }
 
   const handleVerify = () => {
+    if (!verificationToken) {
+      toast.error("Verification session not initialized. Please refresh the page.")
+      return
+    }
     if (!certificateId.trim()) {
       toast.error("Please enter a certificate ID")
       return
@@ -106,6 +142,11 @@ export default function PublicVerifyPage() {
   }
 
   const handleQRScanSuccess = (decodedText: string) => {
+    if (!verificationToken) {
+      toast.error("Verification session not initialized. Please refresh the page.")
+      setShowQRScanner(false)
+      return
+    }
     let certId = decodedText.trim()
     try {
       const parsed = JSON.parse(decodedText)
@@ -156,6 +197,21 @@ export default function PublicVerifyPage() {
           </p>
         </div>
 
+        {/* Token Error Alert */}
+        {tokenError && (
+          <Card className="border-destructive/50 bg-destructive/10">
+            <CardContent className="flex gap-3 pt-6">
+              <AlertTriangle className="h-5 w-5 flex-shrink-0 text-destructive" />
+              <div>
+                <p className="font-medium text-destructive">{tokenError}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Try refreshing the page or accessing this through the "Verify Certificate" link on the homepage.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* How it works */}
         <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
           <CardHeader>
@@ -197,14 +253,14 @@ export default function PublicVerifyPage() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <Button onClick={handleVerify} disabled={isVerifying || !certificateId.trim()} className="gap-2">
+                <Button onClick={handleVerify} disabled={isVerifying || !certificateId.trim() || !verificationToken} className="gap-2">
                   {isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                   {isVerifying ? "Verifying…" : "Verify"}
                 </Button>
                 <Button
                   onClick={() => setShowQRScanner((v) => !v)}
                   variant={showQRScanner ? "destructive" : "outline"}
-                  disabled={isVerifying}
+                  disabled={isVerifying || !verificationToken}
                   className="gap-2"
                 >
                   <Camera className="h-4 w-4" />

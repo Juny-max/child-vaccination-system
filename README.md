@@ -95,6 +95,17 @@ pnpm run dev:all
 
 Visit `http://localhost:3000`
 
+### Frontend Environment Setup (Contact Form)
+
+Create a root `.env.local` file for the landing-page contact form API route:
+
+```env
+BREVO_API_KEY=<Brevo API key used by Next.js contact route>
+CONTACT_SUPPORT_EMAIL=support@cvcc.gov.gh
+CONTACT_SENDER_EMAIL=noreply@cvcc.gov.gh
+CONTACT_SENDER_NAME=CVCC Website
+```
+
 ---
 
 ## 🧰 Backend API (NestJS)
@@ -351,6 +362,15 @@ backend/src/
 ```bash
 git push origin main
 ```
+
+Set these environment variables in Vercel for the contact form:
+
+| Key | Value |
+|---|---|
+| `BREVO_API_KEY` | Brevo API key for sending contact emails |
+| `CONTACT_SUPPORT_EMAIL` | Support inbox (e.g. `support@cvcc.gov.gh`) |
+| `CONTACT_SENDER_EMAIL` | Verified sender address in Brevo |
+| `CONTACT_SENDER_NAME` | Sender name shown to support team |
 
 ### Backend (Render)
 

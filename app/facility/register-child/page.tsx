@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { AlertCircle, ArrowLeft, Baby, Calendar, FileImage, MapPin, Search, X } from "lucide-react"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
@@ -61,6 +61,7 @@ const initialState: ChildFormState = {
 export default function RegisterChildPage() {
   const GUARDIANS_PAGE_SIZE = 20
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [userName, setUserName] = useState("")
   const [searchMother, setSearchMother] = useState("")
   const [selectedMother, setSelectedMother] = useState<MotherOption | null>(null)
@@ -75,8 +76,10 @@ export default function RegisterChildPage() {
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const childDetailsRef = useRef<HTMLDivElement>(null)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [registeredChildId, setRegisteredChildId] = useState<string | null>(null)
+  const [isLoadingPrefilledMother, setIsLoadingPrefilledMother] = useState(false)
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -90,6 +93,46 @@ export default function RegisterChildPage() {
 
     setUserName(name || "Facility Nurse")
   }, [router])
+
+  // Load pre-filled mother from query parameter
+  useEffect(() => {
+    const motherId = searchParams.get("motherId")
+    if (!motherId) return
+
+    const loadPrefilledMother = async () => {
+      setIsLoadingPrefilledMother(true)
+      try {
+        const { data, error } = await supabase
+          .from("guardians")
+          .select("id, full_name, phone_number, community")
+          .eq("id", motherId)
+          .single()
+
+        if (error || !data) {
+          setMotherLoadError("Could not load the selected mother. Please search and select again.")
+          return
+        }
+
+        const motherOption: MotherOption = {
+          id: data.id,
+          name: data.full_name,
+          phone: data.phone_number,
+          community: data.community || "",
+        }
+
+        setSelectedMother(motherOption)
+        setFormData((prev) => ({ ...prev, motherId: data.id }))
+        setSystemMessage(`Linked to ${data.full_name}. Continue with child details.`)
+      } catch (error) {
+        console.error("Error loading prefilled mother:", error)
+        setMotherLoadError("Error loading mother details. Please search manually.")
+      } finally {
+        setIsLoadingPrefilledMother(false)
+      }
+    }
+
+    loadPrefilledMother()
+  }, [searchParams])
 
   useEffect(() => {
     if (!systemMessage) return
@@ -171,6 +214,11 @@ export default function RegisterChildPage() {
     setSelectedMother(mother)
     setFormData((previous) => ({ ...previous, motherId: mother.id }))
     setSystemMessage(`Linked to ${mother.name}. Continue with child details.`)
+
+    // Scroll to child details form
+    setTimeout(() => {
+      childDetailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
   }
 
   const isMotherSelected = (motherId: string) => selectedMother?.id === motherId
@@ -390,7 +438,7 @@ export default function RegisterChildPage() {
           </CardContent>
         </Card>
 
-        <Card className="mt-6 border-primary/40">
+        <Card className="mt-6 border-primary/40" ref={childDetailsRef}>
           <CardHeader className="space-y-2">
             <CardTitle>Child details</CardTitle>
             <CardDescription>

@@ -11,16 +11,19 @@ This guide explains how to test the notification system (Email & SMS) using the 
 ## Quick Start
 
 ### Test Welcome Email
+
 ```bash
 npx ts-node scripts/test-notifications.ts --channel email --recipient your-email@example.com --template welcome
 ```
 
 ### Test SMS Reminder
+
 ```bash
 npx ts-node scripts/test-notifications.ts --channel sms --recipient +233501234567 --template reminder
 ```
 
 ### Test Both Email & SMS
+
 ```bash
 npx ts-node scripts/test-notifications.ts --channel both --recipient your-email@example.com --template reminder
 ```
@@ -28,31 +31,41 @@ npx ts-node scripts/test-notifications.ts --channel both --recipient your-email@
 ## Available Templates
 
 ### 1. **Welcome Email**
+
 Sent when new users register to the system.
+
 ```bash
 npx ts-node scripts/test-notifications.ts --channel email --recipient user@example.com --template welcome
 ```
 
 ### 2. **Password Reset Email**
+
 Sent when users request password reset.
+
 ```bash
 npx ts-node scripts/test-notifications.ts --channel email --recipient user@example.com --template password-reset
 ```
 
 ### 3. **Vaccination Reminder**
+
 Sent to remind parents/guardians about upcoming vaccinations.
+
 ```bash
 npx ts-node scripts/test-notifications.ts --channel email --recipient user@example.com --template reminder
 ```
 
 ### 4. **Appointment Notification (SMS)**
+
 Sent to confirm scheduled appointments.
+
 ```bash
 npx ts-node scripts/test-notifications.ts --channel sms --recipient +233501234567 --template appointment
 ```
 
 ### 5. **Custom Email**
+
 Send a custom email with your own subject and HTML content.
+
 ```bash
 npx ts-node scripts/test-notifications.ts \
   --channel email \
@@ -65,7 +78,7 @@ npx ts-node scripts/test-notifications.ts \
 ## Command Options
 
 | Option | Values | Description |
-|--------|--------|-------------|
+| ------ | ------ | ----------- |
 | `--channel` | `email`, `sms`, `both` | Which notification channel to test (default: email) |
 | `--recipient` | Email or Phone | Recipient email address or phone number |
 | `--template` | See above | Which template to use (default: welcome) |
@@ -76,6 +89,7 @@ npx ts-node scripts/test-notifications.ts \
 ## Testing Workflow
 
 ### 1. Test Email Service
+
 ```bash
 # Start backend
 cd backend
@@ -86,12 +100,14 @@ npx ts-node scripts/test-notifications.ts --channel email --recipient admin@cvcc
 ```
 
 ### 2. Test SMS Service
+
 ```bash
 # Test SMS (requires Hubtel API configured)
 npx ts-node scripts/test-notifications.ts --channel sms --recipient +233501234567 --template reminder
 ```
 
 ### 3. Test Custom Notification
+
 ```bash
 npx ts-node scripts/test-notifications.ts \
   --channel email \
@@ -105,7 +121,7 @@ npx ts-node scripts/test-notifications.ts \
 
 When tests run successfully, you'll see:
 
-```
+```text
 ============================================================
 🧪 CVCC NOTIFICATION SYSTEM TEST
 ============================================================
@@ -127,20 +143,26 @@ Template: welcome
 ## Troubleshooting
 
 ### Error: "BREVO_API_KEY is not set"
+
 **Solution:** Update `backend/.env` with a valid Brevo API key for email delivery.
 
 ### Error: "Hubtel credentials not configured"
+
 **Solution:** Update `backend/.env` with valid Hubtel SMS credentials.
 
 ### Port 3001 not responding
+
 **Solution:** Ensure backend is running:
+
 ```bash
 cd backend
 pnpm run start:dev
 ```
 
 ### Script not found
+
 **Solution:** Ensure you're in the backend directory:
+
 ```bash
 cd backend
 npx ts-node scripts/test-notifications.ts --help

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { type FormEvent, useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { Fredoka } from "next/font/google"
@@ -9,7 +9,10 @@ import { MorphNavbar } from "@/components/morph-navbar"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowRight, BellRing, Check, QrCode, ShieldCheck, Syringe, TrendingUp, X } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { ArrowRight, BellRing, Check, MessageSquare, Phone, QrCode, ShieldCheck, Syringe, TrendingUp, X } from "lucide-react"
 
 const heroMedia = {
   light: "https://www.edc-ent.com/wp-content/uploads/2021/07/343434.jpg",
@@ -99,6 +102,18 @@ export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [activeMoment, setActiveMoment] = useState(0)
+  const [contactForm, setContactForm] = useState({
+    name: "",
+    email: "",
+    facility: "",
+    message: "",
+    website: "",
+  })
+  const [contactState, setContactState] = useState<{ type: "idle" | "success" | "error"; message: string }>({
+    type: "idle",
+    message: "",
+  })
+  const [submittingContact, setSubmittingContact] = useState(false)
   const { resolvedTheme } = useTheme()
 
   useEffect(() => {
@@ -132,6 +147,66 @@ export default function Home() {
     })
   }
 
+  const handleContactSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSubmittingContact(true)
+    setContactState({ type: "idle", message: "" })
+
+    try {
+      const response = await fetch("/api/contact", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(contactForm),
+      })
+
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        const errorCode = payload?.code as string | undefined
+
+        if (errorCode === "CONTACT_NOT_CONFIGURED") {
+          const subject = encodeURIComponent(`CVCC Support Request - ${contactForm.facility || "General"}`)
+          const body = encodeURIComponent(
+            `Name: ${contactForm.name}\nEmail: ${contactForm.email}\nFacility/District: ${contactForm.facility}\n\nIssue:\n${contactForm.message}`,
+          )
+
+          window.location.href = `mailto:support@cvcc.gov.gh?subject=${subject}&body=${body}`
+          setContactState({
+            type: "success",
+            message: "Your email app has been opened with a prefilled support message.",
+          })
+          return
+        }
+
+        throw new Error(payload?.error || "Unable to send your message right now.")
+      }
+
+      setContactState({
+        type: "success",
+        message: "Message sent successfully. The support team will respond shortly.",
+      })
+      setContactForm({ name: "", email: "", facility: "", message: "", website: "" })
+    } catch (error) {
+      const subject = encodeURIComponent(`CVCC Support Request - ${contactForm.facility || "General"}`)
+      const body = encodeURIComponent(
+        `Name: ${contactForm.name}\nEmail: ${contactForm.email}\nFacility/District: ${contactForm.facility}\n\nIssue:\n${contactForm.message}`,
+      )
+
+      setContactState({
+        type: "error",
+        message:
+          (error instanceof Error ? error.message : "Unable to send your message right now.") +
+          " If this continues, use your email app to contact support.",
+      })
+
+      window.location.href = `mailto:support@cvcc.gov.gh?subject=${subject}&body=${body}`
+    } finally {
+      setSubmittingContact(false)
+    }
+  }
+
   if (!mounted) {
     return null
   }
@@ -148,12 +223,8 @@ export default function Home() {
             <p className="hidden text-sm font-semibold md:block md:text-base">Child Vaccination Command Center</p>
           </div>
         }
-        mobileMenuUtility={<ThemeToggle />}
         cta={
           <div className="flex items-center gap-2">
-            <div className="hidden md:inline-flex">
-              <ThemeToggle />
-            </div>
             <Link href="/verify" className="hidden sm:inline-flex">
               <Button variant="outline" className="gap-2">
                 <QrCode className="h-4 w-4" />
@@ -169,6 +240,10 @@ export default function Home() {
           </div>
         }
       />
+
+      <div className="fixed right-4 top-24 z-[60] sm:right-5 sm:top-24">
+        <ThemeToggle />
+      </div>
 
       <div className="pt-20">
       <section className="relative overflow-hidden">
@@ -483,19 +558,113 @@ export default function Home() {
       <section id="contact" className="relative overflow-hidden py-20 sm:py-24">
         <div className="absolute inset-0 bg-linear-to-r from-primary/20 via-transparent to-primary/20" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_65%)] dark:bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.55),_transparent_65%)]" />
-        <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-          <div className="rounded-[2rem] border border-primary/20 bg-background/70 p-10 text-center shadow-2xl backdrop-blur-2xl">
-            <h2 className="text-3xl font-semibold text-foreground sm:text-4xl">Ready to run a calmer command center?</h2>
-            <p className="mt-4 text-base text-foreground/80">
-              Log in to orchestrate clinics, outreach teams and certificates from one trusted workspace.
-            </p>
+        <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="rounded-[2rem] border border-primary/20 bg-background/70 p-8 shadow-2xl backdrop-blur-2xl sm:p-10">
+            <div className="text-center">
+              <h2 className="text-3xl font-semibold text-foreground sm:text-4xl">Contact the CVCC team</h2>
+              <p className="mt-4 text-base text-foreground/80">
+                Need onboarding help, technical support, or district rollout guidance? Reach us directly through the channels below.
+              </p>
+            </div>
+
             <div className="mt-6 flex justify-center">
-              <Link href="/auth/login">
-                <Button size="lg" className="gap-2">
-                  Portal Login
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
+              <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-full border border-primary/25 bg-background/85 px-4 py-2 text-sm text-foreground/80">
+                <span className="inline-flex items-center gap-1.5 font-medium text-primary">
+                  <Phone className="h-4 w-4" />
+                  Urgent support:
+                </span>
+                <a href="tel:+233302000111" className="font-semibold text-foreground hover:text-primary">
+                  +233 30 200 0111
+                </a>
+                <span className="text-foreground/60">(working hours)</span>
+              </div>
+            </div>
+
+            <div className="mt-8 rounded-2xl border border-primary/20 bg-background/80 p-6">
+              <p className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
+                <MessageSquare className="h-4 w-4" />
+                Send us a message
+              </p>
+              <p className="mt-2 text-sm text-foreground/75">
+                Include your facility or district, your role, and a short description of the issue so our team can respond faster.
+              </p>
+              <form className="mt-5 space-y-4" onSubmit={handleContactSubmit}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="contact-name">Full name</Label>
+                    <Input
+                      id="contact-name"
+                      value={contactForm.name}
+                      onChange={(event) => setContactForm((current) => ({ ...current, name: event.target.value }))}
+                      placeholder="Jane Doe"
+                      required
+                      maxLength={80}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contact-email">Work email</Label>
+                    <Input
+                      id="contact-email"
+                      type="email"
+                      value={contactForm.email}
+                      onChange={(event) => setContactForm((current) => ({ ...current, email: event.target.value }))}
+                      placeholder="jane@districthealth.gov.gh"
+                      required
+                      maxLength={160}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="contact-facility">Facility or district</Label>
+                  <Input
+                    id="contact-facility"
+                    value={contactForm.facility}
+                    onChange={(event) => setContactForm((current) => ({ ...current, facility: event.target.value }))}
+                    placeholder="Tamale Municipal Health Directorate"
+                    required
+                    maxLength={120}
+                  />
+                </div>
+
+                <div className="hidden" aria-hidden="true">
+                  <Label htmlFor="contact-website">Website</Label>
+                  <Input
+                    id="contact-website"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={contactForm.website}
+                    onChange={(event) => setContactForm((current) => ({ ...current, website: event.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="contact-message">Issue or request</Label>
+                  <Textarea
+                    id="contact-message"
+                    value={contactForm.message}
+                    onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))}
+                    placeholder="Describe the issue, affected module, and urgency."
+                    required
+                    minLength={10}
+                    maxLength={2000}
+                    className="min-h-[130px]"
+                  />
+                </div>
+
+                {contactState.type !== "idle" ? (
+                  <p className={contactState.type === "success" ? "text-sm text-green-600" : "text-sm text-destructive"}>
+                    {contactState.message}
+                  </p>
+                ) : null}
+
+                <div className="flex justify-center sm:justify-start">
+                  <Button type="submit" size="lg" className="gap-2 w-full sm:w-auto" disabled={submittingContact}>
+                    {submittingContact ? "Sending..." : "Email Support Team"}
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

@@ -66,6 +66,8 @@ export default function RegisterMotherPage() {
   const [errorModalMessage, setErrorModalMessage] = useState("")
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [successModalMessage, setSuccessModalMessage] = useState("")
+  const [registeredMotherId, setRegisteredMotherId] = useState<string | null>(null)
+  const [registeredMotherName, setRegisteredMotherName] = useState<string | null>(null)
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -122,6 +124,10 @@ export default function RegisterMotherPage() {
         notes: formData.notes || undefined,
       })
 
+      // Store mother details for continuing to child registration
+      setRegisteredMotherId(result.id || null)
+      setRegisteredMotherName(formData.fullName)
+
       // Show success message with email and SMS status
       if (result.emailSent && result.smsSent) {
         setSystemMessage({ text: result.message, type: 'success' })
@@ -148,7 +154,7 @@ export default function RegisterMotherPage() {
         setSuccessModalMessage(result.message)
         setShowSuccessModal(true)
       }
-      
+
       setFormData(initialState)
     } catch (error) {
       console.error("Registration error:", error)
@@ -463,9 +469,24 @@ export default function RegisterMotherPage() {
           </DialogHeader>
           <div className="space-y-4 text-center">
             <p className="text-sm text-muted-foreground">{successModalMessage}</p>
-            <Button className="w-full" onClick={() => setShowSuccessModal(false)}>
-              Great, continue
-            </Button>
+            <div className="space-y-2">
+              <Button
+                className="w-full gap-2"
+                asChild
+              >
+                <Link href={registeredMotherId ? `/facility/register-child?motherId=${registeredMotherId}` : '/facility/register-child'}>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Continue to Register Child
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowSuccessModal(false)}
+              >
+                Done
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

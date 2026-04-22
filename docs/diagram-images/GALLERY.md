@@ -53,4 +53,3 @@ Source: docs/CHAPTER-4-DIAGRAMS.md
 ## system architecture diagram
 
 ![system architecture diagram](docs/diagram-images/svg/13-system-architecture-diagram.svg)
-
