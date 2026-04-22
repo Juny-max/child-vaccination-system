@@ -94,6 +94,11 @@ const topNavItems = [
   { label: "Contact", href: "#contact" },
 ]
 
+const topNavMobileItems = [
+  { label: "Verify Certificate", href: "/verify" },
+  ...topNavItems,
+]
+
 const withAuthRedirect = (path: string) => `/auth/login?redirect=${encodeURIComponent(path)}`
 
 export default function Home() {
@@ -142,6 +147,7 @@ export default function Home() {
     <div className="min-h-screen bg-background text-foreground">
       <MorphNavbar
         items={topNavItems}
+        mobileItems={topNavMobileItems}
         onCollapsedChange={setNavCollapsed}
         brand={
           <div className="flex items-center gap-3">

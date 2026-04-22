@@ -14,6 +14,7 @@ type MorphNavbarItem = {
 type MorphNavbarProps = {
   brand?: React.ReactNode
   items?: MorphNavbarItem[]
+  mobileItems?: MorphNavbarItem[]
   cta?: React.ReactNode
   mobileMenuUtility?: React.ReactNode
   className?: string
@@ -34,6 +35,7 @@ const TRANSITION = {
 export function MorphNavbar({
   brand = <span className="text-sm font-semibold">Child Vaccination System</span>,
   items = DEFAULT_ITEMS,
+  mobileItems,
   cta,
   mobileMenuUtility,
   className,
@@ -49,6 +51,8 @@ export function MorphNavbar({
     ...TRANSITION,
     duration: isMobile ? 0.28 : TRANSITION.duration,
   }
+
+  const resolvedMobileItems = mobileItems ?? items
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -191,7 +195,7 @@ export function MorphNavbar({
               {mobileMenuUtility ? <div className="shrink-0 [&>*]:shrink-0">{mobileMenuUtility}</div> : null}
 
               <ul className="flex w-full flex-col items-start gap-4">
-              {items.map((item) => (
+              {resolvedMobileItems.map((item) => (
                 <li key={item.label}>
                   <Link
                     href={item.href}
