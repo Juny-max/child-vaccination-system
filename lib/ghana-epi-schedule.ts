@@ -2,7 +2,7 @@
 // Based on Ghana Health Service guidelines
 
 export type VaccineRoute = "intramuscular" | "intradermal" | "subcutaneous" | "oral"
-export type InjectionSite = "right-arm" | "left-arm" | "right-thigh" | "left-thigh" | "oral"
+export type InjectionSite = "right-arm-upper" | "left-arm-upper" | "right-thigh" | "left-thigh" | "oral"
 
 export interface VaccineDetails {
   name: string
@@ -19,7 +19,7 @@ export const GHANA_EPI_VACCINES: Record<string, VaccineDetails> = {
     name: "BCG (Bacille Calmette-Guérin)",
     abbreviation: "BCG",
     route: "intradermal",
-    site: "right-arm",
+    site: "right-arm-upper",
     ageWeeks: [0], // Birth
     doses: 1,
     description: "Protection against tuberculosis",
@@ -73,7 +73,7 @@ export const GHANA_EPI_VACCINES: Record<string, VaccineDetails> = {
     name: "Measles-Rubella",
     abbreviation: "MR",
     route: "subcutaneous",
-    site: ["left-arm", "right-arm"],
+    site: ["left-arm-upper", "right-arm-upper"],
     ageWeeks: [36, 72], // 9 months, 18 months
     doses: 2,
     description: "Protection against measles and rubella",
@@ -82,7 +82,7 @@ export const GHANA_EPI_VACCINES: Record<string, VaccineDetails> = {
     name: "Yellow Fever Vaccine",
     abbreviation: "YF",
     route: "intramuscular",
-    site: "left-arm",
+    site: "left-arm-upper",
     ageWeeks: [36], // 9 months
     doses: 1,
     description: "Protection against yellow fever",
@@ -91,7 +91,7 @@ export const GHANA_EPI_VACCINES: Record<string, VaccineDetails> = {
     name: "Meningitis A Vaccine",
     abbreviation: "MenA",
     route: "intramuscular",
-    site: "right-arm",
+    site: "right-arm-upper",
     ageWeeks: [72], // 18 months
     doses: 1,
     description: "Protection against meningitis A",
@@ -150,8 +150,8 @@ export function getVaccineSite(vaccineName: string, doseNumber: number = 1): Inj
  */
 export function getSiteDescription(site: InjectionSite): string {
   const descriptions: Record<InjectionSite, string> = {
-    "right-arm": "Right upper arm",
-    "left-arm": "Left upper arm",
+    "right-arm-upper": "Right upper arm",
+    "left-arm-upper": "Left upper arm",
     "right-thigh": "Right upper thigh",
     "left-thigh": "Left upper thigh",
     "oral": "By mouth (oral)",

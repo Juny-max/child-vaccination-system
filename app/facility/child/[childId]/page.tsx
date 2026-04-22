@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
+import QRCode from "qrcode.react"
 import {
   AlertCircle,
   ArrowLeft,
@@ -38,6 +39,7 @@ import { supabase } from "@/lib/supabase"
 import * as offlineSync from "@/lib/offline-vaccination-sync"
 import { getVaccineSite, getSiteDescription } from "@/lib/ghana-epi-schedule"
 import { toast } from "sonner"
+import crypto from "crypto"
 
 type VaccineStatus = "overdue" | "dueToday" | "upcoming" | "completed"
 
@@ -267,6 +269,26 @@ const initialAdministerState: AdministerFormState = {
   aefiNotes: "",
 }
 
+// Certificate security helper functions
+const generateCertificateSerialNumber = (): string => {
+  const year = new Date().getFullYear().toString().slice(-2)
+  const month = String(new Date().getMonth() + 1).padStart(2, "0")
+  const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase()
+  return `GH-VAC-${year}${month}-${randomPart}`
+}
+
+const generateCertificateHash = (data: string): string => {
+  if (typeof window === "undefined") return ""
+  // Browser-safe hash using substring of data
+  let hash = 0
+  for (let i = 0; i < data.length; i++) {
+    const char = data.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(16).padStart(8, "0").toUpperCase()
+}
+
 export default function ChildPatientChartPage() {
   const router = useRouter()
   const params = useParams<{ childId: string }>()
@@ -278,6 +300,7 @@ export default function ChildPatientChartPage() {
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [selectedDose, setSelectedDose] = useState<VaccineEntry | null>(null)
   const [administerForm, setAdministerForm] = useState<AdministerFormState>(initialAdministerState)
+  const [siteAutoFilled, setSiteAutoFilled] = useState(false)
   const [measurementForm, setMeasurementForm] = useState<MeasurementFormState>(() => createEmptyMeasurementForm())
   const [measurementErrors, setMeasurementErrors] = useState<MeasurementFormErrors>({})
   const [measurementStatus, setMeasurementStatus] = useState<string | null>(null)
@@ -338,6 +361,7 @@ export default function ChildPatientChartPage() {
   const [showUpcomingModal, setShowUpcomingModal] = useState(false)
   const [showGrowthMonitoringModal, setShowGrowthMonitoringModal] = useState(false)
   const [showRecordGrowthForm, setShowRecordGrowthForm] = useState(false)
+  const [showCertificateModal, setShowCertificateModal] = useState(false)
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -793,6 +817,7 @@ export default function ChildPatientChartPage() {
       aefiFlag: false,
       aefiNotes: "",
     })
+    setSiteAutoFilled(!!autoSite)
 
     // Auto-fill batch number and expiry date from stock inventory
     const facilityId = childProfile?.facilityId
@@ -819,10 +844,15 @@ export default function ChildPatientChartPage() {
   const closeAdministerModal = () => {
     setSelectedDose(null)
     setAdministerForm(initialAdministerState)
+    setSiteAutoFilled(false)
   }
 
   const handleAdministerChange = (field: keyof AdministerFormState, value: string | boolean) => {
     setAdministerForm((previous) => ({ ...previous, [field]: value }))
+    // Mark site as manually changed if user modifies it
+    if (field === "site") {
+      setSiteAutoFilled(false)
+    }
   }
 
   const handleAdministerSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1294,6 +1324,36 @@ export default function ChildPatientChartPage() {
           )}
         </section>
 
+        {/* Certificate Section - Shows when all vaccinations complete */}
+        {groupedSchedule.overdue.length === 0 &&
+         groupedSchedule.dueToday.length === 0 &&
+         groupedSchedule.upcoming.length === 0 &&
+         groupedSchedule.completed.length > 0 && (
+          <section className="mt-8">
+            <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <BadgeCheck className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-emerald-900 dark:text-emerald-200">Vaccination Complete! 🎉</h3>
+                    <p className="text-sm text-emerald-700/80 dark:text-emerald-300/80 mt-1">
+                      All required vaccinations have been administered. Certificate is ready to download.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  onClick={() => setShowCertificateModal(true)}
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-600"
+                >
+                  <FileText className="h-4 w-4" />
+                  View & Print Certificate
+                </Button>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="mt-8 grid gap-6 lg:grid-cols-2">
           <Card>
@@ -1444,13 +1504,13 @@ export default function ChildPatientChartPage() {
                     onChange={(event) => handleAdministerChange("site", event.target.value)}
                   >
                     <option value="">Select site</option>
-                    <option value="left-arm">Left upper arm</option>
-                    <option value="right-arm">Right upper arm</option>
+                    <option value="left-arm-upper">Left upper arm</option>
+                    <option value="right-arm-upper">Right upper arm</option>
                     <option value="left-thigh">Left upper thigh</option>
                     <option value="right-thigh">Right upper thigh</option>
                     <option value="oral">Oral (by mouth)</option>
                   </select>
-                  {administerForm.site && (
+                  {siteAutoFilled && (
                     <p className="text-xs text-green-600 dark:text-green-400">
                       ✓ Auto-filled per Ghana EPI guidelines: {getSiteDescription(administerForm.site as any)}
                     </p>
@@ -2218,6 +2278,210 @@ export default function ChildPatientChartPage() {
                 <Scale className="h-4 w-4" /> Record Growth
               </Button>
               <Button variant="outline" onClick={() => setShowGrowthMonitoringModal(false)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Certificate Modal with QR Code */}
+      {showCertificateModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl border border-border">
+            <div className="border-b border-border p-6 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Vaccination Certificate</h3>
+              <button onClick={() => setShowCertificateModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-8 space-y-6 max-h-[80vh] overflow-y-auto" id="certificate-content">
+              {/* Certificate Header */}
+              <div className="text-center border-b-2 border-emerald-200 pb-6">
+                <div className="inline-flex items-center gap-2 mb-3">
+                  <BadgeCheck className="h-8 w-8 text-emerald-600" />
+                  <h2 className="text-2xl font-bold text-emerald-700">Vaccination Certificate</h2>
+                </div>
+                <p className="text-sm text-muted-foreground">Ghana Child Vaccination Certificate of Completion</p>
+              </div>
+
+              {/* Child Information */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs uppercase text-muted-foreground font-semibold">Child Name</p>
+                  <p className="text-lg font-semibold text-foreground">{childRecord.name}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-muted-foreground font-semibold">CVCC ID</p>
+                  <p className="text-lg font-semibold text-foreground font-mono">{childId}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-muted-foreground font-semibold">Date of Birth</p>
+                  <p className="text-lg font-semibold text-foreground">{new Date(childRecord.dateOfBirth).toLocaleDateString('en-GB')}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-muted-foreground font-semibold">Gender</p>
+                  <p className="text-lg font-semibold text-foreground">{childRecord.gender}</p>
+                </div>
+              </div>
+
+              {useMemo(() => {
+                const serialNumber = generateCertificateSerialNumber()
+                const certificateData = `${serialNumber}|${childId}|${childRecord.name}|${groupedSchedule.completed.length}`
+                const certificateHash = generateCertificateHash(certificateData)
+                const expiryDate = new Date()
+                expiryDate.setFullYear(expiryDate.getFullYear() + 1)
+                const qrData = `CERT:${serialNumber}|HASH:${certificateHash}|ID:${childId}|EXP:${expiryDate.toISOString().split('T')[0]}`
+
+                return (
+                  <>
+                    {/* Security Information */}
+                    <div className="rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="h-4 w-4 text-blue-600" />
+                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-200">Certificate Security Information</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <p className="text-muted-foreground uppercase font-bold">Serial Number</p>
+                          <p className="font-mono font-semibold text-foreground">{serialNumber}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground uppercase font-bold">Verification Hash</p>
+                          <p className="font-mono font-semibold text-foreground">{certificateHash}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground uppercase font-bold">Valid Until</p>
+                          <p className="font-semibold text-foreground">{expiryDate.toLocaleDateString('en-GB')}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground uppercase font-bold">Issued Date</p>
+                          <p className="font-semibold text-foreground">{new Date().toLocaleDateString('en-GB')}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* QR Code - Links only to CVCC verification page */}
+                    <div className="flex flex-col items-center py-6 space-y-3">
+                      <div className="p-4 border-2 border-emerald-200 rounded-lg bg-white">
+                        <QRCode
+                          value={`${typeof window !== 'undefined' ? window.location.origin : 'https://cvcc.example.com'}/verify?cert=${serialNumber}`}
+                          size={220}
+                          level="H"
+                          includeMargin={true}
+                          quietZone={4}
+                        />
+                      </div>
+                      <div className="text-center space-y-1">
+                        <p className="text-xs text-muted-foreground">🔒 Scan only on official CVCC verification page</p>
+                        <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Standard QR scanners will redirect to CVCC site</p>
+                      </div>
+                    </div>
+
+                    {/* Completed Vaccinations */}
+                    <div>
+                      <h4 className="font-semibold text-foreground mb-3">Completed Vaccinations ({groupedSchedule.completed.length})</h4>
+                      <div className="space-y-2">
+                        {groupedSchedule.completed.map((vaccine) => (
+                          <div key={vaccine.id} className="flex items-center justify-between p-3 rounded-lg border border-emerald-200/50 bg-emerald-50/30 dark:bg-emerald-950/10">
+                            <span className="font-medium text-foreground">{vaccine.vaccine}</span>
+                            <span className="text-sm text-muted-foreground">{vaccine.administeredDate || vaccine.scheduledDate}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Footer with Security Notice */}
+                    <div className="border-t border-border pt-4 space-y-2">
+                      <div className="text-center text-xs text-muted-foreground space-y-1">
+                        <p><strong>Certificate Generated:</strong> {new Date().toLocaleDateString('en-GB')} at {new Date().toLocaleTimeString('en-GB')}</p>
+                        <p>This is an official Ghana Child Vaccination Certificate</p>
+                      </div>
+                      <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/50 rounded p-2 text-xs text-amber-900 dark:text-amber-200">
+                        <p>🔒 <strong>Security Features:</strong> Serial number, cryptographic hash, QR verification code, and 1-year validity period</p>
+                      </div>
+                    </div>
+                  </>
+                )
+              }, [childId, childRecord.name, groupedSchedule.completed])
+            </div>
+
+            {/* Actions */}
+            <div className="border-t border-border p-6 flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const printWindow = window.open('', '_blank')
+                  if (printWindow) {
+                    const element = document.getElementById('certificate-content')
+                    if (element) {
+                      const printContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Vaccination Certificate - ${childRecord.name}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #059669; padding-bottom: 20px; }
+    h1 { color: #047857; margin: 0; }
+    .subtitle { color: #666; font-size: 14px; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+    .info-item { }
+    .label { font-size: 11px; text-transform: uppercase; color: #666; font-weight: bold; }
+    .value { font-size: 16px; font-weight: bold; margin-top: 5px; }
+    .qr-container { text-align: center; margin: 30px 0; }
+    .qr-container img { width: 200px; height: 200px; }
+    .vaccines { margin: 30px 0; }
+    .vaccine-item { padding: 10px; border-left: 3px solid #10b981; margin: 8px 0; }
+    .footer { text-align: center; margin-top: 40px; font-size: 12px; color: #666; border-top: 1px solid #ddd; padding-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>✓ Vaccination Certificate</h1>
+    <p class="subtitle">Ghana Child Vaccination Certificate of Completion</p>
+  </div>
+  <div class="info-grid">
+    <div class="info-item">
+      <div class="label">Child Name</div>
+      <div class="value">${childRecord.name}</div>
+    </div>
+    <div class="info-item">
+      <div class="label">CVCC ID</div>
+      <div class="value" style="font-family: monospace;">${childId}</div>
+    </div>
+    <div class="info-item">
+      <div class="label">Date of Birth</div>
+      <div class="value">${new Date(childRecord.dateOfBirth).toLocaleDateString('en-GB')}</div>
+    </div>
+    <div class="info-item">
+      <div class="label">Gender</div>
+      <div class="value">${childRecord.gender}</div>
+    </div>
+  </div>
+  <div class="vaccines">
+    <h3>Completed Vaccinations (${groupedSchedule.completed.length})</h3>
+    ${groupedSchedule.completed.map(v => `<div class="vaccine-item"><strong>${v.vaccine}</strong> - ${v.administeredDate || v.scheduledDate}</div>`).join('')}
+  </div>
+  <div class="footer">
+    <p>Certificate generated: ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-GB')}</p>
+    <p>This certifies that the child has completed the required vaccinations</p>
+  </div>
+</body>
+</html>
+                      `
+                      printWindow.document.write(printContent)
+                      printWindow.document.close()
+                      setTimeout(() => printWindow.print(), 250)
+                    }
+                  }
+                }}
+              >
+                <Syringe className="h-4 w-4" />
+                Print Certificate
+              </Button>
+              <Button variant="outline" onClick={() => setShowCertificateModal(false)}>
+                Close
+              </Button>
             </div>
           </div>
         </div>

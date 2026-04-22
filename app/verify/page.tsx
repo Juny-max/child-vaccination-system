@@ -58,7 +58,7 @@ export default function PublicVerifyPage() {
   const [verificationToken, setVerificationToken] = useState<string>("")
   const [tokenError, setTokenError] = useState<string>("")
 
-  // Generate verification token on component mount
+  // Generate verification token and check for URL parameters on component mount
   useEffect(() => {
     const generateToken = async () => {
       try {
@@ -67,6 +67,17 @@ export default function PublicVerifyPage() {
         const data = await res.json()
         setVerificationToken(data.token)
         setTokenError("")
+
+        // Check if certificate ID is in URL query params
+        const params = new URLSearchParams(window.location.search)
+        const certId = params.get('cert')
+        if (certId) {
+          setCertificateId(certId.trim().toUpperCase())
+          // Auto-verify after a short delay to ensure token is set
+          setTimeout(() => {
+            runVerify(certId.trim())
+          }, 100)
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to initialize verification'
         setTokenError(message)
