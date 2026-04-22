@@ -680,6 +680,16 @@ export default function ChildPatientChartPage() {
     }
   }, [schedule])
 
+  const certificateContent = useMemo(() => {
+    const serialNumber = generateCertificateSerialNumber()
+    const certificateData = `${serialNumber}|${childId}|${childRecord.name}|${groupedSchedule.completed.length}`
+    const certificateHash = generateCertificateHash(certificateData)
+    const expiryDate = new Date()
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1)
+
+    return { serialNumber, certificateHash, expiryDate }
+  }, [childId, childRecord.name, groupedSchedule.completed])
+
   const latestMeasurement = measurements[0] ?? null
 
   const handleMeasurementChange = <Field extends keyof MeasurementFormState>(
@@ -2324,85 +2334,74 @@ export default function ChildPatientChartPage() {
                 </div>
               </div>
 
-              {useMemo(() => {
-                const serialNumber = generateCertificateSerialNumber()
-                const certificateData = `${serialNumber}|${childId}|${childRecord.name}|${groupedSchedule.completed.length}`
-                const certificateHash = generateCertificateHash(certificateData)
-                const expiryDate = new Date()
-                expiryDate.setFullYear(expiryDate.getFullYear() + 1)
-                const qrData = `CERT:${serialNumber}|HASH:${certificateHash}|ID:${childId}|EXP:${expiryDate.toISOString().split('T')[0]}`
-
-                return (
-                  <>
-                    {/* Security Information */}
-                    <div className="rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 p-4 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <ShieldAlert className="h-4 w-4 text-blue-600" />
-                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-200">Certificate Security Information</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 text-xs">
-                        <div>
-                          <p className="text-muted-foreground uppercase font-bold">Serial Number</p>
-                          <p className="font-mono font-semibold text-foreground">{serialNumber}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground uppercase font-bold">Verification Hash</p>
-                          <p className="font-mono font-semibold text-foreground">{certificateHash}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground uppercase font-bold">Valid Until</p>
-                          <p className="font-semibold text-foreground">{expiryDate.toLocaleDateString('en-GB')}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground uppercase font-bold">Issued Date</p>
-                          <p className="font-semibold text-foreground">{new Date().toLocaleDateString('en-GB')}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* QR Code - Links only to CVCC verification page */}
-                    <div className="flex flex-col items-center py-6 space-y-3">
-                      <div className="p-4 border-2 border-emerald-200 rounded-lg bg-white">
-                        <QRCodeCanvas
-                          value={`${typeof window !== 'undefined' ? window.location.origin : 'https://cvcc.example.com'}/verify?cert=${serialNumber}`}
-                          size={220}
-                          level="H"
-                          includeMargin={true}
-                          quietZone={4}
-                        />
-                      </div>
-                      <div className="text-center space-y-1">
-                        <p className="text-xs text-muted-foreground">🔒 Scan only on official CVCC verification page</p>
-                        <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Standard QR scanners will redirect to CVCC site</p>
-                      </div>
-                    </div>
-
-                    {/* Completed Vaccinations */}
+              <>
+                {/* Security Information */}
+                <div className="rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-blue-600" />
+                    <p className="text-xs font-semibold text-blue-900 dark:text-blue-200">Certificate Security Information</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <h4 className="font-semibold text-foreground mb-3">Completed Vaccinations ({groupedSchedule.completed.length})</h4>
-                      <div className="space-y-2">
-                        {groupedSchedule.completed.map((vaccine) => (
-                          <div key={vaccine.id} className="flex items-center justify-between p-3 rounded-lg border border-emerald-200/50 bg-emerald-50/30 dark:bg-emerald-950/10">
-                            <span className="font-medium text-foreground">{vaccine.vaccine}</span>
-                            <span className="text-sm text-muted-foreground">{vaccine.administeredDate || vaccine.scheduledDate}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <p className="text-muted-foreground uppercase font-bold">Serial Number</p>
+                      <p className="font-mono font-semibold text-foreground">{certificateContent.serialNumber}</p>
                     </div>
+                    <div>
+                      <p className="text-muted-foreground uppercase font-bold">Verification Hash</p>
+                      <p className="font-mono font-semibold text-foreground">{certificateContent.certificateHash}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground uppercase font-bold">Valid Until</p>
+                      <p className="font-semibold text-foreground">{certificateContent.expiryDate.toLocaleDateString('en-GB')}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground uppercase font-bold">Issued Date</p>
+                      <p className="font-semibold text-foreground">{new Date().toLocaleDateString('en-GB')}</p>
+                    </div>
+                  </div>
+                </div>
 
-                    {/* Footer with Security Notice */}
-                    <div className="border-t border-border pt-4 space-y-2">
-                      <div className="text-center text-xs text-muted-foreground space-y-1">
-                        <p><strong>Certificate Generated:</strong> {new Date().toLocaleDateString('en-GB')} at {new Date().toLocaleTimeString('en-GB')}</p>
-                        <p>This is an official Ghana Child Vaccination Certificate</p>
+                {/* QR Code - Links only to CVCC verification page */}
+                <div className="flex flex-col items-center py-6 space-y-3">
+                  <div className="p-4 border-2 border-emerald-200 rounded-lg bg-white">
+                    <QRCodeCanvas
+                      value={`${typeof window !== 'undefined' ? window.location.origin : 'https://cvcc.example.com'}/verify?cert=${certificateContent.serialNumber}`}
+                      size={220}
+                      level="H"
+                      includeMargin={true}
+                      quietZone={4}
+                    />
+                  </div>
+                  <div className="text-center space-y-1">
+                    <p className="text-xs text-muted-foreground">🔒 Scan only on official CVCC verification page</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Standard QR scanners will redirect to CVCC site</p>
+                  </div>
+                </div>
+
+                {/* Completed Vaccinations */}
+                <div>
+                  <h4 className="font-semibold text-foreground mb-3">Completed Vaccinations ({groupedSchedule.completed.length})</h4>
+                  <div className="space-y-2">
+                    {groupedSchedule.completed.map((vaccine) => (
+                      <div key={vaccine.id} className="flex items-center justify-between p-3 rounded-lg border border-emerald-200/50 bg-emerald-50/30 dark:bg-emerald-950/10">
+                        <span className="font-medium text-foreground">{vaccine.vaccine}</span>
+                        <span className="text-sm text-muted-foreground">{vaccine.administeredDate || vaccine.scheduledDate}</span>
                       </div>
-                      <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/50 rounded p-2 text-xs text-amber-900 dark:text-amber-200">
-                        <p>🔒 <strong>Security Features:</strong> Serial number, cryptographic hash, QR verification code, and 1-year validity period</p>
-                      </div>
-                    </div>
-                  </>
-                )
-              }, [childId, childRecord.name, groupedSchedule.completed])}
+                    ))}
+                  </div>
+                </div>
+
+                {/* Footer with Security Notice */}
+                <div className="border-t border-border pt-4 space-y-2">
+                  <div className="text-center text-xs text-muted-foreground space-y-1">
+                    <p><strong>Certificate Generated:</strong> {new Date().toLocaleDateString('en-GB')} at {new Date().toLocaleTimeString('en-GB')}</p>
+                    <p>This is an official Ghana Child Vaccination Certificate</p>
+                  </div>
+                  <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/50 rounded p-2 text-xs text-amber-900 dark:text-amber-200">
+                    <p>🔒 <strong>Security Features:</strong> Serial number, cryptographic hash, QR verification code, and 1-year validity period</p>
+                  </div>
+                </div>
+              </>
             </div>
 
             {/* Actions */}
