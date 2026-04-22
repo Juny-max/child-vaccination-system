@@ -155,6 +155,12 @@ export default function Home() {
             <div className="hidden md:inline-flex">
               <ThemeToggle />
             </div>
+            <Link href="/verify" className="hidden sm:inline-flex">
+              <Button variant="outline" className="gap-2">
+                <QrCode className="h-4 w-4" />
+                Verify Certificate
+              </Button>
+            </Link>
             <Link href="/auth/login">
               <Button className="gap-2">
                 Portal Login
