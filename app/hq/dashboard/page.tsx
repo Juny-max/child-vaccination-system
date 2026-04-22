@@ -366,8 +366,6 @@ const mapUserRoleToApiRole = (role: string): string => {
     "Branch Manager": "branch-manager",
     "Facility Nurse": "facility-nurse",
     "Community Health Worker": "chw",
-    "Data Officer": "data-officer",
-    "Public Health Authority": "pha",
     "Parent": "parent",
   }
 
@@ -3323,9 +3321,7 @@ export default function HqDashboardPage() {
                 {lockRoleSelection ? <option>HQ Admin</option> : null}
                 <option>Branch Manager</option>
                 <option>Facility Nurse</option>
-                <option>Data Officer</option>
                 <option>Community Health Worker</option>
-                <option>Public Health Authority</option>
                 <option>Parent</option>
               </select>
               {lockRoleSelection ? (

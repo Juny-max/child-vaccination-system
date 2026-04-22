@@ -17,8 +17,6 @@ const ROLE_ROUTES: Record<string, string> = {
   'facility-nurse': '/facility/dashboard',
   facility_nurse: '/facility/dashboard',
   chw: '/chw/dashboard',
-  'data-officer': '/dashboard',
-  pha: '/pha/dashboard',
 };
 
 export default function ChangePasswordPage() {

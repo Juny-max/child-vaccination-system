@@ -539,8 +539,8 @@ export default function Home() {
                 <Link href={withAuthRedirect("/dashboard/reports")} prefetch={false} className="transition hover:text-foreground">
                   Impact Reports
                 </Link>
-                <Link href={withAuthRedirect("/pha/dashboard")} prefetch={false} className="transition hover:text-foreground">
-                  PHA Console
+                <Link href="/verify" className="transition hover:text-foreground">
+                  Verify Certificate
                 </Link>
                 <Link href={withAuthRedirect("/parent/dashboard")} prefetch={false} className="transition hover:text-foreground">
                   Parent Portal

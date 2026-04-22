@@ -5,8 +5,6 @@ export const hqUserRoles = [
   'branch-manager',
   'facility-nurse',
   'chw',
-  'data-officer',
-  'pha',
   'parent',
 ] as const;
 

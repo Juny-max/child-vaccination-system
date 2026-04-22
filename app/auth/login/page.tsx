@@ -18,7 +18,7 @@ import loadingAnimation from "@/public/animations/loading.json"
 import { login } from "@/lib/api/auth"
 import { verifyEmailChangeToken as verifyEmailChangeTokenRequest } from "@/lib/api/parent"
 
-type UserRole = "parent" | "hq-admin" | "branch-manager" | "facility-nurse" | "chw" | "data-officer" | "pha"
+type UserRole = "parent" | "hq-admin" | "branch-manager" | "facility-nurse" | "chw"
 
 const ROLE_ROUTES: Record<UserRole, string> = {
   parent: "/parent/dashboard",
@@ -26,8 +26,6 @@ const ROLE_ROUTES: Record<UserRole, string> = {
   "branch-manager": "/branch/dashboard",
   "facility-nurse": "/facility/dashboard",
   chw: "/chw/dashboard",
-  "data-officer": "/dashboard",
-  pha: "/pha/dashboard",
 }
 
 export default function UnifiedLoginPage() {

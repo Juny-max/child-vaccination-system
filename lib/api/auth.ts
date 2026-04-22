@@ -7,7 +7,7 @@ import { apiRequest } from './config';
 export interface LoginRequest {
   email: string;
   password: string;
-  userType: 'parent' | 'hq-admin' | 'branch-manager' | 'facility-nurse' | 'chw' | 'data-officer' | 'pha';
+  userType: 'parent' | 'hq-admin' | 'branch-manager' | 'facility-nurse' | 'chw';
 }
 
 export interface RegisterRequest {

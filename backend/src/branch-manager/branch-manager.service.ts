@@ -2659,7 +2659,7 @@ export class BranchManagerService {
     const { data, error } = await db
       .from('users')
       .select('id, full_name, email, role, status, branch_id')
-      .in('role', ['hq-admin', 'branch-manager', 'facility-nurse', 'chw', 'data-officer', 'pha', 'parent'])
+      .in('role', ['hq-admin', 'branch-manager', 'facility-nurse', 'chw', 'parent'])
       .order('full_name', { ascending: true });
 
     if (error) {
@@ -2977,15 +2977,11 @@ export class BranchManagerService {
       'Branch Manager': 'branch-manager',
       'Facility Nurse': 'facility-nurse',
       'Community Health Worker': 'chw',
-      'Data Officer': 'data-officer',
-      'Public Health Authority': 'pha',
       Parent: 'parent',
       'hq-admin': 'hq-admin',
       'branch-manager': 'branch-manager',
       'facility-nurse': 'facility-nurse',
       chw: 'chw',
-      'data-officer': 'data-officer',
-      pha: 'pha',
       parent: 'parent',
     };
 
@@ -2998,8 +2994,6 @@ export class BranchManagerService {
       'branch-manager': 'Branch Manager',
       'facility-nurse': 'Facility Nurse',
       chw: 'Community Health Worker',
-      'data-officer': 'Data Officer',
-      pha: 'Public Health Authority',
       parent: 'Parent',
     };
 
