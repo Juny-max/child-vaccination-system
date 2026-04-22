@@ -393,13 +393,27 @@ export class FacilityService {
       throw new NotFoundException(`Vaccine ${dto.vaccineName} not found`);
     }
 
+    // Calculate correct dose number based on previous administrations
+    const { data: previousDoses, error: doseError } = await this.db.supabase
+      .from('vaccination_events')
+      .select('dose_number')
+      .eq('child_id', childId)
+      .eq('vaccine_id', vaccine.id)
+      .eq('status', 'completed')
+      .order('dose_number', { ascending: false })
+      .limit(1);
+
+    const nextDoseNumber = (previousDoses && previousDoses.length > 0)
+      ? (previousDoses[0].dose_number || 0) + 1
+      : 1;
+
     // Create vaccination event
     const { data: event, error } = await this.db.supabase
       .from('vaccination_events')
       .insert({
         child_id: childId,
         vaccine_id: vaccine.id,
-        dose_number: 1, // You might want to calculate this based on history
+        dose_number: nextDoseNumber,
         administered_date: dto.administeredDate,
         administered_by_user_id: userId,
         facility_id: facilityId || null,
