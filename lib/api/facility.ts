@@ -554,3 +554,36 @@ export async function getBranchDetails(branchId: string): Promise<BranchDetails>
     method: 'GET',
   });
 }
+
+// ============================================
+// Certificate Management
+// ============================================
+
+export interface CreateCertificateRequest {
+  childId: string;
+  certificateSerialNumber: string;
+  vaccinationsCompleted: number;
+}
+
+export interface Certificate {
+  id: string;
+  childId: string;
+  certificateId: string;
+  issuedDate: string;
+  completionStatus: string;
+  vaccinesCompleted: string[];
+  issuedBy: string;
+  region: string;
+}
+
+/**
+ * Create/issue a certificate for a child who has completed vaccinations
+ */
+export async function createCertificate(
+  data: CreateCertificateRequest
+): Promise<Certificate> {
+  return apiRequest<Certificate>('/facility/certificates', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}

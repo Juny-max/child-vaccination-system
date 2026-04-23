@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { QRCodeCanvas } from "qrcode.react"
+import { jsPDF } from "jspdf"
 import {
   AlertCircle,
   ArrowLeft,
@@ -362,6 +363,8 @@ export default function ChildPatientChartPage() {
   const [showGrowthMonitoringModal, setShowGrowthMonitoringModal] = useState(false)
   const [showRecordGrowthForm, setShowRecordGrowthForm] = useState(false)
   const [showCertificateModal, setShowCertificateModal] = useState(false)
+  const [certificateCreated, setCertificateCreated] = useState(false)
+  const [isCreatingCertificate, setIsCreatingCertificate] = useState(false)
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -692,7 +695,180 @@ export default function ChildPatientChartPage() {
     return { serialNumber, certificateHash, expiryDate }
   }, [childId, childRecord.name, groupedSchedule.completed])
 
+  // Create certificate when modal is shown and vaccinations are complete
+  useEffect(() => {
+    const createCertificateIfNeeded = async () => {
+      if (!showCertificateModal || certificateCreated || isCreatingCertificate || !childId || !childProfile) return
+
+      // Only create if all vaccinations are complete
+      if (groupedSchedule.overdue.length > 0 ||
+          groupedSchedule.dueToday.length > 0 ||
+          groupedSchedule.upcoming.length > 0) {
+        return
+      }
+
+      setIsCreatingCertificate(true)
+      try {
+        const response = await fetch('/api/facility/certificates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            childId,
+            certificateSerialNumber: certificateContent.serialNumber,
+            vaccinationsCompleted: groupedSchedule.completed.length,
+          }),
+        })
+
+        if (response.ok) {
+          setCertificateCreated(true)
+        } else {
+          const error = await response.json()
+          console.error("Failed to create certificate:", error)
+        }
+      } catch (error) {
+        console.error("Failed to create certificate:", error)
+        // Don't fail the UI — certificate display still works
+      } finally {
+        setIsCreatingCertificate(false)
+      }
+    }
+
+    createCertificateIfNeeded()
+  }, [showCertificateModal, certificateCreated, isCreatingCertificate, childId, childProfile, groupedSchedule, certificateContent.serialNumber])
+
   const latestMeasurement = measurements[0] ?? null
+
+  const handleDownloadCertificatePdf = () => {
+    try {
+      const doc = new jsPDF({ unit: "pt", format: "a4" })
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const margin = 40
+      const contentWidth = pageWidth - margin * 2
+      const printableCvccId = childProfile?.childId || childRecord.id || childId
+      const issuedDate = new Date()
+
+      let qrDataUrl = ""
+      if (certificateQRRef.current) {
+        qrDataUrl = certificateQRRef.current.toDataURL("image/png")
+      }
+
+      doc.setFillColor(5, 150, 105)
+      doc.rect(0, 0, pageWidth, 70, "F")
+      doc.setTextColor(255, 255, 255)
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(20)
+      doc.text("Vaccination Certificate", margin, 42)
+      doc.setFontSize(11)
+      doc.text("Ghana Child Vaccination Completion Certificate", margin, 60)
+
+      doc.setTextColor(15, 23, 42)
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "normal")
+
+      const infoTop = 90
+      doc.setDrawColor(16, 185, 129)
+      doc.setFillColor(240, 253, 244)
+      doc.roundedRect(margin, infoTop, contentWidth, 110, 8, 8, "FD")
+
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(5, 150, 105)
+      doc.text("Child", margin + 16, infoTop + 24)
+      doc.text("CVCC ID", margin + 16, infoTop + 60)
+      doc.text("DOB", margin + 240, infoTop + 24)
+      doc.text("Gender", margin + 240, infoTop + 60)
+
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(15, 23, 42)
+      doc.setFontSize(13)
+      doc.text(childRecord.name, margin + 16, infoTop + 42)
+      doc.setFontSize(12)
+      doc.text(printableCvccId, margin + 16, infoTop + 78)
+      doc.text(new Date(childRecord.dateOfBirth).toLocaleDateString("en-GB"), margin + 240, infoTop + 42)
+      doc.text(childRecord.gender, margin + 240, infoTop + 78)
+
+      const securityTop = infoTop + 130
+      doc.setDrawColor(59, 130, 246)
+      doc.setFillColor(239, 246, 255)
+      doc.roundedRect(margin, securityTop, contentWidth, 90, 8, 8, "FD")
+
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(30, 64, 175)
+      doc.text("Serial", margin + 16, securityTop + 24)
+      doc.text("Valid Until", margin + 260, securityTop + 24)
+      doc.text("Hash", margin + 16, securityTop + 54)
+      doc.text("Issued", margin + 260, securityTop + 54)
+
+      doc.setFont("courier", "bold")
+      doc.setTextColor(15, 23, 42)
+      doc.text(certificateContent.serialNumber, margin + 16, securityTop + 38)
+      doc.text(certificateContent.expiryDate.toLocaleDateString("en-GB"), margin + 260, securityTop + 38)
+      doc.text(certificateContent.certificateHash, margin + 16, securityTop + 68)
+      doc.text(issuedDate.toLocaleDateString("en-GB"), margin + 260, securityTop + 68)
+
+      const qrSize = 96
+      const qrX = pageWidth - margin - qrSize
+      const qrY = securityTop + 110
+      if (qrDataUrl) {
+        doc.setDrawColor(16, 185, 129)
+        doc.roundedRect(qrX - 8, qrY - 8, qrSize + 16, qrSize + 16, 8, 8)
+        doc.addImage(qrDataUrl, "PNG", qrX, qrY, qrSize, qrSize)
+      }
+
+      const vaccinesTop = qrY + 8
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(12)
+      doc.setTextColor(5, 150, 105)
+      doc.text(`Completed Vaccinations (${groupedSchedule.completed.length})`, margin, vaccinesTop)
+
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(10)
+      doc.setTextColor(15, 23, 42)
+      const listTop = vaccinesTop + 16
+      const listHeight = pageHeight - listTop - 110
+      const rowHeight = 16
+      const rowsPerColumn = Math.max(1, Math.floor(listHeight / rowHeight))
+      const columns = 2
+      const maxRows = rowsPerColumn * columns
+      const vaccineEntries = groupedSchedule.completed.map((vax) =>
+        `${vax.vaccine} • ${vax.administeredDate || vax.scheduledDate}`
+      )
+      const visible = vaccineEntries.slice(0, maxRows)
+      const overflow = vaccineEntries.length - visible.length
+
+      visible.forEach((entry, index) => {
+        const column = Math.floor(index / rowsPerColumn)
+        const row = index % rowsPerColumn
+        const x = margin + column * (contentWidth / columns)
+        const y = listTop + row * rowHeight
+        doc.text(`• ${entry}`, x, y)
+      })
+
+      if (overflow > 0) {
+        const x = margin + (columns - 1) * (contentWidth / columns)
+        const y = listTop + (rowsPerColumn - 1) * rowHeight
+        doc.setFont("helvetica", "italic")
+        doc.setTextColor(100, 116, 139)
+        doc.text(`+ ${overflow} more`, x, y)
+      }
+
+      const footerTop = pageHeight - 70
+      doc.setFillColor(15, 23, 42)
+      doc.roundedRect(margin, footerTop, contentWidth, 50, 8, 8, "F")
+      doc.setTextColor(226, 232, 240)
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(10)
+      doc.text("CERTIFICATE OF VACCINATION COMPLETION", margin + 16, footerTop + 20)
+      doc.setFont("helvetica", "normal")
+      doc.text(`Generated: ${issuedDate.toLocaleDateString("en-GB")} • Valid 1 Year`, margin + 16, footerTop + 36)
+
+      doc.save(`${certificateContent.serialNumber}.pdf`)
+    } catch (error) {
+      console.error("Failed to generate certificate PDF:", error)
+      toast.error("Failed to download certificate PDF. Please try again.")
+    }
+  }
 
   const handleMeasurementChange = <Field extends keyof MeasurementFormState>(
     field: Field,
@@ -1140,197 +1316,7 @@ export default function ChildPatientChartPage() {
           </Card>
         ) : (
           <>
-        {/* Single Page Dashboard Layout */}
-        <section className="space-y-4">
-          {/* Header Card - Child Info */}
-          <Card className="border-primary/40">
-            <CardContent className="p-4">
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
-                <div>
-                  <p className="text-xs text-muted-foreground font-semibold">Name</p>
-                  <p className="font-semibold text-sm">{childRecord.name}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-semibold">CVCC ID</p>
-                  <p className="font-mono text-sm font-bold">{childId}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-semibold">DOB</p>
-                  <p className="text-sm">{new Date(childRecord.dateOfBirth).toLocaleDateString('en-GB')}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-semibold">Age</p>
-                  <p className="text-sm">{childRecord.age}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-semibold">Gender</p>
-                  <p className="text-sm">{childRecord.gender}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Vaccination Status Grid */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {/* Overdue */}
-            <Card className={groupedSchedule.overdue.length > 0 ? "border-destructive/50" : ""}>
-              <CardContent className="p-4">
-                <p className="text-xs font-semibold text-muted-foreground mb-2">OVERDUE</p>
-                <p className="text-2xl font-bold text-destructive">{groupedSchedule.overdue.length}</p>
-                <div className="mt-3 space-y-1 max-h-24 overflow-y-auto">
-                  {groupedSchedule.overdue.slice(0, 2).map((v) => (
-                    <div key={v.id} className="text-xs text-foreground truncate" title={v.vaccine}>
-                      • {v.vaccine}
-                    </div>
-                  ))}
-                  {groupedSchedule.overdue.length > 2 && (
-                    <p className="text-xs text-muted-foreground">+{groupedSchedule.overdue.length - 2} more</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Due Today */}
-            <Card className={groupedSchedule.dueToday.length > 0 ? "border-amber-500/50" : ""}>
-              <CardContent className="p-4">
-                <p className="text-xs font-semibold text-muted-foreground mb-2">DUE TODAY</p>
-                <p className="text-2xl font-bold text-amber-600">{groupedSchedule.dueToday.length}</p>
-                <div className="mt-3 space-y-1 max-h-24 overflow-y-auto">
-                  {groupedSchedule.dueToday.slice(0, 2).map((v) => (
-                    <div key={v.id} className="text-xs text-foreground truncate" title={v.vaccine}>
-                      • {v.vaccine}
-                    </div>
-                  ))}
-                  {groupedSchedule.dueToday.length > 2 && (
-                    <p className="text-xs text-muted-foreground">+{groupedSchedule.dueToday.length - 2} more</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Upcoming */}
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-xs font-semibold text-muted-foreground mb-2">UPCOMING</p>
-                <p className="text-2xl font-bold text-blue-600">{groupedSchedule.upcoming.length}</p>
-                <div className="mt-3 space-y-1 max-h-24 overflow-y-auto">
-                  {groupedSchedule.upcoming.slice(0, 2).map((v) => (
-                    <div key={v.id} className="text-xs text-foreground truncate" title={v.vaccine}>
-                      • {v.vaccine}
-                    </div>
-                  ))}
-                  {groupedSchedule.upcoming.length > 2 && (
-                    <p className="text-xs text-muted-foreground">+{groupedSchedule.upcoming.length - 2} more</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Completed */}
-            <Card className="border-emerald-500/50">
-              <CardContent className="p-4">
-                <p className="text-xs font-semibold text-muted-foreground mb-2">COMPLETED</p>
-                <p className="text-2xl font-bold text-emerald-600">{groupedSchedule.completed.length}</p>
-                <p className="text-xs text-muted-foreground mt-3">
-                  {Math.round((groupedSchedule.completed.length / (groupedSchedule.completed.length + groupedSchedule.overdue.length + groupedSchedule.dueToday.length + groupedSchedule.upcoming.length || 1)) * 100)}% complete
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Quick Actions Grid */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Button onClick={() => setShowAdministerModal(true)} className="gap-2" size="sm" variant="default">
-              <Syringe className="h-4 w-4" />
-              Administer
-            </Button>
-            <Button onClick={() => setShowGrowthMonitoringModal(true)} className="gap-2" size="sm" variant="outline">
-              <Ruler className="h-4 w-4" />
-              Growth
-            </Button>
-            <Button onClick={() => setShowCertificateModal(true)} className="gap-2" size="sm" variant="outline">
-              <BadgeCheck className="h-4 w-4" />
-              Certificate
-            </Button>
-            <Button onClick={() => setShowChildDetailsModal(true)} className="gap-2" size="sm" variant="outline">
-              <FileText className="h-4 w-4" />
-              Details
-            </Button>
-          </div>
-
-          {/* Compact Vaccine Timeline */}
-          {(groupedSchedule.overdue.length > 0 || groupedSchedule.dueToday.length > 0) && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Action Required</CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0">
-                <div className="space-y-2">
-                  {[...groupedSchedule.overdue, ...groupedSchedule.dueToday].map((vaccine) => (
-                    <div key={vaccine.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50 hover:bg-muted transition">
-                      <div>
-                        <p className="font-semibold text-sm">{vaccine.vaccine}</p>
-                        <p className="text-xs text-muted-foreground">{vaccine.scheduledDate}</p>
-                      </div>
-                      <Button
-                        onClick={() => {
-                          setSelectedDose(vaccine)
-                          openAdministerModal(vaccine)
-                        }}
-                        size="sm"
-                        variant="default"
-                      >
-                        Give
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Latest Growth & Notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {latestMeasurement && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Latest Measurement</CardTitle>
-                </CardHeader>
-                <CardContent className="p-4 pt-0">
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Weight</p>
-                      <p className="font-semibold">{latestMeasurement.weightKg} kg</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Height</p>
-                      <p className="font-semibold">{latestMeasurement.lengthCm} cm</p>
-                    </div>
-                    <div className="col-span-2">
-                      <p className="text-xs text-muted-foreground">Date</p>
-                      <p className="font-semibold">{new Date(latestMeasurement.date).toLocaleDateString('en-GB')}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {sessionNotes.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Latest Notes ({sessionNotes.length})</CardTitle>
-                </CardHeader>
-                <CardContent className="p-4 pt-0">
-                  <p className="text-sm text-foreground line-clamp-3">{sessionNotes[0]?.notes}</p>
-                  <p className="text-xs text-muted-foreground mt-2">{new Date(sessionNotes[0]?.recordedAt || '').toLocaleDateString('en-GB')}</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </section>
-
-        {/* Original card sections moved - keep hidden but available */}
-        <section className="mt-6 hidden lg:grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
+        <section className="mt-6 grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
           <Card className="border-primary/40">
             <CardHeader className="space-y-2">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -2485,362 +2471,132 @@ export default function ChildPatientChartPage() {
         </div>
       ) : null}
 
-      {/* Certificate Modal with QR Code - Modern Design */}
+      {/* Certificate Modal - Single Page Design */}
       {showCertificateModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-3xl rounded-2xl bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2">
+          <div className="w-full max-w-4xl rounded-2xl bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
             {/* Header with gradient */}
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-8 py-6 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="bg-white/20 p-2 rounded-lg">
-                  <BadgeCheck className="h-6 w-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-white">Vaccination Certificate</h3>
-                  <p className="text-emerald-100 text-sm">Official Ghana EPI Certificate</p>
-                </div>
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <BadgeCheck className="h-5 w-5 text-white" />
+                <h3 className="text-lg font-bold text-white">Vaccination Certificate</h3>
               </div>
               <button onClick={() => setShowCertificateModal(false)} className="text-white/80 hover:text-white">
-                <X className="h-6 w-6" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="p-10 space-y-8 max-h-[80vh] overflow-y-auto bg-gradient-to-b from-slate-50 to-white dark:from-slate-800 dark:to-slate-900" id="certificate-content">
-              {/* Certificate Header with Logo placeholder */}
-              <div className="text-center space-y-2 pb-6 border-b-2 border-emerald-200">
-                <div className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+            {/* Single Page Content - No Scroll */}
+            <div className="p-6 bg-gradient-to-b from-slate-50 to-white dark:from-slate-800 dark:to-slate-900 overflow-hidden flex-1 flex flex-col" id="certificate-content">
+              {/* Certificate Header */}
+              <div className="text-center space-y-1 pb-4 border-b-2 border-emerald-200">
+                <div className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
                   ✓ CERTIFICATE OF COMPLETION
                 </div>
-                <p className="text-emerald-700 dark:text-emerald-300 font-semibold">Child Vaccination Immunisation Certificate</p>
+                <p className="text-xs text-emerald-700 dark:text-emerald-300 font-semibold">Child Vaccination Certificate - Ghana EPI</p>
               </div>
 
-              {/* Child Information - Enhanced */}
-              <div className="grid grid-cols-2 gap-6 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl p-6 border border-emerald-200/50">
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-400 tracking-wide">Full Name</p>
-                  <p className="text-xl font-bold text-slate-900 dark:text-white">{childRecord.name}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-400 tracking-wide">CVCC ID</p>
-                  <p className="text-lg font-mono font-bold text-slate-900 dark:text-white bg-white/50 dark:bg-slate-800/50 px-3 py-1 rounded">{childId}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-400 tracking-wide">Date of Birth</p>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{new Date(childRecord.dateOfBirth).toLocaleDateString('en-GB')}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-400 tracking-wide">Gender</p>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{childRecord.gender}</p>
-                </div>
-              </div>
+              {/* Main Content Grid */}
+              <div className="grid grid-cols-3 gap-4 mt-4 flex-1">
+                {/* Left Column - Child Info & Vaccines */}
+                <div className="col-span-2 space-y-3 overflow-y-auto pr-2">
+                  {/* Child Info - Compact */}
+                  <div className="grid grid-cols-2 gap-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg p-3 border border-emerald-200/50">
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-700">NAME</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{childRecord.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-700">CVCC ID</p>
+                      <p className="text-sm font-mono font-bold text-slate-900 dark:text-white">
+                        {childProfile?.childId || childRecord.id || childId}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-700">DOB</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{new Date(childRecord.dateOfBirth).toLocaleDateString('en-GB')}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-700">GENDER</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{childRecord.gender}</p>
+                    </div>
+                  </div>
 
-              {/* Security & QR Code Section */}
-              <div className="grid grid-cols-3 gap-6">
-                {/* Security Info */}
-                <div className="col-span-2 space-y-4">
-                  <h4 className="font-bold text-slate-900 dark:text-white text-lg flex items-center gap-2">
-                    <ShieldAlert className="h-5 w-5 text-emerald-600" />
-                    Certificate Security
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-4 border border-blue-200/50">
-                      <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase mb-2">Serial Number</p>
-                      <p className="font-mono font-bold text-slate-900 dark:text-white text-sm break-all">{certificateContent.serialNumber}</p>
+                  {/* Vaccines - Compact List */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                      Vaccinations ({groupedSchedule.completed.length})
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {groupedSchedule.completed.map((vaccine) => (
+                        <div key={vaccine.id} className="flex items-start gap-2 p-2 rounded bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-200/50">
+                          <div className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-600 mt-1"></div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-slate-900 dark:text-white">{vaccine.vaccine}</p>
+                            <p className="text-xs text-slate-600 dark:text-slate-400">{vaccine.administeredDate || vaccine.scheduledDate}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="bg-purple-50 dark:bg-purple-950/20 rounded-lg p-4 border border-purple-200/50">
-                      <p className="text-xs font-semibold text-purple-700 dark:text-purple-400 uppercase mb-2">Verification Hash</p>
-                      <p className="font-mono font-bold text-slate-900 dark:text-white text-sm truncate">{certificateContent.certificateHash}</p>
-                    </div>
-                    <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-4 border border-amber-200/50">
-                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase mb-2">Valid Until</p>
-                      <p className="font-bold text-slate-900 dark:text-white">{certificateContent.expiryDate.toLocaleDateString('en-GB')}</p>
-                    </div>
-                    <div className="bg-teal-50 dark:bg-teal-950/20 rounded-lg p-4 border border-teal-200/50">
-                      <p className="text-xs font-semibold text-teal-700 dark:text-teal-400 uppercase mb-2">Issued</p>
-                      <p className="font-bold text-slate-900 dark:text-white">{new Date().toLocaleDateString('en-GB')}</p>
+                  </div>
+
+                  {/* Security Info - Compact */}
+                  <div className="bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200/50 space-y-2">
+                    <p className="text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                      <ShieldAlert className="h-3 w-3" />
+                      Security
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <p className="text-xs text-blue-600">Serial</p>
+                        <p className="text-xs font-mono font-bold text-slate-900 dark:text-white truncate">{certificateContent.serialNumber}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-purple-600">Valid Until</p>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white">{certificateContent.expiryDate.toLocaleDateString('en-GB')}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* QR Code */}
-                <div className="flex flex-col items-center justify-center space-y-3">
-                  <div className="p-3 border-4 border-emerald-200 rounded-xl bg-white shadow-lg">
+                {/* Right Column - QR Code */}
+                <div className="flex flex-col items-center justify-start space-y-2">
+                  <div className="p-2 border-3 border-emerald-200 rounded-lg bg-white shadow-md">
                     <QRCodeCanvas
                       ref={certificateQRRef}
                       value={`${typeof window !== 'undefined' ? window.location.origin : 'https://cvcc.example.com'}/verify?cert=${certificateContent.serialNumber}`}
-                      size={180}
+                      size={140}
                       level="H"
                       includeMargin={false}
                     />
                   </div>
-                  <div className="text-center space-y-1">
-                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">🔒 SCAN TO VERIFY</p>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">CVCC Verification Page</p>
+                  <div className="text-center space-y-0.5">
+                    <p className="text-xs font-bold text-emerald-700">SCAN TO</p>
+                    <p className="text-xs font-bold text-emerald-700">VERIFY</p>
+                    <p className="text-xs text-slate-600">CVCC Site</p>
                   </div>
                 </div>
               </div>
 
-              {/* Vaccines List */}
-              <div className="space-y-4">
-                <h4 className="font-bold text-slate-900 dark:text-white text-lg flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                  Vaccinations Completed ({groupedSchedule.completed.length})
-                </h4>
-                <div className="grid grid-cols-2 gap-3">
-                  {groupedSchedule.completed.map((vaccine) => (
-                    <div key={vaccine.id} className="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-200/50">
-                      <div className="flex-shrink-0 w-2 h-2 rounded-full bg-emerald-600"></div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-slate-900 dark:text-white text-sm">{vaccine.vaccine}</p>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">{vaccine.administeredDate || vaccine.scheduledDate}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {/* Footer */}
-              <div className="bg-gradient-to-r from-slate-900 to-slate-800 dark:from-slate-800 dark:to-slate-900 rounded-xl p-6 text-white text-center space-y-3 border border-slate-700">
-                <p className="text-sm font-semibold">CERTIFICATE OF VACCINATION COMPLETION</p>
-                <p className="text-xs text-slate-300">Generated: {new Date().toLocaleDateString('en-GB')} at {new Date().toLocaleTimeString('en-GB')}</p>
-                <p className="text-xs text-slate-400">This document certifies that the child has completed required vaccinations per Ghana EPI schedule</p>
-                <p className="text-xs font-semibold text-emerald-300 pt-2 border-t border-slate-700">🔒 Cryptographically Verified • 1-Year Validity</p>
+              <div className="bg-gradient-to-r from-slate-900 to-slate-800 dark:from-slate-800 dark:to-slate-900 rounded-lg p-3 text-white text-center text-xs space-y-1 border border-slate-700 mt-4 flex-shrink-0">
+                <p className="font-semibold">OFFICIAL VACCINATION CERTIFICATE</p>
+                <p className="text-slate-300">Generated: {new Date().toLocaleDateString('en-GB')} | Valid for 1 Year</p>
+                <p className="text-emerald-300 font-semibold">🔒 Cryptographically Verified</p>
               </div>
             </div>
 
             {/* Actions */}
             <div className="border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-6 flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  const printWindow = window.open('', '_blank')
-                  if (printWindow) {
-                    // Get QR code image
-                    let qrDataUrl = ''
-                    if (certificateQRRef.current) {
-                      qrDataUrl = certificateQRRef.current.toDataURL('image/png')
-                    }
-
-                    const printContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Vaccination Certificate - ${childRecord.name}</title>
-  <style>
-    * { margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8f9fa; }
-    .certificate {
-      max-width: 800px;
-      margin: 20px auto;
-      background: linear-gradient(135deg, #f0fdf4 0%, #f0fdfa 100%);
-      border: 3px solid #059669;
-      border-radius: 16px;
-      padding: 40px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 30px;
-      border-bottom: 3px solid #059669;
-      padding-bottom: 20px;
-    }
-    .header h1 {
-      font-size: 32px;
-      background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      margin-bottom: 10px;
-      font-weight: 800;
-    }
-    .subtitle { color: #059669; font-size: 14px; font-weight: 600; }
-    .info-section {
-      background: rgba(16, 185, 129, 0.05);
-      border: 2px solid #d1fae5;
-      border-radius: 12px;
-      padding: 20px;
-      margin: 20px 0;
-    }
-    .info-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 20px;
-    }
-    .info-item { }
-    .label {
-      font-size: 11px;
-      text-transform: uppercase;
-      color: #059669;
-      font-weight: 700;
-      letter-spacing: 1px;
-      margin-bottom: 8px;
-    }
-    .value {
-      font-size: 18px;
-      font-weight: 700;
-      color: #0f172a;
-    }
-    .security-section {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 15px;
-      margin: 20px 0;
-      background: rgba(59, 130, 246, 0.05);
-      padding: 20px;
-      border-radius: 12px;
-      border: 2px dashed #3b82f6;
-    }
-    .security-item {
-      background: white;
-      padding: 12px;
-      border-radius: 8px;
-      border-left: 4px solid #3b82f6;
-    }
-    .security-label { font-size: 10px; color: #3b82f6; font-weight: 700; text-transform: uppercase; }
-    .security-value { font-family: monospace; font-size: 12px; font-weight: 700; color: #0f172a; word-break: break-all; }
-    .qr-section {
-      text-align: center;
-      margin: 25px 0;
-      padding: 20px;
-      background: white;
-      border-radius: 12px;
-      border: 2px solid #d1fae5;
-    }
-    .qr-section img { width: 180px; height: 180px; }
-    .qr-label { font-size: 12px; color: #059669; font-weight: 700; margin-top: 10px; }
-    .vaccines-section {
-      margin: 25px 0;
-    }
-    .vaccines-section h3 {
-      color: #059669;
-      font-size: 16px;
-      margin-bottom: 15px;
-      font-weight: 700;
-    }
-    .vaccine-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    .vaccine-item {
-      background: linear-gradient(135deg, #ecfdf5 0%, #f0fdfa 100%);
-      padding: 12px;
-      border-left: 4px solid #10b981;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      color: #047857;
-    }
-    .vaccine-date { font-size: 12px; color: #059669; margin-top: 4px; }
-    .footer {
-      text-align: center;
-      margin-top: 30px;
-      padding-top: 20px;
-      border-top: 2px solid #059669;
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-      color: white;
-      border-radius: 8px;
-      padding: 20px;
-    }
-    .footer p { margin: 8px 0; font-size: 13px; }
-    .footer-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
-    .footer-sub { font-size: 12px; color: #cbd5e1; margin-top: 10px; border-top: 1px solid #475569; padding-top: 10px; }
-    @media print {
-      body { background: white; }
-      .certificate { box-shadow: none; border: 2px solid #059669; }
-    }
-  </style>
-</head>
-<body>
-  <div class="certificate">
-    <div class="header">
-      <h1>✓ VACCINATION CERTIFICATE</h1>
-      <p class="subtitle">Ghana Child Vaccination Completion Certificate</p>
-    </div>
-
-    <div class="info-section">
-      <div class="info-grid">
-        <div class="info-item">
-          <div class="label">Child Name</div>
-          <div class="value">${childRecord.name}</div>
-        </div>
-        <div class="info-item">
-          <div class="label">CVCC ID</div>
-          <div class="value" style="font-family: monospace;">${childId}</div>
-        </div>
-        <div class="info-item">
-          <div class="label">Date of Birth</div>
-          <div class="value">${new Date(childRecord.dateOfBirth).toLocaleDateString('en-GB')}</div>
-        </div>
-        <div class="info-item">
-          <div class="label">Gender</div>
-          <div class="value">${childRecord.gender}</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="security-section">
-      <div class="security-item">
-        <div class="security-label">Serial Number</div>
-        <div class="security-value">${certificateContent.serialNumber}</div>
-      </div>
-      <div class="security-item">
-        <div class="security-label">Valid Until</div>
-        <div class="security-value">${certificateContent.expiryDate.toLocaleDateString('en-GB')}</div>
-      </div>
-      <div class="security-item">
-        <div class="security-label">Verification Hash</div>
-        <div class="security-value">${certificateContent.certificateHash}</div>
-      </div>
-      <div class="security-item">
-        <div class="security-label">Issued Date</div>
-        <div class="security-value">${new Date().toLocaleDateString('en-GB')}</div>
-      </div>
-    </div>
-
-    ${qrDataUrl ? `
-    <div class="qr-section">
-      <img src="${qrDataUrl}" alt="QR Code" />
-      <div class="qr-label">🔒 SCAN TO VERIFY ON CVCC SITE</div>
-    </div>
-    ` : ''}
-
-    <div class="vaccines-section">
-      <h3>Completed Vaccinations (${groupedSchedule.completed.length})</h3>
-      <div class="vaccine-grid">
-        ${groupedSchedule.completed.map(v => `
-          <div class="vaccine-item">
-            ${v.vaccine}
-            <div class="vaccine-date">${v.administeredDate || v.scheduledDate}</div>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-
-    <div class="footer">
-      <p class="footer-title">CERTIFICATE OF VACCINATION COMPLETION</p>
-      <p>Generated: ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-GB')}</p>
-      <p class="footer-sub">
-        This document certifies that the named child has completed all required vaccinations
-        according to the Ghana EPI (Expanded Programme on Immunization) schedule.
-      </p>
-      <p class="footer-sub">🔒 Cryptographically Verified • 1-Year Validity Period</p>
-    </div>
-  </div>
-</body>
-</html>
-                    `
-                    printWindow.document.write(printContent)
-                    printWindow.document.close()
-                    setTimeout(() => printWindow.print(), 500)
-                  }
-                }}
-              >
+              <Button variant="outline" onClick={handleDownloadCertificatePdf}>
                 <FileText className="h-4 w-4" />
-                Print Certificate
+                Download PDF
               </Button>
-              <Button variant="outline" onClick={() => setShowCertificateModal(false)}>
+              <Button variant="outline" onClick={() => {
+                setShowCertificateModal(false)
+                setCertificateCreated(false)
+              }}>
                 Close
               </Button>
             </div>
