@@ -25,8 +25,7 @@ This document contains all the diagrams needed for Chapter 4 of the project docu
    - 4.4 [CHW Use Cases](#44-chw-use-cases)
    - 4.5 [Branch Manager Use Cases](#45-branch-manager-use-cases)
    - 4.6 [HQ Admin Use Cases](#46-hq-admin-use-cases)
-   - 4.7 [PHA Use Cases](#47-pha-use-cases)
-   - 4.8 [Data Officer Use Cases](#48-data-officer-use-cases)
+    - 4.7 [Public Certificate Verification Use Cases](#47-public-certificate-verification-use-cases)
 5. [Sequence Diagrams](#5-sequence-diagrams)
    - 5.1 [User Login Sequence](#51-user-login-sequence)
    - 5.2 [Vaccination Recording Sequence](#52-vaccination-recording-sequence)
@@ -43,7 +42,7 @@ This document contains all the diagrams needed for Chapter 4 of the project docu
 
 ## 1. System Overview
 
-The Child Vaccination Command Center (CVCC) is a multi-tenant health management system for tracking childhood vaccinations in Ghana. The system supports 7 user roles with role-based access control (RBAC).
+The Child Vaccination Command Center (CVCC) is a multi-tenant health management system for tracking childhood vaccinations in Ghana. The system supports 5 authenticated user roles with role-based access control (RBAC), plus a public certificate verification entry point.
 
 ### User Roles
 
@@ -53,9 +52,8 @@ The Child Vaccination Command Center (CVCC) is a multi-tenant health management 
 | Branch Manager | Regional/district facility manager |
 | Facility Nurse | Healthcare facility nursing staff |
 | CHW | Community Health Worker for field outreach |
-| Data Officer | Data quality and deduplication |
-| PHA | Public Health Authority (government) |
 | Parent | Parents/Guardians of children |
+| Public Verifier | No-login certificate verification user |
 
 ---
 
@@ -65,25 +63,24 @@ A high-level overview of the CVCC system showing the main layers: Users, Fronten
 
 ```mermaid
 graph TB
-    subgraph Users["Users - 7 Roles"]
+    subgraph Users["Users - 5 Authenticated Roles + Public Verifier"]
         U1["Parent"]
         U2["Facility Nurse"]
         U3["CHW"]
         U4["Branch Manager"]
-        U5["Data Officer"]
-        U6["PHA"]
-        U7["HQ Admin"]
+        U5["HQ Admin"]
+        U6["Public Verifier"]
     end
 
     subgraph Frontend["Frontend - Next.js + React"]
         Auth["Authentication"]
-        Portals["7 Role-Based Portals<br/>parent, facility, chw, branch, dashboard, pha, hq"]
+        Portals["5 Role-Based Portals + Public Verify<br/>parent, facility, chw, branch, hq, verify"]
         PWA["Offline Support<br/>Service Worker + IndexedDB"]
     end
 
     subgraph Backend["Backend API - NestJS"]
         AuthAPI["Auth Module"]
-        Modules["Feature Modules<br/>parent, facility, chw, branch, data-officer, pha, hq-admin"]
+        Modules["Feature Modules<br/>parent, facility, chw, branch-manager, hq-admin, verify-api"]
         Services["Common Services<br/>Email, SMS, Scheduler"]
     end
 
@@ -102,8 +99,7 @@ graph TB
     U3 --> Auth
     U4 --> Auth
     U5 --> Auth
-    U6 --> Auth
-    U7 --> Auth
+    U6 --> Portals
 
     Auth --> Portals
     Portals --> PWA
@@ -125,7 +121,7 @@ graph TB
     classDef dbStyle fill:#fffde7
     classDef extStyle fill:#ffebee
 
-    class U1,U2,U3,U4,U5,U6,U7 userStyle
+    class U1,U2,U3,U4,U5,U6 userStyle
     class Auth,Portals,PWA frontendStyle
     class AuthAPI,Modules,Services backendStyle
     class Tables dbStyle
@@ -154,15 +150,11 @@ flowchart TD
     G -->|Branch Manager| J[Go to Branch Dashboard]
     G -->|Facility Nurse| K[Go to Facility Dashboard]
     G -->|CHW| L[Go to CHW Dashboard]
-    G -->|Data Officer| M[Go to Data Officer Dashboard]
-    G -->|PHA| N[Go to PHA Dashboard]
     H --> O([Stop])
     I --> O
     J --> O
     K --> O
     L --> O
-    M --> O
-    N --> O
 ```
 
 ---
@@ -403,8 +395,7 @@ flowchart LR
         CHW((CHW))
         BM((Branch Manager))
         HQ((HQ Admin))
-        PHA((PHA))
-        DO((Data Officer))
+        PV((Public Verifier))
     end
 
     subgraph System["CVCC System"]
@@ -421,10 +412,8 @@ flowchart LR
         UC11[View Analytics]
         UC12[Manage Branches]
         UC13[Configure Vaccines]
-        UC14[View National Reports]
-        UC15[Verify Certificates]
-        UC16[Fix Duplicate Records]
-        UC17[Fix Sync Conflicts]
+        UC14[Verify Certificate (Public)]
+        UC15[View Verification Result]
     end
 
     Parent --> UC1
@@ -447,11 +436,8 @@ flowchart LR
     HQ --> UC13
     HQ --> UC11
 
-    PHA --> UC14
-    PHA --> UC15
-
-    DO --> UC16
-    DO --> UC17
+    PV --> UC14
+    PV --> UC15
 ```
 
 ---
@@ -629,68 +615,25 @@ flowchart LR
 
 ---
 
-### 4.7 PHA Use Cases
+### 4.7 Public Certificate Verification Use Cases
 
 ```mermaid
 flowchart LR
-    PHA((PHA))
+    Verifier((Public Verifier))
 
-    subgraph PHAUseCases["Public Health Authority Use Cases"]
-        UC1[View National Dashboard]
-        UC2[View Coverage Statistics]
-        UC3[View Regional Breakdown]
-        UC4[Monitor Side Effects]
-        UC5[Generate Reports]
-        UC6[Export Report to Excel]
-        UC7[Verify Certificate]
-        UC8[Check Certificate is Real]
-        UC9[View Dropout Analysis]
-        UC10[View Zero-Dose Children Stats]
+    subgraph VerificationUseCases["Public Certificate Verification Use Cases"]
+        UC1[Open Verify Page]
+        UC2[Scan QR Code or Paste Token]
+        UC3[Submit Verification Request]
+        UC4[View Child and Certificate Details]
+        UC5[See Invalid or Revoked Status]
     end
 
-    PHA --> UC1
-    PHA --> UC2
-    PHA --> UC3
-    PHA --> UC4
-    PHA --> UC5
-    PHA --> UC6
-    PHA --> UC7
-    PHA --> UC8
-    PHA --> UC9
-    PHA --> UC10
-```
-
----
-
-### 4.8 Data Officer Use Cases
-
-```mermaid
-flowchart LR
-    DO((Data Officer))
-
-    subgraph DOUseCases["Data Officer Use Cases"]
-        UC1[View Dashboard]
-        UC2[View Duplicate Records Queue]
-        UC3[Review Duplicate Children]
-        UC4[Merge Duplicate Records]
-        UC5[Dismiss False Matches]
-        UC6[View Sync Conflicts]
-        UC7[Resolve Sync Conflicts]
-        UC8[View Notification Log]
-        UC9[Retry Failed SMS]
-        UC10[Generate Data Quality Reports]
-    end
-
-    DO --> UC1
-    DO --> UC2
-    DO --> UC3
-    DO --> UC4
-    DO --> UC5
-    DO --> UC6
-    DO --> UC7
-    DO --> UC8
-    DO --> UC9
-    DO --> UC10
+    Verifier --> UC1
+    Verifier --> UC2
+    Verifier --> UC3
+    Verifier --> UC4
+    Verifier --> UC5
 ```
 
 ---
@@ -1308,23 +1251,12 @@ Use this checklist to capture screenshots for Chapter 4.
 - [ ] System Health Page
 - [ ] Audit Logs Page
 
-### Data Officer Dashboard
-- [ ] Data Officer Dashboard - Overview
-- [ ] Deduplication Queue
-- [ ] Duplicate Review Modal
-- [ ] Merge Duplicates Action
-- [ ] Sync Conflicts List
-- [ ] Resolve Conflict Modal
-- [ ] Notification Audit Log
-- [ ] Reports Page
-
-### PHA Dashboard
-- [ ] PHA Dashboard - Overview
-- [ ] National Coverage Statistics
-- [ ] Regional Breakdown
-- [ ] Reports Generation Page
-- [ ] Certificate Verification Page
-- [ ] Verification Result
+### Public Certificate Verification
+- [ ] Verify Certificate Landing Page
+- [ ] QR Scanner View
+- [ ] Manual Token Input Flow
+- [ ] Verification Success Result
+- [ ] Verification Not Found/Invalid Result
 
 ### Mobile/Responsive Views
 - [ ] Login Page (Mobile)

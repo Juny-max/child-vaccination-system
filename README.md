@@ -21,13 +21,13 @@
 - Parent Portal Backend
 - Facility Nurse Backend  
 - Community Health Worker (CHW) Backend
-- Public Health Authority (PHA) Backend
+- Public certificate verification workflow
 
 **Developer 2 (Julius):**
 
 - HQ Admin Backend
 - Branch Manager Backend
-- Data Officer Backend
+- Shared platform maintenance
 
 ### Git Workflow - **IMPORTANT FOR JULIUS!**
 
@@ -66,7 +66,7 @@ git push -u origin backend
 ### Prerequisites
 
 - **Node.js 18+** (with pnpm package manager)
-- **Supabase Account** (Julius has been invited as team member)
+- **Supabase Account** (project team access)
 - **Git** for version control
 
 ### Installation
@@ -266,7 +266,7 @@ The complete database schema is located in:
 
 | Table | Purpose |
 |-------|---------|
-| `users` | All system users (7 roles: parent, hq-admin, branch-manager, facility-nurse, chw, data-officer, pha) |
+| `users` | All system users (5 active roles: parent, hq-admin, branch-manager, facility-nurse, chw) |
 | `branches` | Health facilities and catchment areas |
 | `guardians` | Parent/guardian profiles |
 | `children` | Child records with CVCC IDs and QR codes |
@@ -277,7 +277,7 @@ The complete database schema is located in:
 | `notifications` | SMS/Email alerts sent to parents |
 | `visit_logs` | CHW door-to-door activity |
 | `sync_queue` | Offline sync tracking |
-| `duplicate_candidates` | Data quality (for Data Officer) |
+| `duplicate_candidates` | Legacy deduplication queue (not in active role workflows) |
 | `audit_logs` | System activity tracking |
 
 ### Install Supabase Client Library
@@ -344,7 +344,7 @@ const { data, error } = await supabase
 
 ## 🏗️ Backend Development (NestJS)
 
-### Julius's Assigned Modules
+### Core Active Modules
 
 #### 1. **HQ Admin Module**
 
@@ -389,25 +389,11 @@ const { data, error } = await supabase
 - `GET /branch/:branchId/reports` - Generate branch reports
 - `GET /branch/:branchId/appointments` - Branch appointments
 
-#### 3. **Data Officer Module**
+#### 3. **Public Certificate Verification (Current Scope)**
 
-- View and resolve duplicate child records
-- Handle sync conflicts from offline CHW devices
-- Monitor data quality metrics
-- View and manage system notifications
-- Export data for reporting
-
-**Key Endpoints:**
-
-- `GET /duplicates` - List duplicate candidate pairs
-- `POST /duplicates/merge` - Merge two duplicate records
-- `POST /duplicates/dismiss` - Mark as not duplicate
-- `GET /sync-conflicts` - List sync conflicts
-- `POST /sync-conflicts/:id/resolve` - Resolve conflict
-- `GET /data-quality/metrics` - Data quality dashboard
-- `GET /notifications` - System notifications
-- `PUT /notifications/:id/acknowledge` - Mark notification as read
-- `POST /reports/export` - Export data (CSV/Excel)
+- Public verification is now available to everyone via the Next.js route `/verify`.
+- Verification APIs are exposed from `app/api/verify` and `app/api/verify/token`.
+- The flow supports QR scan, manual token input, and seeded/generated certificate compatibility.
 
 ### NestJS Project Setup
 
@@ -434,7 +420,7 @@ pnpm add class-validator class-transformer
 pnpm add -D @types/passport-jwt
 \`\`\`
 
-### Backend Folder Structure (Julius's Part Only)
+### Backend Folder Structure (Active Modules)
 
 \`\`\`
 backend/
@@ -449,10 +435,6 @@ backend/
 │   │   ├── branch-manager.controller.ts
 │   │   ├── branch-manager.service.ts
 │   │   └── branch-manager.module.ts
-│   ├── data-officer/         # JULIUS: Data Officer endpoints
-│   │   ├── data-officer.controller.ts
-│   │   ├── data-officer.service.ts
-│   │   └── data-officer.module.ts
 │   ├── common/               # Shared utilities, guards, decorators
 │   │   ├── guards/           # Role-based auth guards
 │   │   ├── decorators/       # Custom decorators
@@ -460,7 +442,6 @@ backend/
 │   ├── parent/               # Juny will create this
 │   ├── facility-nurse/       # Juny will create this
 │   ├── chw/                  # Juny will create this
-│   ├── pha/                  # Juny will create this
 │   └── main.ts
 ├── .env                      # Backend environment variables
 └── package.json
@@ -468,12 +449,12 @@ backend/
 
 ### Backend Environment Setup
 
-**Julius, create `backend/.env` for your 3 modules:**
+Create `backend/.env` for active backend modules:
 
 \`\`\`env
 SUPABASE_URL=<https://pvzatstzlvtaequsqhec.supabase.co>
 SUPABASE_ANON_KEY=<copy from .env.local in project root>
-SUPABASE_SERVICE_KEY=<ask Juny if needed>
+SUPABASE_SERVICE_ROLE_KEY=<ask project lead if needed>
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
 PORT=3001
 \`\`\`
@@ -637,7 +618,7 @@ Content-Type: application/json
 
 - **National Command Console**: Monitor branches, coverage trends, and AEFI alerts across the country.
 - **Branch & Catchment Management**: Create facilities, assign managers, and define service territories.
-- **Role Provisioning**: Onboard and manage Branch Managers, Facility Nurses, CHWs, Data Officers, PHAs, and Parents/Guardians (excluding HQ Admin).
+- **Role Provisioning**: Onboard and manage Branch Managers, Facility Nurses, CHWs, and Parents/Guardians (excluding HQ Admin).
 - **Schedule Configuration**: Maintain the master vaccine catalogue and national dosing rules.
 - **System Health & Audits**: Review infrastructure status, audit logs, and trigger backups on demand.
 
@@ -648,23 +629,21 @@ Content-Type: application/json
 - **Nurse / Clinician**: Handles in-clinic registration, vaccination capture, and follow-up scheduling. Facility console now
     includes QR-code patient lookup, Ghana CWC-aligned onboarding, and patient charting ready for backend wiring.
 - **Community Health Worker (CHW)**: Runs door-to-door registration and vaccination via the offline-first PWA.
-- **Data Officer**: Monitors data quality, resolves duplicates, curates reporting outputs, and triages security or availability alerts.
-- **Public Health Authority (PHA)**: Read-only oversight of analytics, dashboards, and national reports.
 - **Parent / Guardian**: Reviews a child's vaccination journey, certificates, reminders, and emergency contacts.
+- **Public Verifier (No Login)**: Uses `/verify` to validate certificates by QR scan or token.
 
 ---
 
 ## 🎭 Demo Accounts
 
-All roles authenticate through `/auth/login` using the shared demo password `password1234` (reset anytime via `backend/scripts/reset-password.ts`).
+All active portal roles authenticate through `/auth/login` using the shared demo password `password1234` (reset anytime via `backend/scripts/reset-password.ts`).
 
 - **Parent**: <parent@example.com> (password `password1234`)
 - **HQ Admin**: <admin@health.gov.gh> (password `password1234`)
 - **Branch Manager**: <branch.manager@health.gov.gh> (password `password1234`)
 - **Facility Nurse**: <nurse@health.gov.gh> (password `password1234`)
 - **Community Health Worker**: <chw@health.gov.gh> (password `password1234`)
-- **Data Officer**: <data.officer@health.gov.gh> (password `password1234`)
-- **Public Health Authority**: <pha@health.gov.gh> (password `password1234`)
+- **Public Certificate Verification**: No login required at `/verify`
 
 **Test Parent Account (Seeded in Database):**
 
@@ -777,18 +756,17 @@ git push origin backend
 
 ## ✅ Features Roadmap
 
-- [x] Frontend dashboards for all 7 roles
+- [x] Frontend dashboards for active operational roles
 - [x] Database schema (21 tables)
 - [x] Seed data with test accounts
 - [x] Supabase setup and configuration
 - [ ] **Backend API (NestJS) - IN PROGRESS**
   - [ ] HQ Admin endpoints
   - [ ] Branch Manager endpoints
-  - [ ] Data Officer endpoints
   - [ ] Parent Portal endpoints
   - [ ] Facility Nurse endpoints
   - [ ] CHW endpoints
-  - [ ] PHA endpoints
+- [x] Public certificate scanner and verification endpoint (`/verify`)
 - [ ] Authentication with JWT
 - [ ] SMS/Email notifications (Twilio/SendGrid)
 - [ ] PDF certificate generation
@@ -891,17 +869,16 @@ git commit -m "feat: added HQ admin branch management endpoints"
 git push origin backend
 \`\`\`
 
-### Julius's 3 Modules (Your Responsibility)
+### Active Staff Modules
 
 1. **HQ Admin** (`backend/src/hq-admin/`)
 2. **Branch Manager** (`backend/src/branch-manager/`)
-3. **Data Officer** (`backend/src/data-officer/`)
 
-### Juny's 4 Modules (Juny will handle)
+### Active Operations Modules
 
 1. **Parent Portal** (`backend/src/parent/`)
 2. **Facility Nurse** (`backend/src/facility-nurse/`)
 3. **Community Health Worker** (`backend/src/chw/`)
-4. **Public Health Authority** (`backend/src/pha/`)
+4. **Public Verification** (`app/verify/` and `app/api/verify/`)
 
 Good luck! 🚀
