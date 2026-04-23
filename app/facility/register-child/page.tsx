@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
@@ -58,7 +58,7 @@ const initialState: ChildFormState = {
   notes: "",
 }
 
-export default function RegisterChildPage() {
+function RegisterChildContent() {
   const GUARDIANS_PAGE_SIZE = 20
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -751,5 +751,13 @@ export default function RegisterChildPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function RegisterChildPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <RegisterChildContent />
+    </Suspense>
   )
 }
