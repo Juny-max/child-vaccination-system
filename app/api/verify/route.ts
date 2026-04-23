@@ -38,13 +38,18 @@ function readBackendEnvServiceKey(): string | null {
   }
 }
 
-const supabaseServerKey =
+const supabaseServiceKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
-  readBackendEnvServiceKey() ||
+  readBackendEnvServiceKey()
+
+const hasSupabaseServiceKey = Boolean(supabaseServiceKey)
+
+const supabaseClientKey =
+  supabaseServiceKey ||
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-const supabase = createClient(supabaseUrl, supabaseServerKey, {
+const supabase = createClient(supabaseUrl, supabaseClientKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
@@ -191,6 +196,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       { found: false, error: 'Invalid or expired verification token. Please refresh the page and try again.' },
       { status: 401 }
+    )
+  }
+
+  if (!hasSupabaseServiceKey) {
+    // Avoid false "not found" results when deployment is missing privileged DB credentials.
+    return NextResponse.json(
+      {
+        found: false,
+        error: 'Certificate verification is temporarily unavailable due to server configuration.',
+        code: 'VERIFY_SERVICE_NOT_CONFIGURED',
+      },
+      { status: 500 },
     )
   }
 
