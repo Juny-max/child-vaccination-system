@@ -16,6 +16,7 @@ export type PendingVaccination = {
   id: string
   childId: string
   vaccineName: string
+  doseNumber?: number
   administeredDate: string
   batchNumber: string
   expiryDate?: string
@@ -37,6 +38,7 @@ type StoredPendingVaccination = {
   // Legacy plain-text fields for backward compatibility.
   childId?: string
   vaccineName?: string
+  doseNumber?: number
   administeredDate?: string
   batchNumber?: string
   expiryDate?: string
@@ -142,6 +144,7 @@ async function fromStoredRecord(
     id: storedRecord.id,
     childId: storedRecord.childId,
     vaccineName: storedRecord.vaccineName,
+    doseNumber: typeof storedRecord.doseNumber === "number" ? storedRecord.doseNumber : undefined,
     administeredDate: storedRecord.administeredDate,
     batchNumber: storedRecord.batchNumber,
     expiryDate: storedRecord.expiryDate,
@@ -210,6 +213,7 @@ export async function savePendingVaccination(
     id,
     childId,
     vaccineName: data.vaccineName,
+    doseNumber: data.doseNumber,
     administeredDate: data.administeredDate,
     batchNumber: data.batchNumber,
     expiryDate: data.expiryDate,
@@ -348,6 +352,7 @@ async function syncVaccination(vaccination: PendingVaccination): Promise<boolean
 
     const requestData: facilityApi.AdministerVaccineRequest = {
       vaccineName: vaccination.vaccineName,
+      doseNumber: vaccination.doseNumber,
       administeredDate: vaccination.administeredDate,
       batchNumber: vaccination.batchNumber,
       expiryDate: vaccination.expiryDate,

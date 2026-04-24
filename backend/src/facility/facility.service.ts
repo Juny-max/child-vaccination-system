@@ -283,6 +283,8 @@ export class FacilityService {
         gender,
         birth_weight,
         birth_length,
+        place_of_birth,
+        delivery_type,
         blood_type,
         profile_photo_url,
         created_at,
@@ -363,6 +365,8 @@ export class FacilityService {
       gender: child.gender || 'Unknown',
       weight: child.birth_weight,
       length: child.birth_length,
+      placeOfBirth: child.place_of_birth,
+      deliveryType: child.delivery_type,
       bloodType: child.blood_type,
       profilePhoto: child.profile_photo_url,
       guardianId: (guardianData as any)?.id,
@@ -453,13 +457,36 @@ export class FacilityService {
       throw new NotFoundException(`Vaccine ${dto.vaccineName} not found`);
     }
 
+    let resolvedDoseNumber = dto.doseNumber;
+
+    // Backward compatibility: if client does not send a dose, infer the next completed dose.
+    if (!resolvedDoseNumber) {
+      const { data: latestDose, error: latestDoseError } = await this.db.supabase
+        .from('vaccination_events')
+        .select('dose_number')
+        .eq('child_id', childId)
+        .eq('vaccine_id', vaccine.id)
+        .eq('status', 'completed')
+        .order('dose_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestDoseError) {
+        this.logger.warn(
+          `Failed to infer dose number for ${vaccine.name}: ${latestDoseError.message}`,
+        );
+      }
+
+      resolvedDoseNumber = (latestDose?.dose_number || 0) + 1;
+    }
+
     // Create vaccination event
     const { data: event, error } = await this.db.supabase
       .from('vaccination_events')
       .insert({
         child_id: childId,
         vaccine_id: vaccine.id,
-        dose_number: 1, // You might want to calculate this based on history
+        dose_number: resolvedDoseNumber,
         administered_date: dto.administeredDate,
         administered_by_user_id: userId,
         facility_id: facilityId || null,
@@ -1496,9 +1523,35 @@ export class FacilityService {
     userId: string,
     branchIdFromToken?: string,
   ): Promise<RegisteredChildDto> {
+    const maxChildAgeYears = 5;
     const facilityId = branchIdFromToken || dto.branchId;
     if (!facilityId) {
       throw new BadRequestException('Facility information missing. Please re-login and try again.');
+    }
+
+    const parsedDateOfBirth = new Date(`${dto.dateOfBirth}T00:00:00`);
+    if (Number.isNaN(parsedDateOfBirth.getTime())) {
+      throw new BadRequestException('Invalid date of birth.');
+    }
+
+    const today = new Date();
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const earliestAllowedDate = new Date(todayDate);
+    earliestAllowedDate.setFullYear(earliestAllowedDate.getFullYear() - maxChildAgeYears);
+    const normalizedDob = new Date(
+      parsedDateOfBirth.getFullYear(),
+      parsedDateOfBirth.getMonth(),
+      parsedDateOfBirth.getDate(),
+    );
+
+    if (normalizedDob > todayDate) {
+      throw new BadRequestException('Date of birth cannot be in the future.');
+    }
+
+    if (normalizedDob < earliestAllowedDate) {
+      throw new BadRequestException(
+        `Only children aged ${maxChildAgeYears} years or below can be registered.`,
+      );
     }
 
     const { data: guardian, error: guardianError } = await this.db.supabase

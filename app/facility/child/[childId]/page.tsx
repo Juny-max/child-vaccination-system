@@ -50,6 +50,7 @@ type VaccineStatus = "overdue" | "dueToday" | "upcoming" | "completed"
 type VaccineEntry = {
   id: string
   vaccine: string
+  doseNumber?: number
   scheduledDate: string
   status: VaccineStatus
   notes?: string
@@ -538,8 +539,8 @@ export default function ChildPatientChartPage() {
         birthDetails: {
           weight: childProfile.weight ? `${childProfile.weight} kg` : "Not recorded",
           length: childProfile.length ? `${childProfile.length} cm` : "Not recorded",
-          place: "Not recorded",
-          deliveryType: "Not recorded",
+          place: childProfile.placeOfBirth || "Not recorded",
+          deliveryType: childProfile.deliveryType || "Not recorded",
         },
         allergies: [],
         lastVisit: childProfile.lastVisit || "Not yet",
@@ -580,6 +581,7 @@ export default function ChildPatientChartPage() {
       entries.push({
         id: `completed-${vax.id}`,
         vaccine: vax.vaccineName,
+        doseNumber: vax.doseNumber,
         scheduledDate: vax.administeredDate, // Use administered date for completed vaccines
         status: "completed",
         administeredDate: vax.administeredDate,
@@ -606,8 +608,9 @@ export default function ChildPatientChartPage() {
       }
       
       entries.push({
-        id: `scheduled-${vax.vaccineName}-${vax.dueDate}`,
+        id: `scheduled-${vax.vaccineName}-${vax.doseNumber}-${vax.dueDate}`,
         vaccine: vax.vaccineName,
+        doseNumber: vax.doseNumber,
         scheduledDate: vax.dueDate,
         status,
         notes: vax.isOverdue ? "Overdue - administer as soon as possible" : undefined,
@@ -796,6 +799,7 @@ export default function ChildPatientChartPage() {
       // Prepare the data for the API
       const requestData: facilityApi.AdministerVaccineRequest = {
         vaccineName: selectedDose.vaccine,
+        doseNumber: selectedDose.doseNumber,
         administeredDate: administerForm.dateAdministered,
         batchNumber: administerForm.batchNumber,
         expiryDate: administerForm.expiryDate || undefined,

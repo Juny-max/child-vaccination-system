@@ -2,7 +2,7 @@
 // Facility Nurse Module DTOs - Data Transfer Objects
 // ============================================================================
 
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsIn } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsIn, IsInt, Min } from 'class-validator';
 
 // ============================================================================
 // ENUMS
@@ -34,6 +34,11 @@ export class AdministerVaccineDto {
   @IsString()
   @IsNotEmpty()
   vaccineName: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  doseNumber?: number;
 
   @IsString()
   @IsNotEmpty()
@@ -279,6 +284,8 @@ export class FacilityChildProfileDto {
   gender: string;
   weight: string | null;
   length: string | null;
+  placeOfBirth: string | null;
+  deliveryType: string | null;
   bloodType: string | null;
   profilePhoto: string | null;
 

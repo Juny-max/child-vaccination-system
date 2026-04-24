@@ -142,6 +142,7 @@ export default function OfflineSyncPage() {
       
       const requestData = {
         vaccineName: vaccination.vaccineName,
+        doseNumber: vaccination.doseNumber,
         administeredDate: vaccination.administeredDate,
         batchNumber: vaccination.batchNumber,
         expiryDate: vaccination.expiryDate,

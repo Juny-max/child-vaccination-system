@@ -30,6 +30,8 @@ export interface FacilityChildProfile {
   gender: string;
   weight: string | null;
   length: string | null;
+  placeOfBirth: string | null;
+  deliveryType: string | null;
   bloodType: string | null;
   profilePhoto: string | null;
 
@@ -125,6 +127,7 @@ export async function getScheduledVaccinations(
  */
 export interface AdministerVaccineRequest {
   vaccineName: string;
+  doseNumber?: number;
   administeredDate: string;
   batchNumber: string;
   expiryDate?: string;

@@ -37,7 +37,7 @@ export function DatePicker({
   toYear = new Date().getFullYear() + 20,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
-  const initialMonth = date ?? minDate ?? new Date()
+  const initialMonth = date ?? maxDate ?? minDate ?? new Date()
   const [month, setMonth] = React.useState<Date>(initialMonth)
 
   React.useEffect(() => {
@@ -48,9 +48,9 @@ export function DatePicker({
 
   React.useEffect(() => {
     if (open) {
-      setMonth(date ?? minDate ?? new Date())
+      setMonth(date ?? maxDate ?? minDate ?? new Date())
     }
-  }, [open, date, minDate])
+  }, [open, date, minDate, maxDate])
 
   const stripTime = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate())
 
@@ -114,7 +114,7 @@ export function DatePicker({
           }}
           fromYear={fromYear}
           toYear={toYear}
-          defaultMonth={date ?? minDate ?? new Date()}
+          defaultMonth={date ?? maxDate ?? minDate ?? new Date()}
           disabled={(candidateDate) => {
             const normalizedCandidate = stripTime(candidateDate)
             if (minDate && normalizedCandidate < stripTime(minDate)) return true
