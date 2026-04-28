@@ -105,6 +105,15 @@ Visit `http://localhost:3000`
 - `BREVO_API_KEY=<Brevo API key for transactional email>`
 - `SMTP_FROM=<verified sender email in Brevo, e.g. no-reply@yourdomain.com>`
 - `FRONTEND_URL=http://localhost:3000`
+- `BACKUP_DIR=./backups`
+- `BACKUP_ENCRYPTION_KEY=<64 hex chars>`
+- `BACKUP_RETENTION_DAYS=30`
+
+Generate a 64-character hex key for `BACKUP_ENCRYPTION_KEY`:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 1. Install dependencies once: `pnpm install`
 2. Start the watcher: `pnpm run start:dev`
 3. The API boots on `http://localhost:3001` (all routes are under `/api`).

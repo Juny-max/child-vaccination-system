@@ -19,6 +19,11 @@ REFERENCES = [
     "World Health Organization, \"Immunization Agenda 2030: A global strategy to leave no one behind,\" 2020. [Online]. Available: https://www.who.int/initiatives/immunization-agenda-2030. [Accessed: Apr. 10, 2026].",
     "United Nations Children's Fund, \"The State of the World's Children: For every child, vaccination,\" 2023. [Online]. Available: https://www.unicef.org/reports/state-worlds-children. [Accessed: Apr. 10, 2026].",
     "Ghana Health Service, \"Expanded Programme on Immunization operational guidance,\" Accra, Ghana, 2024.",
+    "World Health Organization, \"Global strategy on digital health 2020-2025,\" 2021. [Online]. Available: https://www.who.int/publications/i/item/9789240020924. [Accessed: Apr. 28, 2026].",
+    "World Health Organization, \"Recommendations on digital interventions for health system strengthening,\" WHO Guideline, 2019. [Online]. Available: https://www.who.int/publications/i/item/9789241550505. [Accessed: Apr. 28, 2026].",
+    "Centers for Disease Control and Prevention, \"Immunization Information Systems (IIS),\" 2025. [Online]. Available: https://www.cdc.gov/vaccines/programs/iis/index.html. [Accessed: Apr. 28, 2026].",
+    "Centers for Disease Control and Prevention, \"Immunization Information Systems (IIS) Technical Guidance,\" 2025. [Online]. Available: https://www.cdc.gov/vaccines/programs/iis/technical-guidance/index.html. [Accessed: Apr. 28, 2026].",
+    "DHIS2, \"Individual Data Records with Tracker & Event Programs,\" 2025. [Online]. Available: https://dhis2.org/tracker. [Accessed: Apr. 28, 2026].",
     "F. D. Davis, \"Perceived usefulness, perceived ease of use, and user acceptance of information technology,\" MIS Quarterly, vol. 13, no. 3, pp. 319-340, 1989.",
     "V. Venkatesh, M. G. Morris, G. B. Davis, and F. D. Davis, \"User acceptance of information technology: Toward a unified view,\" MIS Quarterly, vol. 27, no. 3, pp. 425-478, 2003.",
     "A. Glasgow, T. Vogt, and S. Boles, \"Evaluating the public health impact of health promotion interventions: The RE-AIM framework,\" American Journal of Public Health, vol. 89, no. 9, pp. 1322-1327, 1999.",
@@ -236,7 +241,7 @@ def build_chapter_one() -> None:
     add_heading(doc, "1.8 Overview of the Implemented System")
     add_body(
         doc,
-        "The implemented CVCC prototype supports seven roles: Parent or Guardian, Facility Nurse, Community Health Worker (CHW), Data Officer, Branch Manager, Headquarters Administrator, and Public Health Authority (PHA). Role separation follows a Role-Based Access Control (RBAC) model and aligns each role with a dedicated interface and operational permissions [13], [20].",
+        "The implemented CVCC prototype supports five roles: Parent or Guardian, Facility Nurse, Community Health Worker (CHW), Data Officer, and Branch Manager. Role separation follows a Role-Based Access Control (RBAC) model and aligns each role with a dedicated interface and operational permissions [13], [20].",
     )
     add_body(
         doc,
@@ -282,48 +287,85 @@ def build_chapter_two() -> None:
     add_heading(doc, "2.0 Introduction")
     add_body(
         doc,
-        "This chapter reviews established and emerging literature on child vaccination tracking systems, multi-branch record continuity, verification mechanisms, and health technology adoption models. The review positions the Child Vaccination Command Center (CVCC) within current evidence and identifies practical gaps that the prototype addresses.",
+        "This chapter reviews established and emerging literature on child vaccination tracking systems, multi-branch record continuity, verification mechanisms, and health technology adoption models. The review positions the Child Vaccination Command Center (CVCC) within current evidence and identifies practical gaps that the prototype addresses. It also reflects the study method used for this project, which relied mainly on online research, policy review, technical documentation, and phone-based conversations with nurses rather than formal face-to-face interviews [5], [6], [30], [31], [32].",
     )
 
-    add_heading(doc, "2.1 Immunization Coverage and Monitoring")
     add_body(
         doc,
-        "International evidence shows that routine immunization remains uneven across locations, and aggregate national indicators may hide subnational service gaps [1], [2], [3]. This means local facility and outreach visibility are essential for preventing children from becoming overdue or zero-dose.",
-    )
-    add_body(
-        doc,
-        "Therefore, modern immunization systems are expected to support both operational service delivery and strategic monitoring so that missed children can be identified early and followed up effectively [1], [2], [3].",
+        "The purpose of the review is not only to describe what has already been written about immunization systems, but also to explain why a multi-branch digital approach is needed in the Ghanaian context. Across many settings, paper tools remain useful but limited, while digital tools improve access, continuity, and reporting when they are designed around the workflow of health workers and caregivers [1], [2], [5], [32], [35].",
     )
 
-    add_heading(doc, "2.2 Evolution of Vaccination Record Keeping")
+    add_heading(doc, "2.1 Immunization Coverage, Child Health, and the Need for Reliable Records")
     add_body(
         doc,
-        "Traditional paper cards and register books remain common in low-resource care settings because they are accessible and inexpensive. However, paper workflows are prone to damage, missing pages, readability issues, and poor cross-facility availability [4].",
+        "WHO reports that routine immunization remains one of the most effective public health interventions, yet coverage gaps still leave millions of children unprotected each year [1]. These gaps are not only a vaccine supply problem; they are also a record-management and follow-up problem because children can be missed when service data are incomplete, fragmented, or inaccessible across facilities [1], [2].",
     )
     add_body(
         doc,
-        "Digital transition has introduced Electronic Immunization Registry (EIR) models and related health information tools. Their impact depends not only on technology but also on workflow fit, infrastructure reliability, and consistent frontline adoption [2], [8].",
+        "The Immunization Agenda 2030 stresses that national programmes must reach every child, including those who are zero-dose or under-immunized, and that progress depends on stronger data systems, local accountability, and continuous monitoring [2]. In practical terms, this means a vaccination system must do more than store names and dates. It must help nurses, community health workers, and supervisors see who is due, who is overdue, and where follow-up is needed [1], [2], [35].",
+    )
+    add_body(
+        doc,
+        "For Ghana and similar settings, this is especially important because childhood vaccination is delivered through a mix of fixed facilities, outreach visits, and branch-level service points. When records are not connected, a child who attends a different branch may be treated as a new case, even though previous doses already exist elsewhere. That creates duplication, delays, and unreliable coverage statistics [1], [4], [35].",
     )
 
-    add_heading(doc, "2.3 Categories of Digital Immunization Systems")
-    add_list_item(
+    add_heading(doc, "2.2 Paper-Based Immunization Registers and Their Limitations")
+    add_body(
         doc,
-        "Electronic Immunization Registry (EIR) systems: centralized child-level records for monitoring, follow-up, and reporting [2], [8].",
+        "Traditional child health record books and clinic registers remain common because they are inexpensive, familiar, and easy to deploy in low-resource environments [4]. However, their weaknesses are widely recognized. Paper records can be misplaced, damaged by water or wear, completed with unreadable handwriting, or simply unavailable when a child is seen at another facility [4], [31].",
     )
-    add_list_item(
+    add_body(
         doc,
-        "District Health Information Software 2 (DHIS2) Tracker implementations: individual event and longitudinal tracking modules with configurable programs [8].",
+        "In a multi-branch context, paper records also make consolidation difficult. Each branch keeps its own copy or register, but these copies are not updated automatically. As a result, reporting teams must manually combine information, which increases workload and introduces errors. This limitation matters because immunization programmes need timely and accurate data to support catch-up campaigns, stock estimation, and supervision [1], [4], [31], [32].",
     )
-    add_list_item(
+    add_body(
         doc,
-        "Mobile reminder systems: Short Message Service (SMS) and app notifications to improve attendance and dose completion [1], [2].",
-    )
-    add_list_item(
-        doc,
-        "Quick Response (QR) and digital certificate systems: fast identity retrieval and verifiable proof workflows [23], [24], [25].",
+        "Paper systems are therefore useful as backup tools, but they are not sufficient as the primary mechanism for modern multi-branch immunization management. A digital platform must preserve the convenience of frontline use while solving the access and continuity problems created by paper-only workflows [4], [31], [32].",
     )
 
-    add_heading(doc, "2.4 Technology Adoption Foundations")
+    add_heading(doc, "2.3 Evolution of Digital Vaccination Record Keeping")
+    add_body(
+        doc,
+        "Digital immunization systems evolved to address these limitations by introducing child-level electronic records, centralized search, automated reminders, and synchronized reporting. The main goal is to make the history of the child portable across facilities rather than trapped in a single paper folder or one clinic register [2], [32], [35].",
+    )
+    add_body(
+        doc,
+        "The global strategy on digital health emphasizes that digital initiatives must combine financial, organizational, human, and technological resources in order to succeed [31]. In other words, the presence of software alone does not guarantee better vaccination outcomes. The system must fit the health worker's routine, be supported by management, and work reliably even where infrastructure is weak [31], [32].",
+    )
+
+    add_heading(doc, "2.4 Categories of Digital Immunization Systems")
+    add_heading(doc, "2.4.1 Electronic Immunization Registry (EIR) Systems")
+    add_body(
+        doc,
+        "Electronic Immunization Registry (EIR) systems are centralized child-level records used for monitoring, follow-up, and reporting [2], [8], [35]. These systems are designed to store immunization histories in a structured form so that health workers can quickly search a child's record, determine due doses, and generate coverage reports for supervision and planning.",
+    )
+    add_heading(doc, "2.4.2 District Health Information Software 2 (DHIS2) Tracker Implementations")
+    add_body(
+        doc,
+        "District Health Information Software 2 (DHIS2) Tracker implementations support individual event and longitudinal tracking modules with configurable programs [8], [35]. Tracker-based implementations are important because they allow a child to be followed over time rather than treated only as a one-time reporting entry. This makes them useful for immunization programmes that need continuous follow-up across multiple visits and service points.",
+    )
+    add_heading(doc, "2.4.3 Mobile Reminder Systems")
+    add_body(
+        doc,
+        "Mobile reminder systems use Short Message Service (SMS) and app notifications to improve attendance and dose completion [1], [2], [21], [22]. These solutions support caregiver engagement by sending due-date prompts, missed-dose alerts, and follow-up messages that reduce forgetfulness and improve vaccination continuity.",
+    )
+    add_heading(doc, "2.4.4 Quick Response (QR) and Digital Certificate Systems")
+    add_body(
+        doc,
+        "Quick Response (QR) and digital certificate systems provide fast identity retrieval and verifiable proof workflows [23], [24], [25]. They are useful when health workers need to confirm a child's identity quickly or when caregivers need a portable proof of vaccination that can be validated without exposing unnecessary private details.",
+    )
+    add_heading(doc, "2.4.5 Offline-First Mobile Capture Tools")
+    add_body(
+        doc,
+        "Offline-first mobile capture tools allow local data entry with later synchronization to a central server when connectivity returns [16], [17], [18], [35]. These tools are essential in low-connectivity environments because they keep service delivery moving even when the internet is unstable or unavailable.",
+    )
+
+    add_body(
+        doc,
+        "These categories show that digital immunization systems are no longer limited to one platform type. Some solutions are designed mainly for national reporting, some for facility-level workflow, and others for caregiver communication. A strong child-vaccination platform should combine these strengths in a single architecture that supports both frontline service delivery and long-term supervision [8], [31], [35].",
+    )
+
+    add_heading(doc, "2.5 Technology Adoption Foundations")
     add_body(
         doc,
         "The Technology Acceptance Model (TAM) explains adoption through perceived usefulness and perceived ease of use [5]. In immunization settings, this implies that systems must save time and reduce complexity for nurses and support staff.",
@@ -336,41 +378,135 @@ def build_chapter_two() -> None:
         doc,
         "The Reach, Effectiveness, Adoption, Implementation, and Maintenance (RE-AIM) framework supports evaluation of scalability and long-term sustainability beyond pilot success [7].",
     )
+    add_body(
+        doc,
+        "These theories are helpful because child vaccination systems are used by different people for different reasons. Nurses may care about speed and reliability, supervisors may care about reporting, caregivers may care about reminders and visibility, and managers may care about branch performance. A system that ignores these differences may be technically sound but practically underused [5], [6], [7], [31].",
+    )
 
-    add_heading(doc, "2.5 Security, Privacy, and Trust")
+    add_heading(doc, "2.6 Electronic Immunization Registries and DHIS2 Tracker")
+    add_body(
+        doc,
+        "Electronic Immunization Registries (EIRs) are a core response to the limitations of paper-based vaccination records. They make it possible to store child-level data centrally, search quickly by identity, follow vaccination history over time, and generate reports for districts and ministries [2], [8], [35].",
+    )
+    add_body(
+        doc,
+        "DHIS2 Tracker is especially relevant because it bridges individual-level tracking and broader health information management. The Tracker and Event model supports longitudinal records, mobile capture, duplicate search, automatic aggregation, appointment follow-up, and offline data entry with later synchronization [8], [35]. These features directly match the workflow needs of a multi-branch child vaccination system.",
+    )
+    add_body(
+        doc,
+        "In practice, DHIS2 demonstrates an important design lesson: the best immunization systems are not just databases. They are workflow tools. They help health workers register a child once, follow the child across visits, reduce duplicate entry, and support both local service delivery and higher-level reporting without forcing staff to re-enter the same information in many places [8], [35].",
+    )
+
+    add_heading(doc, "2.7 Mobile Reminder Systems, Caregiver Engagement, and Follow-Up")
+    add_body(
+        doc,
+        "A recurring theme in immunization literature is that missed appointments are often not caused by refusal alone. Some doses are missed because caregivers forget dates, relocate, misunderstand schedules, or never receive a follow-up message in time [1], [2], [21], [22].",
+    )
+    add_body(
+        doc,
+        "Digital reminder systems address this gap through SMS alerts, mobile app notifications, and structured follow-up messaging. These tools are especially useful in settings where mobile phone access is widespread but internet access may still be uneven [21], [22]. When reminders are tied to actual due dates, vaccination attendance improves and the workload of nurses is reduced because fewer children are missed silently [1], [2].",
+    )
+    add_body(
+        doc,
+        "For this project, reminder support is important because the platform is not meant to be a passive register. It is designed to help the parent, the nurse, and the CHW all see the same child journey in a structured way. A caregiver who can see the next vaccine date, a missed dose, or a downloadable certificate is more likely to engage with the immunization process consistently [21], [22], [24], [25].",
+    )
+
+    add_heading(doc, "2.8 Security, Privacy, Authentication, and Trust")
     add_body(
         doc,
         "Child health records are sensitive and require controlled access, secure authentication, and traceable actions. Secure system design commonly combines Role-Based Access Control (RBAC), encrypted transport, and controlled token handling such as Json Web Token (JWT) session enforcement [19], [20].",
     )
     add_body(
         doc,
-        "Trust in vaccination evidence is strengthened when certificate verification confirms authenticity without unnecessary disclosure of private data [19], [20].",
+        "Trust in vaccination evidence is strengthened when certificate verification confirms authenticity without unnecessary disclosure of private data [19], [20], [23], [24], [25]. That means the system should show enough information for verification while protecting the caregiver's and child's privacy. In a practical deployment, this includes role-based permissions, secure credentials, and auditability of sensitive actions [19], [20], [31].",
+    )
+    add_body(
+        doc,
+        "Security is also part of usability. If staff constantly struggle with logins, timeouts, or unclear permissions, they may bypass the system or revert to paper. Therefore, the literature supports security designs that are strong but not unnecessarily complicated for frontline users [19], [20], [31], [32].",
     )
 
-    add_heading(doc, "2.6 Methods Alignment With This Project")
+    add_heading(doc, "2.9 Offline-First Design and Low-Connectivity Settings")
     add_body(
         doc,
-        "As in Chapter Three, the evidence synthesis for this project used a semi-structured questionnaire approach. Interview questions were asked through phone calls with nurses to capture practical clinical and outreach constraints in their own words. This was combined with online research across policy guidance, technical references, and related digital immunization literature [1], [2], [8], [30].",
+        "Connectivity limitations are common in outreach and rural service settings, so a child vaccination system must not depend entirely on a live network connection. Offline-first mobile design allows data to be captured locally, validated on the device, and synchronized later when a connection becomes available [16], [17], [18], [35].",
     )
     add_body(
         doc,
-        "The combination of phone interviews and online evidence review improved contextual relevance. It ensured that design choices reflected real workflow conditions rather than generic system assumptions [30].",
+        "This approach is especially relevant for Community Health Workers, who may visit homes, schools, or temporary outreach sites where network availability is poor. If the system can store the record safely at the point of service, the worker can still perform the core task without interruption, while the platform later aligns the record with the central branch database [16], [17], [18].",
+    )
+    add_body(
+        doc,
+        "DHIS2 Tracker documents a similar principle: mobile capture can work in both online and offline modes and automatically sync when internet access returns [35]. The same logic supports the CVCC CHW workflow, where an offline register can later be reconciled with the branch-level and central record store.",
     )
 
-    add_heading(doc, "2.7 Research Gap and Positioning of CVCC")
+    add_heading(doc, "2.10 Ghanaian Context and Research Method Alignment")
     add_body(
         doc,
-        "The literature confirms that digital immunization tools exist, but common implementation gaps remain in integrated frontline usability, caregiver self-service, and cross-branch continuity. Many systems are either reporting-centric or incomplete for routine nurse and Community Health Worker (CHW) operations [1], [2], [8].",
+        "This project was grounded in online research and phone-based contact with nurses rather than formal face-to-face interviews. That approach was appropriate because the project needed timely practical insights from busy healthcare staff while still validating the design against current guidance and technical evidence [30], [31], [32].",
+    )
+    add_body(
+        doc,
+        "The Ghanaian context makes this especially important. Health facilities may vary in infrastructure, staffing, and workflow maturity, which means a system that works in one branch may fail in another if it is too dependent on fixed connectivity or excessive administrative steps. The literature therefore supports a pragmatic, workflow-aware, and branch-synchronized solution rather than a one-size-fits-all tool [4], [31], [35].",
+    )
+    add_body(
+        doc,
+        "The current system analysis in the project confirms that paper registers and isolated records still dominate many service points. This creates a real research gap that the CVCC prototype is designed to address: a single child record that can move across branches, remain secure, and still support supervisory reporting and caregiver communication [4], [8], [31], [35].",
+    )
+
+    add_heading(doc, "2.11 Research Gap and Positioning of CVCC")
+    add_body(
+        doc,
+        "The literature confirms that digital immunization tools exist, but common implementation gaps remain in integrated frontline usability, caregiver self-service, and cross-branch continuity. Many systems are either reporting-centric or incomplete for routine nurse and Community Health Worker (CHW) operations [1], [2], [8], [35].",
     )
     add_body(
         doc,
         "The CVCC prototype addresses this gap by combining facility workflow support, caregiver tracking, QR-based verification, and offline outreach synchronization in one coordinated platform. It aligns operational and supervisory needs while remaining realistic for incremental deployment.",
     )
-
-    add_heading(doc, "2.8 Chapter Summary")
     add_body(
         doc,
-        "Chapter Two establishes the theoretical and practical basis for the project. It confirms the importance of child-level continuity, secure verification, and adoption-aware design. These findings directly inform the methodology and implementation decisions documented in Chapter Three.",
+        "In this sense, the project is not trying to replace existing public health tools. Instead, it aims to strengthen the missing layer between paper-based service delivery and aggregated reporting systems by providing child-level continuity across branches, roles, and service points [2], [8], [31], [35].",
+    )
+
+    add_heading(doc, "2.12 Comparative Review of Existing Systems and Practical Gaps")
+    add_body(
+        doc,
+        "A comparison of the reviewed literature shows that many existing digital health tools solve only part of the child immunization problem. Some systems focus on registration and reporting, while others focus on reminders, certificate issuance, or verification. A smaller number support individual tracking, but even those may not fully address branch-to-branch continuity, offline outreach usage, or caregiver-facing self-service in one integrated workflow [2], [7], [8], [9], [13], [35].",
+    )
+    add_body(
+        doc,
+        "This partial coverage is important because immunization is not a single event. It is a sequence of interactions between the child, the caregiver, the nurse, the community health worker, and the supervisor. If a system only records the current visit but does not preserve the history across branches, then the child still risks duplication, missed follow-up, and poor continuity of care. If a system only supports reminders but not reliable search and verification, then caregivers may be informed but still unable to prove status or recover old records [1], [2], [8], [21], [22].",
+    )
+    add_body(
+        doc,
+        "The literature also suggests that the usability of a system matters as much as its technical completeness. A highly capable registry that is slow to load, hard to navigate, or difficult to use under clinic pressure is unlikely to be used consistently. TAM and UTAUT both support this argument by showing that perceived usefulness, ease of use, performance expectancy, and facilitating conditions influence whether health workers adopt new digital tools [5], [6].",
+    )
+    add_body(
+        doc,
+        "This is one reason the CVCC design intentionally combines a limited number of clear role-specific dashboards with structured workflows such as search, registration, reminders, and verification. The goal is not feature overload; the goal is practical completeness. The literature consistently favors systems that reduce manual workload, fit the everyday environment of health workers, and preserve child-level continuity at the point of care [4], [8], [31], [35].",
+    )
+
+    add_heading(doc, "2.13 Synthesis of the Literature and Design Implications for CVCC")
+    add_body(
+        doc,
+        "When the reviewed sources are synthesized together, five design implications stand out. First, the system must maintain a single child record that can be searched, updated, and verified across branches without duplication. Second, it must support caregivers through reminders and clear appointment visibility. Third, it must tolerate poor connectivity by allowing offline capture and later synchronization. Fourth, it must protect sensitive child data through secure authentication and role-based access. Fifth, it must support branch, district, and public health reporting without forcing duplicate manual entry [1], [2], [8], [19], [20], [21], [22], [31], [35].",
+    )
+    add_body(
+        doc,
+        "These implications directly shaped the CVCC prototype. The parent module focuses on visibility and proof access. The facility module focuses on search, recording, and verification. The CHW module focuses on offline-first outreach workflows. The branch, headquarters, data officer, and PHA modules focus on monitoring, supervision, deduplication, and reporting. This mapping is consistent with the literature's emphasis on using digital systems to strengthen existing workflows rather than replace them abruptly [5], [6], [7], [8], [31], [35].",
+    )
+    add_body(
+        doc,
+        "A further implication is that health systems in Ghana and similar environments need adaptable tools rather than rigid one-size-fits-all packages. A branch may have stable internet today but intermittent connectivity tomorrow; a nurse may need quick lookup during peak hours; a CHW may need to capture a record in a remote community; and a parent may need a reminder on a basic phone. The literature therefore supports an architecture that is flexible in delivery but strict in data integrity [16], [17], [18], [19], [20], [31], [35].",
+    )
+
+    add_heading(doc, "2.14 Chapter Summary")
+    add_body(
+        doc,
+        "Chapter Two establishes the theoretical and practical basis for the project. It confirms the importance of child-level continuity, secure verification, adoption-aware design, digital reminder support, and offline-first capture. These findings directly inform the methodology and implementation decisions documented in Chapter Three.",
+    )
+    add_body(
+        doc,
+        "Overall, the review shows that a useful child vaccination platform must be built around both evidence and workflow. It must answer the needs of nurses, Community Health Workers, parents, branch managers, data officers, headquarters administrators, and public health reviewers while still remaining practical in low-connectivity environments [5], [6], [7], [31], [35].",
     )
 
     add_chapter_reference_note(doc)
@@ -389,7 +525,7 @@ def build_chapter_three() -> None:
     add_heading(doc, "3.0 Introduction")
     add_body(
         doc,
-        "This chapter explains how the Child Vaccination Command Center (CVCC) was designed and implemented from requirements discovery through architecture, testing, and documentation. The chapter emphasizes methodological decisions, Sprint execution, and practical constraints from frontline healthcare operations.",
+        "This chapter explains how the Child Vaccination Command Center (CVCC) was designed and implemented from requirements discovery through architecture, testing, and documentation. The project is organized around five user roles: Parent or Guardian, Facility Nurse, Community Health Worker (CHW), Data Officer, and Branch Manager. The chapter emphasizes methodological decisions, Sprint execution, and practical constraints from frontline healthcare operations.",
     )
 
     add_heading(doc, "3.1 Research Methodology and Data Collection")
@@ -486,7 +622,7 @@ def build_chapter_three() -> None:
     )
     add_list_item(
         doc,
-        "Monitoring: role-specific dashboards for branch managers and public health supervision.",
+        "Monitoring: role-specific dashboards for branch managers and data officers.",
     )
 
     add_heading(doc, "3.6 Testing and Quality Assurance")
@@ -520,7 +656,7 @@ def build_chapter_three() -> None:
     add_heading(doc, "3.8 Chapter Summary")
     add_body(
         doc,
-        "Chapter Three documented the project methodology, Sprint-driven development approach, architecture decisions, quality strategy, and system modeling artifacts. The chapter demonstrates that implementation decisions were directly linked to field evidence from semi-structured interviews and online research.",
+        "Chapter Three documented the project methodology, Sprint-driven development approach, architecture decisions, quality strategy, and system modeling artifacts. The chapter demonstrates that implementation decisions were directly linked to field evidence from semi-structured interviews and online research, and that the final system design aligns with the five-user scope of the project.",
     )
 
     add_chapter_reference_note(doc)

@@ -74,9 +74,6 @@ import {
   deleteHqCatchmentArea,
 } from "@/lib/api/hq-catchment-areas"
 import {
-  getSystemMetrics,
-  getDatabaseStats,
-  getBackupHistory,
   configureBackup,
   getAuditActivity,
 } from "@/lib/api/hq-system"
@@ -92,11 +89,6 @@ import {
   deleteCustomRole,
   getAvailablePermissions,
 } from "@/lib/api/hq-roles"
-import {
-  getHqSystemSettings,
-  createHqSystemSetting,
-  updateHqSystemSetting,
-} from "@/lib/api/hq-system-settings"
 import { getHqAuditLogs } from "@/lib/api/hq-audit-logs"
 import { API_BASE_URL, getAuthHeaders } from "@/lib/api/config"
 
@@ -153,29 +145,6 @@ type NotificationTemplate = {
 
 type PreviewChannel = "sms" | "email"
 
-type SystemStatus = {
-  id: string
-  name: string
-  status: "operational" | "degraded" | "offline"
-  detail: string
-}
-
-type SystemMetric = {
-  id: string
-  name: string
-  value: number | string
-  unit?: string
-  status: "normal" | "warning" | "critical"
-  timestamp: string
-}
-
-type BackupRecord = {
-  id: string
-  timestamp: string
-  size: string
-  status: "success" | "failed" | "pending"
-  downloadUrl?: string
-}
 
 type CatchmentArea = {
   id: string
@@ -218,9 +187,13 @@ type AuditLog = {
   id: string
   actor: string
   actorName?: string
+  actorRole?: string
   action: string
   timestamp: string
   category: string
+  entityType?: string
+  ipAddress?: string
+  userAgent?: string
 }
 
 type ReviewQueueItem = {
@@ -240,15 +213,6 @@ type BulkBranchOperation = {
   name: string
   description: string
   operationType: "activate" | "deactivate" | "reassign-manager" | "add-chws"
-}
-
-type DatabaseStat = {
-  id: string
-  name: string
-  value: string | number
-  unit: string
-  status: "normal" | "warning" | "critical"
-  threshold?: number
 }
 
 type UserActivity = {
@@ -329,9 +293,6 @@ const initialVaccines: VaccineConfig[] = []
 
 // Notification templates loaded from localStorage with fallback to empty array
 const initialTemplates: NotificationTemplate[] = []
-
-// System status loaded from API via initializeSystemAlerts()
-const initialSystemStatus: SystemStatus[] = []
 
 // Audit logs are loaded from API in useEffect
 const initialAuditLogs: AuditLog[] = []
@@ -540,7 +501,6 @@ export default function HqDashboardPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [archivingVaccineId, setArchivingVaccineId] = useState<string | null>(null)
 
-  const [systemStatus, setSystemStatus] = useState(initialSystemStatus)
   const [auditLogs, setAuditLogs] = useState(initialAuditLogs)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [activeChwBranchId, setActiveChwBranchId] = useState<string | null>(null)
@@ -561,11 +521,6 @@ export default function HqDashboardPage() {
   const [editingCatchmentId, setEditingCatchmentId] = useState<string | null>(null)
   const [catchmentForm, setCatchmentForm] = useState({ name: "", community: "", populationEstimate: "" })
 
-  // FEATURE 2: System Health Metrics
-  const [systemMetrics, setSystemMetrics] = useState<SystemMetric[]>([])
-  const [backupHistory, setBackupHistory] = useState<BackupRecord[]>([])
-  const [isMetricsLoading, setIsMetricsLoading] = useState(false)
-
   // FEATURE 3: Bulk User CSV Import
   const [csvImportFile, setCsvImportFile] = useState<File | null>(null)
   const [isImportingCsv, setIsImportingCsv] = useState(false)
@@ -576,10 +531,6 @@ export default function HqDashboardPage() {
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
   const [bulkOperationResult, setBulkOperationResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
   const [selectedBulkOperation, setSelectedBulkOperation] = useState<string>("activate")
-
-  // FEATURE 5: Database Stats
-  const [databaseStats, setDatabaseStats] = useState<DatabaseStat[]>([])
-  const [isDatabaseStatsLoading, setIsDatabaseStatsLoading] = useState(false)
 
   // FEATURE 6: Backup Management Config
   const [backupSchedule, setBackupSchedule] = useState<"daily" | "weekly" | "monthly">("weekly")
@@ -976,58 +927,28 @@ export default function HqDashboardPage() {
 
     const loadSystemData = async () => {
       try {
-        const [settingsData, auditLogsData] = await Promise.all([
-          getHqSystemSettings(),
-          getHqAuditLogs({ limit: 50 }),
-        ])
+        const auditLogsData = await getHqAuditLogs({ limit: 50 })
 
         if (!isMounted) return
-
-        if (settingsData && settingsData.length > 0) {
-          // Transform system settings into system status format
-          const statusMap = new Map<string, any>()
-          settingsData.forEach((setting) => {
-            statusMap.set(setting.id, setting)
-          })
-
-          const transformedStatus = [
-            {
-              id: "api-service",
-              name: "API Service",
-              status: statusMap.get("api_status")?.value === "operational" ? "operational" : "degraded",
-              detail: statusMap.get("api_detail")?.value || "System online",
-            },
-            {
-              id: "database",
-              name: "Database",
-              status: statusMap.get("db_status")?.value === "operational" ? "operational" : "degraded",
-              detail: statusMap.get("db_detail")?.value || "Connected",
-            },
-            {
-              id: "notifications",
-              name: "Notifications",
-              status: statusMap.get("notification_status")?.value === "operational" ? "operational" : "degraded",
-              detail: statusMap.get("notification_detail")?.value || "Q-linked",
-            },
-          ]
-          setSystemStatus(transformedStatus as any)
-        }
 
         const auditLogItems = auditLogsData?.data ?? []
         if (Array.isArray(auditLogItems) && auditLogItems.length > 0) {
           const transformedLogs = auditLogItems.map((log: any) => ({
             id: log.id,
-            actor: log.user_id,
+            actor: log.user_id ?? log.userId ?? "",
             action: log.action,
             category: log.category,
-            timestamp: new Date(log.created_at).toISOString().slice(0, 16).replace("T", " "),
+            entityType: log.entity_type ?? log.entityType ?? undefined,
+            ipAddress: log.ip_address ?? log.ipAddress ?? undefined,
+            userAgent: log.user_agent ?? log.userAgent ?? undefined,
+            timestamp: new Date(log.created_at ?? log.timestamp).toISOString().slice(0, 16).replace("T", " "),
           }))
           setAuditLogs(transformedLogs as any)
         }
       } catch (error) {
         console.error("Failed to load system data from backend", error)
         if (!isMounted) return
-        setSystemMessage("Using local fallback data for system health while API is unavailable.")
+        setSystemMessage("Using local fallback data for audit logs while API is unavailable.")
       }
     }
 
@@ -1051,14 +972,8 @@ export default function HqDashboardPage() {
     return () => { isMounted = false }
   }, [])
 
-  // FEATURE 2: Load system metrics on mount
-  useEffect(() => {
-    loadSystemMetrics()
-  }, [])
-
   // TIER 2: Load data on mount
   useEffect(() => {
-    loadDatabaseStats()
     loadUserActivity()
     loadVaccineInventory()
     loadNotificationDeliveries()
@@ -1115,13 +1030,22 @@ export default function HqDashboardPage() {
     return map
   }, [users])
 
+  const userRoleMap = useMemo(() => {
+    const map = new Map<string, string>()
+    users.forEach((user) => {
+      map.set(user.id, user.role)
+    })
+    return map
+  }, [users])
+
   // Enrich audit logs with user names
   const enrichedAuditLogs = useMemo(() => {
     return auditLogs.map((log) => ({
       ...log,
       actorName: userNameMap.get(log.actor) ?? log.actor,
+      actorRole: userRoleMap.get(log.actor),
     }))
-  }, [auditLogs, userNameMap])
+  }, [auditLogs, userNameMap, userRoleMap])
 
   const handleLogout = async () => {
     setIsLoggingOut(true)
@@ -1361,22 +1285,6 @@ export default function HqDashboardPage() {
     }
   }
 
-  // ===== FEATURE 2: SYSTEM METRICS HANDLER =====
-  const loadSystemMetrics = async () => {
-    setIsMetricsLoading(true)
-    try {
-      const metrics = await getSystemMetrics()
-      setSystemMetrics(metrics)
-      const backups = await getBackupHistory()
-      setBackupHistory(backups)
-    } catch (error) {
-      console.error("Failed to load metrics", error)
-      setSystemMessage("Could not load system metrics.")
-    } finally {
-      setIsMetricsLoading(false)
-    }
-  }
-
   // ===== TIER 2 HANDLERS =====
 
   // FEATURE 4: Branch Bulk Operations
@@ -1442,19 +1350,6 @@ export default function HqDashboardPage() {
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
     setSystemMessage("✓ Branches exported successfully.")
-  }
-
-  // FEATURE 5: Database Stats
-  const loadDatabaseStats = async () => {
-    setIsDatabaseStatsLoading(true)
-    try {
-      const stats = await getDatabaseStats()
-      setDatabaseStats(stats)
-    } catch (error) {
-      console.error("Failed to load database stats", error)
-    } finally {
-      setIsDatabaseStatsLoading(false)
-    }
   }
 
   // FEATURE 6: Backup Management Config
@@ -4461,57 +4356,70 @@ export default function HqDashboardPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>System Status</CardTitle>
-          <CardDescription>Monitor infrastructure health at a glance.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
-          {systemStatus.map((service) => (
-            <div key={service.id} className="rounded-lg border border-border bg-background p-4">
-              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <ServerCog className="h-4 w-4 text-primary" /> {service.name}
-              </p>
-              <Badge
-                className="mt-2"
-                variant={service.status === "operational" ? "secondary" : service.status === "degraded" ? "outline" : "destructive"}
-              >
-                {service.status === "operational" ? "Operational" : service.status === "degraded" ? "Degraded" : "Offline"}
-              </Badge>
-              <p className="mt-2 text-xs text-muted-foreground">{service.detail}</p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <ListChecks className="h-5 w-5 text-primary" /> System Audit Log
+              </CardTitle>
+              <CardDescription>Recent critical actions — tap an entry to view full details.</CardDescription>
             </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>System Audit Log</CardTitle>
-          <CardDescription>Trace critical actions for accountability.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {enrichedAuditLogs.map((log) => (
-            <div key={log.id} className="rounded-lg border border-border bg-background p-4 hover:bg-muted/50 transition">
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-foreground">{log.action}</p>
-                    <p className="text-xs text-muted-foreground mt-1">By <span className="font-medium text-foreground">{log.actorName}</span></p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Badge variant="secondary" className="text-xs">{log.category}</Badge>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">{log.timestamp}</p>
-              </div>
+            <div className="flex shrink-0 gap-2">
+              <Button variant="outline" size="sm" className="gap-2" onClick={exportAuditLogCSV}>
+                <ArrowDownToLine className="h-4 w-4" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2" onClick={exportAuditLogPDF}>
+                <ArrowDownToLine className="h-4 w-4" /> PDF
+              </Button>
             </div>
-          ))}
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button variant="outline" className="gap-2" onClick={exportAuditLogCSV}>
-              <ArrowDownToLine className="h-4 w-4" /> Export as CSV
-            </Button>
-            <Button variant="outline" className="gap-2" onClick={exportAuditLogPDF}>
-              <ArrowDownToLine className="h-4 w-4" /> Export as PDF
-            </Button>
           </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {enrichedAuditLogs.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No audit log entries yet.</p>
+          ) : (
+            enrichedAuditLogs.slice(0, 5).map((log) => (
+              <div key={log.id} className="rounded-lg border border-border bg-background p-4 hover:bg-muted/40 transition-colors">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">{log.category}</Badge>
+                    {log.entityType && (
+                      <Badge variant="outline" className="text-[10px] uppercase tracking-wide">{log.entityType}</Badge>
+                    )}
+                  </div>
+                  <time className="text-[11px] tabular-nums text-muted-foreground">{log.timestamp}</time>
+                </div>
+                <p className="mt-2 text-sm font-semibold text-foreground leading-snug">{log.action}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <UsersIcon className="h-3 w-3 shrink-0" />
+                    {log.actorName ?? log.actor}
+                  </span>
+                  {log.actorRole && (
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                      {log.actorRole}
+                    </Badge>
+                  )}
+                  {log.ipAddress && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono">
+                      <Globe2 className="h-3 w-3 shrink-0" />
+                      {log.ipAddress}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+          {enrichedAuditLogs.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 mt-1"
+              onClick={() => window.open("/hq/audit-log", "_self")}
+            >
+              <FileText className="h-4 w-4" />
+              View full audit log ({enrichedAuditLogs.length}+ entries)
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -4532,174 +4440,6 @@ export default function HqDashboardPage() {
               <ShieldCheck className="h-4 w-4" /> Trigger new backup
             </Button>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-primary" /> System Health Metrics
-              </CardTitle>
-              <CardDescription>Real-time performance and resource monitoring.</CardDescription>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={loadSystemMetrics}
-              disabled={isMetricsLoading}
-              className="gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${isMetricsLoading ? "animate-spin" : ""}`} /> Refresh
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {isMetricsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="text-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Loading metrics...</p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div>
-                <p className="text-sm font-semibold mb-3">Resource Utilization</p>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {systemMetrics.map((metric) => {
-                    const isWarning = metric.value >= 70 && metric.value < 85
-                    const isCritical = metric.value >= 85
-                    return (
-                      <div key={metric.id} className={`rounded-lg border p-4 ${
-                        isCritical ? "border-destructive bg-destructive/5" :
-                        isWarning ? "border-yellow-400 bg-yellow-50 dark:bg-yellow-900/20" :
-                        "border-border bg-muted/30"
-                      }`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-sm font-medium text-foreground">{metric.name}</p>
-                          <span className={`text-lg font-bold ${
-                            isCritical ? "text-destructive" :
-                            isWarning ? "text-yellow-600 dark:text-yellow-400" :
-                            "text-green-600 dark:text-green-400"
-                          }`}>
-                            {metric.value}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700">
-                          <div
-                            className={`h-2 rounded-full transition-all ${
-                              isCritical ? "bg-destructive" :
-                              isWarning ? "bg-yellow-400" :
-                              "bg-green-500"
-                            }`}
-                            style={{ width: `${metric.value}%` }}
-                          ></div>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-2">{metric.detail}</p>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm font-semibold mb-3">Performance Indicators</p>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <p className="text-sm text-muted-foreground">API Response Time (avg)</p>
-                    <p className="text-2xl font-bold text-primary mt-1">145ms</p>
-                    <p className="text-xs text-green-600 dark:text-green-400 mt-2">✓ within SLA target</p>
-                  </div>
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <p className="text-sm text-muted-foreground">Database Connections</p>
-                    <p className="text-2xl font-bold text-primary mt-1">24/50</p>
-                    <p className="text-xs text-muted-foreground mt-2">Active connections</p>
-                  </div>
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <p className="text-sm text-muted-foreground">Error Rate (24h)</p>
-                    <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">0.02%</p>
-                    <p className="text-xs text-muted-foreground mt-2">Excellent system stability</p>
-                  </div>
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <p className="text-sm text-muted-foreground">Active Users (now)</p>
-                    <p className="text-2xl font-bold text-primary mt-1">42</p>
-                    <p className="text-xs text-muted-foreground mt-2">Peak: 68 (today)</p>
-                  </div>
-                </div>
-              </div>
-
-              {backupHistory.length > 0 && (
-                <div>
-                  <p className="text-sm font-semibold mb-3">Recent Backups</p>
-                  <div className="rounded-lg border border-border overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/50 border-b border-border">
-                        <tr>
-                          <th className="px-4 py-2 text-left font-medium text-muted-foreground">Time</th>
-                          <th className="px-4 py-2 text-left font-medium text-muted-foreground">Size</th>
-                          <th className="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {backupHistory.slice(0, 5).map((backup, idx) => (
-                          <tr key={idx} className="border-b border-border hover:bg-muted/30 transition">
-                            <td className="px-4 py-3 text-muted-foreground">{backup.timestamp}</td>
-                            <td className="px-4 py-3 text-foreground font-medium">{backup.size}</td>
-                            <td className="px-4 py-3">
-                              <Badge variant={backup.status === "completed" ? "secondary" : "outline"}>
-                                {backup.status}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <ServerCog className="h-5 w-5 text-primary" /> Database Statistics
-              </CardTitle>
-              <CardDescription>Monitor database performance and capacity.</CardDescription>
-            </div>
-            <Button size="sm" variant="outline" onClick={loadDatabaseStats} disabled={isDatabaseStatsLoading} className="gap-2">
-              <RefreshCw className={`h-4 w-4 ${isDatabaseStatsLoading ? "animate-spin" : ""}`} /> Refresh
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isDatabaseStatsLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            </div>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-3">
-              {databaseStats.map(stat => (
-                <div key={stat.id} className={`rounded-lg border p-4 ${
-                  stat.status === "critical" ? "border-destructive bg-destructive/5" :
-                  stat.status === "warning" ? "border-amber-400 bg-amber-50 dark:bg-amber-900/20" :
-                  "border-border bg-muted/30"
-                }`}>
-                  <p className="text-sm text-muted-foreground">{stat.name}</p>
-                  <p className="text-2xl font-bold text-foreground mt-1">{stat.value} <span className="text-sm text-muted-foreground font-normal">{stat.unit}</span></p>
-                  <Badge variant={stat.status === "normal" ? "secondary" : "destructive"} className="mt-2">
-                    {stat.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
         </CardContent>
       </Card>
 

@@ -32,6 +32,15 @@ SUPABASE_SERVICE_ROLE_KEY=<service role key from Supabase console>
 JWT_SECRET=<choose a long random string>
 PORT=3001
 CORS_ORIGIN=http://localhost:3000
+BACKUP_DIR=./backups
+BACKUP_ENCRYPTION_KEY=<64 hex chars>
+BACKUP_RETENTION_DAYS=30
+```
+
+Generate a 64-character hex key for `BACKUP_ENCRYPTION_KEY`:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 For Render, copy the same values into the dashboard (plus `NODE_ENV=production` and your production `CORS_ORIGIN`).
