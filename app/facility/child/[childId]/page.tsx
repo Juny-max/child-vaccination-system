@@ -1113,32 +1113,48 @@ export default function ChildPatientChartPage() {
     }
   }
 
-  const renderVaccineEntry = (entry: VaccineEntry) => (
-    <div key={entry.id} className="rounded-lg border border-border bg-background/80 p-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
-          <p className="text-xs text-muted-foreground">Scheduled: {entry.scheduledDate}</p>
-          {entry.administeredDate ? (
-            <p className="text-xs text-muted-foreground">Administered: {entry.administeredDate}</p>
-          ) : null}
-          {entry.notes ? <p className="mt-2 text-xs text-muted-foreground">{entry.notes}</p> : null}
+  const renderVaccineEntry = (entry: VaccineEntry) => {
+    const daysUntil = entry.status === "upcoming"
+      ? Math.max(1, Math.ceil((new Date(entry.scheduledDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+      : 0
+
+    return (
+      <div key={entry.id} className="rounded-lg border border-border bg-background/80 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
+            <p className="text-xs text-muted-foreground">
+              {entry.status === "completed" ? `Administered: ${entry.administeredDate}` : `Due: ${formatDate(entry.scheduledDate)}`}
+            </p>
+            {entry.notes ? <p className="mt-1.5 text-xs text-muted-foreground">{entry.notes}</p> : null}
+          </div>
+
+          {entry.status === "completed" ? (
+            <Badge variant="secondary" className="w-fit shrink-0">Completed</Badge>
+          ) : entry.status === "upcoming" ? (
+            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 dark:border-sky-800 dark:bg-sky-950/40">
+              <CalendarDays className="h-4 w-4 shrink-0 text-sky-500" />
+              <div className="leading-tight">
+                <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">
+                  In {daysUntil} day{daysUntil !== 1 ? "s" : ""}
+                </p>
+                <p className="text-[10px] text-sky-500/80 dark:text-sky-400/60">{formatDate(entry.scheduledDate)}</p>
+              </div>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant={entry.status === "overdue" ? "destructive" : "default"}
+              className="shrink-0 gap-2"
+              onClick={() => openAdministerModal(entry)}
+            >
+              <Syringe className="h-4 w-4" /> Administer
+            </Button>
+          )}
         </div>
-        {entry.status === "completed" ? (
-          <Badge variant="secondary" className="w-fit">Completed</Badge>
-        ) : (
-          <Button
-            size="sm"
-            variant={entry.status === "overdue" ? "destructive" : "default"}
-            className="gap-2"
-            onClick={() => openAdministerModal(entry)}
-          >
-            <Syringe className="h-4 w-4" /> Administer
-          </Button>
-        )}
       </div>
-    </div>
-  )
+    )
+  }
 
   const renderScheduleGroup = (
     title: string,
@@ -1714,7 +1730,7 @@ export default function ChildPatientChartPage() {
                 </div>
               ) : (
                 <>
-                  {aefiReports.slice(0, 5).map((report) => (
+                  {aefiReports.slice(0, 2).map((report) => (
                     <div key={report.id} className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5">
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-sm font-semibold text-foreground">
@@ -1741,9 +1757,9 @@ export default function ChildPatientChartPage() {
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">{formatDate(report.onsetDate)}</p>
                     </div>
                   ))}
-                  {aefiReports.length > 5 && (
+                  {aefiReports.length > 2 && (
                     <p className="text-xs text-muted-foreground">
-                      Showing 5 of {aefiReports.length}.{" "}
+                      Showing 2 of {aefiReports.length}.{" "}
                       <button type="button" className="underline hover:text-foreground" onClick={() => setAefiModalOpen(true)}>
                         View all
                       </button>
