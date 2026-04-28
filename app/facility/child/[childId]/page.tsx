@@ -1459,7 +1459,8 @@ export default function ChildPatientChartPage() {
                     onDateChange={(selectedDate) =>
                       handleMeasurementChange("date", selectedDate ? formatDateForInput(selectedDate) : "")
                     }
-                    toYear={new Date().getFullYear() + 5}
+                    maxDate={new Date()}
+                    toYear={new Date().getFullYear()}
                   />
                   {measurementErrors.date ? (
                     <p className="text-xs text-destructive">{measurementErrors.date}</p>
