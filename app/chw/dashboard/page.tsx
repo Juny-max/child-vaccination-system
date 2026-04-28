@@ -231,15 +231,18 @@ export default function ChwDashboardPage() {
     // Security: Start auto-logout timer (15 minutes idle)
     autoLogoutTimer.start(
       () => {
-        // Logout handler
         console.log("[Security] Auto-logout triggered")
         clearEncryptionKey()
-        localStorage.clear()
+        // Selectively remove auth tokens — preserve stable encryption keys so the
+        // same CHW can still decrypt their cached IndexedDB data on next login.
+        ;[
+          "authToken", "accessToken", "userId", "userRole", "userRoleDetail",
+          "userName", "chw-last-background-sync", "chw_last_data_access",
+        ].forEach((k) => localStorage.removeItem(k))
         sessionStorage.clear()
         router.push("/auth/login?timeout=1")
       },
       (secondsRemaining) => {
-        // Warning handler
         if (secondsRemaining === 120) {
           setSystemMessage("⚠️ You will be logged out in 2 minutes due to inactivity")
         }
@@ -254,7 +257,10 @@ export default function ChwDashboardPage() {
       chwBackgroundSync.stop()
       autoLogoutTimer.stop()
     }
-  }, [router, isOnline])
+  // isOnline intentionally excluded: network changes must not re-run the auth/setup block.
+  // The separate isOnline useEffect below handles network state reactions.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router])
 
   const loadTodayActivityCount = async () => {
     try {

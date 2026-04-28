@@ -55,6 +55,7 @@ export async function clearAllOfflineData(): Promise<void> {
     await chwOfflineDb.children.clear()
     await chwOfflineDb.vaccinationQueue.clear()
     await chwOfflineDb.offlineMapStatus.clear()
+    await chwOfflineDb.childCharts.clear()
 
     // Clear audit log
     clearAuditLog()

@@ -1,5 +1,25 @@
 import withPWAInit from "next-pwa"
 
+const skipAuthRedirectPlugin = {
+  cacheWillUpdate: async ({ request, response }) => {
+    if (!response) return null
+
+    try {
+      if (response.redirected) return null
+      const responsePath = new URL(response.url).pathname
+      if (responsePath.startsWith("/auth")) return null
+      const requestPath = new URL(request.url).pathname
+      if (requestPath.startsWith("/chw") && !responsePath.startsWith("/chw")) {
+        return null
+      }
+    } catch {
+      return null
+    }
+
+    return response
+  },
+}
+
 const runtimeCaching = [
   // CHW pages - NetworkFirst so they work offline after first visit
   {
@@ -8,7 +28,7 @@ const runtimeCaching = [
       (url.pathname.startsWith("/chw/") || url.pathname === "/chw"),
     handler: "NetworkFirst",
     options: {
-      cacheName: "chw-pages",
+      cacheName: "chw-pages-v2",
       networkTimeoutSeconds: 10,
       precacheFallback: {
         fallbackURL: "/offline.html",
@@ -17,8 +37,9 @@ const runtimeCaching = [
         maxEntries: 32,
         maxAgeSeconds: 7 * 24 * 60 * 60,
       },
+      plugins: [skipAuthRedirectPlugin],
       cacheableResponse: {
-        statuses: [0, 200],
+        statuses: [200],
       },
     },
   },
@@ -27,14 +48,14 @@ const runtimeCaching = [
     urlPattern: ({ url }) => url.pathname.startsWith("/api/chw"),
     handler: "NetworkFirst",
     options: {
-      cacheName: "chw-api-cache",
+      cacheName: "chw-api-cache-v2",
       networkTimeoutSeconds: 10,
       expiration: {
         maxEntries: 100,
         maxAgeSeconds: 24 * 60 * 60,
       },
       cacheableResponse: {
-        statuses: [0, 200],
+        statuses: [200],
       },
     },
   },
@@ -43,7 +64,7 @@ const runtimeCaching = [
     urlPattern: ({ request }) => request.mode === "navigate",
     handler: "NetworkFirst",
     options: {
-      cacheName: "app-pages",
+      cacheName: "app-pages-v2",
       networkTimeoutSeconds: 10,
       precacheFallback: {
         fallbackURL: "/offline.html",
@@ -52,8 +73,9 @@ const runtimeCaching = [
         maxEntries: 64,
         maxAgeSeconds: 7 * 24 * 60 * 60,
       },
+      plugins: [skipAuthRedirectPlugin],
       cacheableResponse: {
-        statuses: [0, 200],
+        statuses: [200],
       },
     },
   },
@@ -111,9 +133,9 @@ const runtimeCaching = [
 
 const withPWA = withPWAInit({
   dest: "public",
-  disable: process.env.NODE_ENV === "development",
-  register: true,
+  register: process.env.NODE_ENV !== "development",
   skipWaiting: true,
+  disable: process.env.NODE_ENV === "development",
   fallbacks: {
     document: "/offline.html",
   },

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { Camera, ChevronLeft, Loader2, Phone, QrCode, Search, UserPlus } from "lucide-react"
 import { Html5Qrcode } from "html5-qrcode"
 import { searchChwChildren, type ChwSearchResult } from "@/lib/api/chw"
-import { chwOfflineDb, getChildren, upsertChildren } from "@/lib/chw-offline/db"
+import { getChildByCvccId, getChildren, upsertChildren } from "@/lib/chw-offline/db"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -385,7 +385,7 @@ export default function ChwFindChildPage() {
         }
       } else {
         // OFFLINE MODE: Search only catchment-filtered IndexedDB
-        const localChild = await chwOfflineDb.children.where("cvccId").equals(sanitizedId).first()
+        const localChild = await getChildByCvccId(sanitizedId)
 
         if (localChild) {
           const mappedLocalChild: LocalChildRecord = {

@@ -8,6 +8,7 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  ChevronRight,
   CircleAlert,
   CircleCheck,
   ClipboardList,
@@ -15,10 +16,11 @@ import {
   MapPin,
   Syringe,
   User,
+  X,
 } from "lucide-react"
 import * as chwStorage from "@/lib/chw-offline-storage"
 import { getChwChildChart, syncChwVaccinations, type ChwChildChart } from "@/lib/api/chw"
-import { getChildById } from "@/lib/chw-offline/db"
+import { getChildById, getChildChart, saveChildChart } from "@/lib/chw-offline/db"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -128,11 +130,13 @@ export default function ChwChildChartPage() {
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [pendingVaccinations, setPendingVaccinations] = useState<PendingVaccination[]>([])
   const [selectedVaccine, setSelectedVaccine] = useState<VaccineDose | null>(null)
+  const [listModal, setListModal] = useState<"outstanding" | "history" | null>(null)
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
   const [successVaccine, setSuccessVaccine] = useState<string | null>(null)
   const [remoteSnapshot, setRemoteSnapshot] = useState<ChildSnapshot | null>(null)
   const [loadingChart, setLoadingChart] = useState(true)
+  const [vaccineScheduleUncached, setVaccineScheduleUncached] = useState(false)
 
   const mapChart = (chart: ChwChildChart): ChildSnapshot => ({
     id: chart.id,
@@ -170,32 +174,60 @@ export default function ChwChildChartPage() {
     const loadChart = async () => {
       setLoadingChart(true)
       try {
-        // Try backend only if we believe network is up
-        if (isOnline) {
+        // Read network state fresh at call-time so this function is correct
+        // even when isOnline is not in the useEffect dependency array.
+        const networkAvailable = isOnline && navigator.onLine
+        if (networkAvailable) {
           try {
             const chart = await getChwChildChart(childId)
             setRemoteSnapshot(mapChart(chart))
+            // Cache the chart for offline use (fire-and-forget, don't block render)
+            saveChildChart({
+              childId,
+              age: chart.age,
+              village: chart.village,
+              outstandingVaccines: chart.outstandingVaccines,
+              history: chart.history,
+              cachedAt: new Date().toISOString(),
+            }).catch(() => {/* non-fatal */})
             return
           } catch (apiError) {
             console.warn("Backend chart fetch failed, falling back to offline cache", apiError)
           }
         }
 
-        // OFFLINE FALLBACK: Load from IndexedDB
-        const localChild = await getChildById(childId)
+        // OFFLINE FALLBACK: Load from both the child register and the chart cache in parallel
+        const [localChild, cachedChart] = await Promise.all([
+          getChildById(childId),
+          getChildChart(childId),
+        ])
+
         if (localChild) {
+          if (!cachedChart) setVaccineScheduleUncached(true)
           setRemoteSnapshot({
             id: localChild.id,
             name: localChild.fullName,
-            age: "Offline",
+            age: cachedChart?.age ?? "—",
             motherName: localChild.guardianName || "Unknown",
             motherPhone: localChild.guardianPhone || "N/A",
-            village: "Offline cache",
-            outstandingVaccines: [],
-            history: [],
+            village: cachedChart?.village ?? localChild.catchmentAreaId ?? "—",
+            outstandingVaccines: cachedChart?.outstandingVaccines ?? [],
+            history: cachedChart?.history ?? [],
+          })
+        } else if (cachedChart) {
+          // Chart cache exists but child register entry doesn't (edge case)
+          setRemoteSnapshot({
+            id: childId,
+            name: "Cached record",
+            age: cachedChart.age,
+            motherName: "—",
+            motherPhone: "—",
+            village: cachedChart.village,
+            outstandingVaccines: cachedChart.outstandingVaccines,
+            history: cachedChart.history,
           })
         } else {
-          setSystemMessage("Child not found in offline cache. Please try again when online.")
+          setSystemMessage("Child not found in offline cache. Open this child's chart while online to enable offline access.")
         }
       } catch (error) {
         console.error("Failed to load child chart", error)
@@ -206,7 +238,11 @@ export default function ChwChildChartPage() {
     }
 
     loadChart()
-  }, [router, childId, isOnline])
+  // isOnline intentionally excluded: going offline must not re-trigger the auth
+  // check or chart reload. loadChart() reads isOnline at call-time and falls back
+  // to IndexedDB gracefully if the API is unavailable.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, childId])
 
   useEffect(() => {
     if (!systemMessage) return
@@ -247,6 +283,7 @@ export default function ChwChildChartPage() {
   const openAdministerModal = (dose: VaccineDose) => {
     setSelectedVaccine(dose)
     setNotes("")
+    setListModal(null)
   }
 
   const closeAdministerModal = () => {
@@ -344,6 +381,11 @@ export default function ChwChildChartPage() {
       </div>
     )
   }
+
+  const outstandingPreview = childSnapshot.outstandingVaccines.slice(0, 4)
+  const historyPreview = childSnapshot.history.slice(0, 4)
+  const outstandingCount = childSnapshot.outstandingVaccines.length
+  const historyCount = childSnapshot.history.length
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -451,25 +493,40 @@ export default function ChwChildChartPage() {
               <CardDescription>Prioritise these doses during outreach. Record once administered.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {childSnapshot.outstandingVaccines.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No outstanding doses offline.</p>
+              {vaccineScheduleUncached ? (
+                <p className="text-sm text-muted-foreground">
+                  Vaccine schedule not available offline. Open this child&apos;s chart while online to cache it.
+                </p>
+              ) : childSnapshot.outstandingVaccines.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No outstanding doses.</p>
               ) : (
-                childSnapshot.outstandingVaccines.map((dose) => (
-                  <div key={dose.id} className="rounded-lg border border-border bg-background/80 p-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{dose.name}</p>
-                        <p className="text-xs text-muted-foreground">Due: {dose.scheduledDate}</p>
+                <>
+                  {outstandingPreview.map((dose) => (
+                    <div key={dose.id} className="rounded-lg border border-border bg-background/80 p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{dose.name}</p>
+                          <p className="text-xs text-muted-foreground">Due: {dose.scheduledDate}</p>
+                        </div>
+                        <Badge variant={dose.status === "overdue" ? "destructive" : "secondary"} className="text-xs">
+                          {dose.status === "overdue" ? "Overdue" : "Due"}
+                        </Badge>
                       </div>
-                      <Badge variant={dose.status === "overdue" ? "destructive" : "secondary"} className="text-xs">
-                        {dose.status === "overdue" ? "Overdue" : "Due"}
-                      </Badge>
+                      <Button size="sm" className="mt-3 gap-2" onClick={() => openAdministerModal(dose)}>
+                        <Syringe className="h-4 w-4" /> Administer vaccine
+                      </Button>
                     </div>
-                    <Button size="sm" className="mt-3 gap-2" onClick={() => openAdministerModal(dose)}>
-                      <Syringe className="h-4 w-4" /> Administer vaccine
-                    </Button>
-                  </div>
-                ))
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between gap-2 border-dashed text-destructive hover:text-destructive"
+                    onClick={() => setListModal("outstanding")}
+                  >
+                    View all doses ({outstandingCount})
+                    <ChevronRight className="h-4 w-4 animate-pulse motion-reduce:animate-none" />
+                  </Button>
+                </>
               )}
             </CardContent>
           </Card>
@@ -482,7 +539,84 @@ export default function ChwChildChartPage() {
               <CardDescription>Recent doses synced down from head office.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {childSnapshot.history.length === 0 ? (
+              {vaccineScheduleUncached ? (
+                <p className="text-sm text-muted-foreground">
+                  History not available offline. Open this child&apos;s chart while online to cache it.
+                </p>
+              ) : childSnapshot.history.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No history downloaded.</p>
+              ) : (
+                <>
+                  {historyPreview.map((dose) => (
+                    <div key={dose.id} className="rounded-lg border border-border bg-background/80 p-4">
+                      <p className="text-sm font-semibold text-foreground">{dose.name}</p>
+                      <p className="text-xs text-muted-foreground">Scheduled: {dose.scheduledDate}</p>
+                      <p className="text-xs text-muted-foreground">Administered: {dose.administeredDate}</p>
+                    </div>
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between gap-2 border-dashed text-emerald-700 hover:text-emerald-700"
+                    onClick={() => setListModal("history")}
+                  >
+                    View full history ({historyCount})
+                    <ChevronRight className="h-4 w-4 animate-pulse motion-reduce:animate-none" />
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      </main>
+
+      {listModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
+          <div className="w-full max-w-2xl rounded-xl border border-border bg-background shadow-xl">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <p className="text-xs text-muted-foreground">
+                  {listModal === "outstanding" ? "Overdue / due vaccines" : "Completed at clinic"}
+                </p>
+                <p className="text-base font-semibold text-foreground">
+                  {listModal === "outstanding" ? "Outstanding doses" : "Vaccination history"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="group flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-foreground text-xs font-medium shadow-sm transition-all duration-200 hover:w-24 hover:rounded-lg hover:bg-accent"
+                onClick={() => setListModal(null)}
+                aria-label="Close"
+              >
+                <X className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+                <span className="max-w-0 overflow-hidden whitespace-nowrap transition-all duration-200 group-hover:max-w-[4rem] group-hover:ml-2">
+                  Close
+                </span>
+              </button>
+            </div>
+            <div className="max-h-[70vh] space-y-3 overflow-y-auto px-5 py-5">
+              {listModal === "outstanding" ? (
+                childSnapshot.outstandingVaccines.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No outstanding doses offline.</p>
+                ) : (
+                  childSnapshot.outstandingVaccines.map((dose) => (
+                    <div key={dose.id} className="rounded-lg border border-border bg-background/80 p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{dose.name}</p>
+                          <p className="text-xs text-muted-foreground">Due: {dose.scheduledDate}</p>
+                        </div>
+                        <Badge variant={dose.status === "overdue" ? "destructive" : "secondary"} className="text-xs">
+                          {dose.status === "overdue" ? "Overdue" : "Due"}
+                        </Badge>
+                      </div>
+                      <Button size="sm" className="mt-3 gap-2" onClick={() => openAdministerModal(dose)}>
+                        <Syringe className="h-4 w-4" /> Administer vaccine
+                      </Button>
+                    </div>
+                  ))
+                )
+              ) : childSnapshot.history.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No history downloaded.</p>
               ) : (
                 childSnapshot.history.map((dose) => (
@@ -493,10 +627,10 @@ export default function ChwChildChartPage() {
                   </div>
                 ))
               )}
-            </CardContent>
-          </Card>
-        </section>
-      </main>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {selectedVaccine ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">

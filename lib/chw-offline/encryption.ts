@@ -9,6 +9,17 @@ import { encryptData, decryptData } from "@/lib/secure-storage"
 const ENCRYPTION_KEY_STORAGE = "chw_encryption_key"
 const STABLE_ENCRYPTION_KEY_PREFIX = "chw_encryption_stable_key:"
 
+const MIN_ENCRYPTED_BYTES = 28
+
+function getLegacyTokenKey(): string | null {
+  if (typeof window === "undefined") return null
+
+  const token = localStorage.getItem("accessToken") || localStorage.getItem("authToken")
+  if (!token) return null
+
+  return token
+}
+
 /**
  * Get or generate encryption key for current session
  * Key is derived from userId + sessionId for security
@@ -36,20 +47,19 @@ function getEncryptionKey(): string {
     return stableKey
   }
 
-  if (!key) {
-    // Keep backward compatibility with previously encrypted records by seeding
-    // the stable key using the same legacy token-derived format when possible.
-    const token = localStorage.getItem("accessToken") || localStorage.getItem("authToken")
-
-    if (token) {
-      key = `${userId}:${token.substring(0, 32)}`
-    } else {
-      key = `${userId}:cvcc-offline`
-    }
-
-    localStorage.setItem(stableKeyStorageName, key)
-    sessionStorage.setItem(ENCRYPTION_KEY_STORAGE, key)
+  const legacyTokenKey = getLegacyTokenKey()
+  if (legacyTokenKey) {
+    localStorage.setItem(stableKeyStorageName, legacyTokenKey)
+    sessionStorage.setItem(ENCRYPTION_KEY_STORAGE, legacyTokenKey)
+    return legacyTokenKey
   }
+
+  // Derive a stable key using ONLY userId — no JWT token.
+  // Token-based keys break when a new JWT is issued after logout/expiry;
+  // a deterministic userId-only key survives re-logins on the same device.
+  key = `${userId}:cvcc-offline-v1`
+  localStorage.setItem(stableKeyStorageName, key)
+  sessionStorage.setItem(ENCRYPTION_KEY_STORAGE, key)
 
   return key
 }
@@ -95,24 +105,48 @@ export async function decryptField<T>(data: T, field: keyof T): Promise<T> {
     return data
   }
 
-  // Check if field is encrypted (encrypted data is base64)
-  if (!value.match(/^[A-Za-z0-9+/=]+$/)) {
-    // Not encrypted, return as-is
+  const isBase64 = value.match(/^[A-Za-z0-9+/=]+$/)
+  if (!isBase64 || value.length % 4 !== 0) {
+    return data
+  }
+
+  try {
+    const combined = Uint8Array.from(atob(value), (c) => c.charCodeAt(0))
+    if (combined.length < MIN_ENCRYPTED_BYTES) {
+      return data
+    }
+  } catch {
     return data
   }
 
   try {
     const key = getEncryptionKey()
     const decrypted = await decryptData(value, key)
-
-    return {
-      ...data,
-      [field]: decrypted,
-    }
+    return { ...data, [field]: decrypted }
   } catch (error) {
-    console.warn(`Failed to decrypt field ${String(field)}:`, error)
-    // Return encrypted data if decryption fails
-    return data
+    const legacyTokenKey = getLegacyTokenKey()
+    if (legacyTokenKey) {
+      try {
+        const decrypted = await decryptData(value, legacyTokenKey)
+
+        const userId = localStorage.getItem("userId")
+        if (userId) {
+          const stableKeyStorageName = `${STABLE_ENCRYPTION_KEY_PREFIX}${userId}`
+          localStorage.setItem(stableKeyStorageName, legacyTokenKey)
+          sessionStorage.setItem(ENCRYPTION_KEY_STORAGE, legacyTokenKey)
+        }
+
+        return { ...data, [field]: decrypted }
+      } catch {
+        // Fall through to stale-key handling
+      }
+    }
+
+    console.warn(`Failed to decrypt field ${String(field)} — returning empty (stale key):`, error)
+    // Return empty string rather than raw cipher text so the UI stays readable.
+    // The background sync will re-populate the field with correctly-keyed data
+    // on the next online session.
+    return { ...data, [field]: "" }
   }
 }
 
