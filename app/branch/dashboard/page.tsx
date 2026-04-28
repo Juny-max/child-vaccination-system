@@ -14,6 +14,7 @@ import {
   BellRing,
   Camera,
   CheckCircle2,
+  ChevronLeft,
   ClipboardList,
   Compass,
   Gauge,
@@ -44,6 +45,7 @@ import {
 } from "recharts"
 import { toast } from "sonner"
 
+import { DatePicker } from "@/components/ui/date-picker"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -63,6 +65,7 @@ import {
   searchBranchChildren,
   registerStaff,
   updateStaffStatus,
+  type AlertItem,
   type BranchDashboardData,
   type BranchChildManagementQueues,
   type BranchChildLookupResult,
@@ -137,6 +140,29 @@ const CHILD_QUEUE_COPY: Record<
   },
 }
 
+const filterAlertsByDateRange = (
+  items: AlertItem[],
+  startDate: Date | undefined,
+  endDate: Date | undefined,
+) => {
+  if (!startDate && !endDate) return items
+
+  return items.filter((item) => {
+    const rawDate = item.createdAt ?? item.timestamp
+    const itemTs = Date.parse(rawDate)
+    if (Number.isNaN(itemTs)) return true
+
+    if (startDate && itemTs < startDate.getTime()) return false
+    if (endDate) {
+      const endOfDay = new Date(endDate)
+      endOfDay.setHours(23, 59, 59, 999)
+      if (itemTs > endOfDay.getTime()) return false
+    }
+
+    return true
+  })
+}
+
 const CatchmentCommandCenter = dynamic(
   () => import("@/components/branch/catchment-command-center"),
   {
@@ -189,6 +215,18 @@ export default function BranchDashboardPage() {
   const [registerStaffOpening, setRegisterStaffOpening] = useState(false)
   const [visitLogModalOpen, setVisitLogModalOpen] = useState(false)
   const [visitSummaryDownloading, setVisitSummaryDownloading] = useState(false)
+  const [overdueModalOpen, setOverdueModalOpen] = useState(false)
+  const [overdueFilterStart, setOverdueFilterStart] = useState<Date | undefined>(undefined)
+  const [overdueFilterEnd, setOverdueFilterEnd] = useState<Date | undefined>(undefined)
+  const [selectedOverdueItem, setSelectedOverdueItem] = useState<AlertItem | null>(null)
+  const [aefiModalOpen, setAefiModalOpen] = useState(false)
+  const [aefiFilterStart, setAefiFilterStart] = useState<Date | undefined>(undefined)
+  const [aefiFilterEnd, setAefiFilterEnd] = useState<Date | undefined>(undefined)
+  const [selectedAefiItem, setSelectedAefiItem] = useState<AlertItem | null>(null)
+  const [syncModalOpen, setSyncModalOpen] = useState(false)
+  const [syncFilterStart, setSyncFilterStart] = useState<Date | undefined>(undefined)
+  const [syncFilterEnd, setSyncFilterEnd] = useState<Date | undefined>(undefined)
+  const [selectedSyncItem, setSelectedSyncItem] = useState<AlertItem | null>(null)
   const [childLookupModalOpen, setChildLookupModalOpen] = useState(false)
   const [childManagementView, setChildManagementView] = useState<ChildManagementView>("queues")
   const [childQueueTab, setChildQueueTab] = useState<ChildQueueTab>("overdue")
@@ -327,6 +365,27 @@ export default function BranchDashboardPage() {
       "failed-reminder": childManagementQueues.failedReminders.length,
     }),
     [childManagementQueues],
+  )
+
+  const overdueAlerts = dashData?.overdueVaccinations ?? []
+  const aefiAlerts = dashData?.aefiEvents ?? []
+  const syncAlerts = dashData?.syncErrors ?? []
+
+  const overduePreview = useMemo(() => overdueAlerts.slice(0, 5), [overdueAlerts])
+  const aefiPreview = useMemo(() => aefiAlerts.slice(0, 5), [aefiAlerts])
+  const syncPreview = useMemo(() => syncAlerts.slice(0, 5), [syncAlerts])
+
+  const overdueFiltered = useMemo(
+    () => filterAlertsByDateRange(overdueAlerts, overdueFilterStart, overdueFilterEnd),
+    [overdueAlerts, overdueFilterStart, overdueFilterEnd],
+  )
+  const aefiFiltered = useMemo(
+    () => filterAlertsByDateRange(aefiAlerts, aefiFilterStart, aefiFilterEnd),
+    [aefiAlerts, aefiFilterStart, aefiFilterEnd],
+  )
+  const syncFiltered = useMemo(
+    () => filterAlertsByDateRange(syncAlerts, syncFilterStart, syncFilterEnd),
+    [syncAlerts, syncFilterStart, syncFilterEnd],
   )
 
   const activeChildQueueItems = useMemo(() => {
@@ -1022,24 +1081,46 @@ export default function BranchDashboardPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-destructive" /> Overdue vaccinations
-          </CardTitle>
-          <CardDescription>Reach out to guardians and schedule immediate follow-ups.</CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-destructive" /> Overdue vaccinations
+              </CardTitle>
+              <CardDescription>Reach out to guardians and schedule immediate follow-ups.</CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSelectedOverdueItem(null)
+                setOverdueModalOpen(true)
+              }}
+            >
+              View all
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {(dashData?.overdueVaccinations ?? []).length === 0 ? (
+          {overdueAlerts.length === 0 ? (
             <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-4">
               <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
               <p className="text-sm text-muted-foreground">All vaccinations are up to date. No overdue appointments.</p>
             </div>
-          ) : (dashData?.overdueVaccinations ?? []).map((item) => {
+          ) : overduePreview.map((item) => {
             const days = item.daysOverdue ?? 0
             const urgencyVariant: "destructive" | "secondary" | "outline" =
               days > 14 ? "destructive" : days > 7 ? "secondary" : "secondary"
             const urgencyColor = days > 14 ? "border-destructive/60" : days > 7 ? "border-amber-400/60" : "border-border"
             return (
-              <div key={item.id} className={`rounded-lg border bg-background p-4 ${urgencyColor}`}>
+              <button
+                key={item.id}
+                type="button"
+                className={`w-full rounded-lg border bg-background p-4 text-left transition hover:border-primary/40 hover:bg-primary/5 ${urgencyColor}`}
+                onClick={() => {
+                  setSelectedOverdueItem(item)
+                  setOverdueModalOpen(true)
+                }}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold text-foreground">{item.child}</p>
@@ -1050,72 +1131,108 @@ export default function BranchDashboardPage() {
                   </Badge>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground/70">{item.timestamp}</p>
-              </div>
+              </button>
             )
           })}
+          {overdueAlerts.length > 5 ? (
+            <p className="text-xs text-muted-foreground">Showing top 5 of {overdueAlerts.length} overdue cases.</p>
+          ) : null}
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BellRing className="h-4 w-4 text-primary" /> AEFI log
-            </CardTitle>
-            <CardDescription>Coordinate with district health officers for rapid response.</CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <BellRing className="h-4 w-4 text-primary" /> AEFI log
+                </CardTitle>
+                <CardDescription>Coordinate with district health officers for rapid response.</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectedAefiItem(null)
+                  setAefiModalOpen(true)
+                }}
+              >
+                View all
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {(dashData?.aefiEvents ?? []).length === 0 ? (
+            {aefiAlerts.length === 0 ? (
               <p className="text-sm text-muted-foreground">No AEFI events reported.</p>
-            ) : (dashData?.aefiEvents ?? []).map((event) => (
-              <div key={event.id} className="rounded-lg border border-border bg-background p-3">
+            ) : aefiPreview.map((event) => (
+              <button
+                key={event.id}
+                type="button"
+                className="w-full rounded-lg border border-border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-primary/5"
+                onClick={() => {
+                  setSelectedAefiItem(event)
+                  setAefiModalOpen(true)
+                }}
+              >
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-foreground">{event.child}</p>
                   <Badge variant={event.status === "New" ? "destructive" : "outline"}>{event.status}</Badge>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{event.detail}</p>
                 <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground/80">{event.timestamp}</p>
-              </div>
+              </button>
             ))}
+            {aefiAlerts.length > 5 ? (
+              <p className="text-xs text-muted-foreground">Showing top 5 of {aefiAlerts.length} reports.</p>
+            ) : null}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 text-primary" /> CHW sync errors
-            </CardTitle>
-            <CardDescription>Resolve data conflicts and failed submissions quickly.</CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4 text-primary" /> CHW sync errors
+                </CardTitle>
+                <CardDescription>Resolve data conflicts and failed submissions quickly.</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectedSyncItem(null)
+                  setSyncModalOpen(true)
+                }}
+              >
+                View all
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {(dashData?.syncErrors ?? []).length === 0 ? (
+            {syncAlerts.length === 0 ? (
               <p className="text-sm text-muted-foreground">No sync errors.</p>
-            ) : (dashData?.syncErrors ?? []).map((error) => (
-              <div key={error.id} className="rounded-lg border border-border bg-background p-3">
+            ) : syncPreview.map((error) => (
+              <button
+                key={error.id}
+                type="button"
+                className="w-full rounded-lg border border-border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-primary/5"
+                onClick={() => {
+                  setSelectedSyncItem(error)
+                  setSyncModalOpen(true)
+                }}
+              >
                 <p className="text-sm font-semibold text-foreground">{error.detail}</p>
+                {error.child && error.child !== 'N/A' ? (
+                  <p className="mt-0.5 text-xs text-muted-foreground">Reported by: {error.child}</p>
+                ) : null}
                 <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground/80">{error.timestamp}</p>
-              </div>
+              </button>
             ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquareWarning className="h-4 w-4 text-primary" /> Notification failures
-            </CardTitle>
-            <CardDescription>Follow up with guardians whose reminders did not deliver.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {(dashData?.notificationFailures ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No notification failures.</p>
-            ) : (dashData?.notificationFailures ?? []).map((failure) => (
-              <div key={failure.id} className="rounded-lg border border-border bg-background p-3">
-                <p className="text-sm font-semibold text-foreground">{failure.child}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{failure.detail}</p>
-                <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground/80">{failure.timestamp}</p>
-              </div>
-            ))}
+            {syncAlerts.length > 5 ? (
+              <p className="text-xs text-muted-foreground">Showing top 5 of {syncAlerts.length} sync errors.</p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -2073,6 +2190,400 @@ export default function BranchDashboardPage() {
             >
               {resettingStockVaccineId ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               {resettingStockVaccineId ? "Resetting..." : "Confirm reset"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Overdue Vaccinations Modal ──────────────────────────────────── */}
+      <Dialog
+        open={overdueModalOpen}
+        onOpenChange={(open) => {
+          setOverdueModalOpen(open)
+          if (!open) setSelectedOverdueItem(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" /> Overdue vaccinations
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {selectedOverdueItem
+                ? "Vaccination overdue details"
+                : `${overdueFiltered.length} overdue record${overdueFiltered.length !== 1 ? "s" : ""} found`}
+            </p>
+          </DialogHeader>
+
+          {selectedOverdueItem ? (
+            <div className="space-y-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="-ml-1 gap-1.5"
+                onClick={() => setSelectedOverdueItem(null)}
+              >
+                <ChevronLeft className="h-4 w-4" /> Back to list
+              </Button>
+              <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-lg font-semibold text-foreground">{selectedOverdueItem.child}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">{selectedOverdueItem.detail}</p>
+                  </div>
+                  <Badge
+                    variant={
+                      (selectedOverdueItem.daysOverdue ?? 0) > 14
+                        ? "destructive"
+                        : "secondary"
+                    }
+                    className="shrink-0 whitespace-nowrap"
+                  >
+                    {selectedOverdueItem.daysOverdue ?? 0} day{selectedOverdueItem.daysOverdue !== 1 ? "s" : ""} overdue
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</p>
+                    <p className="mt-1 text-sm text-foreground">{selectedOverdueItem.status || "Pending follow-up"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Recorded</p>
+                    <p className="mt-1 text-sm text-foreground">{selectedOverdueItem.timestamp}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs">From</Label>
+                  <DatePicker
+                    date={overdueFilterStart}
+                    onDateChange={setOverdueFilterStart}
+                    placeholder="Start date"
+                    className="w-40"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs">To</Label>
+                  <DatePicker
+                    date={overdueFilterEnd}
+                    onDateChange={setOverdueFilterEnd}
+                    placeholder="End date"
+                    minDate={overdueFilterStart}
+                    className="w-40"
+                  />
+                </div>
+                {(overdueFilterStart || overdueFilterEnd) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setOverdueFilterStart(undefined); setOverdueFilterEnd(undefined) }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : null}
+              </div>
+
+              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                {overdueFiltered.length === 0 ? (
+                  <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-6">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+                    <p className="text-sm text-muted-foreground">No overdue records match the selected filters.</p>
+                  </div>
+                ) : overdueFiltered.map((item) => {
+                  const days = item.daysOverdue ?? 0
+                  const urgencyVariant: "destructive" | "secondary" | "outline" =
+                    days > 14 ? "destructive" : "secondary"
+                  const urgencyColor = days > 14 ? "border-destructive/60" : days > 7 ? "border-amber-400/60" : "border-border"
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`w-full rounded-lg border bg-background p-4 text-left transition hover:border-primary/40 hover:bg-primary/5 ${urgencyColor}`}
+                      onClick={() => setSelectedOverdueItem(item)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold text-foreground">{item.child}</p>
+                          <p className="mt-0.5 text-sm text-muted-foreground">{item.detail}</p>
+                        </div>
+                        <Badge variant={urgencyVariant} className="shrink-0 whitespace-nowrap">
+                          {days} day{days !== 1 ? "s" : ""} overdue
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground/70">{item.timestamp}</p>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setOverdueModalOpen(false)
+                setSelectedOverdueItem(null)
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── AEFI Log Modal ───────────────────────────────────────────────── */}
+      <Dialog
+        open={aefiModalOpen}
+        onOpenChange={(open) => {
+          setAefiModalOpen(open)
+          if (!open) setSelectedAefiItem(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BellRing className="h-5 w-5 text-primary" /> AEFI log
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {selectedAefiItem
+                ? "AEFI event details"
+                : `${aefiFiltered.length} event${aefiFiltered.length !== 1 ? "s" : ""} found`}
+            </p>
+          </DialogHeader>
+
+          {selectedAefiItem ? (
+            <div className="space-y-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="-ml-1 gap-1.5"
+                onClick={() => setSelectedAefiItem(null)}
+              >
+                <ChevronLeft className="h-4 w-4" /> Back to list
+              </Button>
+              <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-lg font-semibold text-foreground">{selectedAefiItem.child}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">{selectedAefiItem.detail}</p>
+                  </div>
+                  <Badge
+                    variant={selectedAefiItem.status === "New" ? "destructive" : "outline"}
+                    className="shrink-0"
+                  >
+                    {selectedAefiItem.status || "Unknown"}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reported</p>
+                    <p className="mt-1 text-sm text-foreground">{selectedAefiItem.timestamp}</p>
+                  </div>
+                </div>
+                {selectedAefiItem.notes ? (
+                  <div className="rounded-lg border border-border bg-background p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Nurse note</p>
+                    <p className="mt-1 text-sm text-foreground leading-relaxed">{selectedAefiItem.notes}</p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs">From</Label>
+                  <DatePicker
+                    date={aefiFilterStart}
+                    onDateChange={setAefiFilterStart}
+                    placeholder="Start date"
+                    className="w-40"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs">To</Label>
+                  <DatePicker
+                    date={aefiFilterEnd}
+                    onDateChange={setAefiFilterEnd}
+                    placeholder="End date"
+                    minDate={aefiFilterStart}
+                    className="w-40"
+                  />
+                </div>
+                {(aefiFilterStart || aefiFilterEnd) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setAefiFilterStart(undefined); setAefiFilterEnd(undefined) }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : null}
+              </div>
+
+              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                {aefiFiltered.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">No AEFI events match the selected filters.</p>
+                ) : aefiFiltered.map((event) => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    className="w-full rounded-lg border border-border bg-background p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
+                    onClick={() => setSelectedAefiItem(event)}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-foreground">{event.child}</p>
+                      <Badge variant={event.status === "New" ? "destructive" : "outline"} className="shrink-0">
+                        {event.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">{event.detail}</p>
+                    <p className="mt-2 text-xs text-muted-foreground/70">{event.timestamp}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAefiModalOpen(false)
+                setSelectedAefiItem(null)
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── CHW Sync Errors Modal ─────────────────────────────────────────── */}
+      <Dialog
+        open={syncModalOpen}
+        onOpenChange={(open) => {
+          setSyncModalOpen(open)
+          if (!open) setSelectedSyncItem(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-primary" /> CHW sync errors
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {selectedSyncItem
+                ? "Sync error details"
+                : `${syncFiltered.length} error${syncFiltered.length !== 1 ? "s" : ""} found`}
+            </p>
+          </DialogHeader>
+
+          {selectedSyncItem ? (
+            <div className="space-y-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="-ml-1 gap-1.5"
+                onClick={() => setSelectedSyncItem(null)}
+              >
+                <ChevronLeft className="h-4 w-4" /> Back to list
+              </Button>
+              <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-5">
+                <div>
+                  <p className="text-lg font-semibold text-foreground">{selectedSyncItem.detail}</p>
+                  {selectedSyncItem.child && selectedSyncItem.child !== 'N/A' ? (
+                    <p className="mt-0.5 text-sm text-muted-foreground">Reported by: {selectedSyncItem.child}</p>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+                  {selectedSyncItem.status ? (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</p>
+                      <Badge variant="outline" className="mt-1">{selectedSyncItem.status}</Badge>
+                    </div>
+                  ) : null}
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reported</p>
+                    <p className="mt-1 text-sm text-foreground">{selectedSyncItem.timestamp}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs">From</Label>
+                  <DatePicker
+                    date={syncFilterStart}
+                    onDateChange={setSyncFilterStart}
+                    placeholder="Start date"
+                    className="w-40"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs">To</Label>
+                  <DatePicker
+                    date={syncFilterEnd}
+                    onDateChange={setSyncFilterEnd}
+                    placeholder="End date"
+                    minDate={syncFilterStart}
+                    className="w-40"
+                  />
+                </div>
+                {(syncFilterStart || syncFilterEnd) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setSyncFilterStart(undefined); setSyncFilterEnd(undefined) }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : null}
+              </div>
+
+              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                {syncFiltered.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">No sync errors match the selected filters.</p>
+                ) : syncFiltered.map((error) => (
+                  <button
+                    key={error.id}
+                    type="button"
+                    className="w-full rounded-lg border border-border bg-background p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
+                    onClick={() => setSelectedSyncItem(error)}
+                  >
+                    <p className="text-sm font-semibold text-foreground">{error.detail}</p>
+                    {error.child && error.child !== 'N/A' ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">Reported by: {error.child}</p>
+                    ) : null}
+                    <p className="mt-2 text-xs text-muted-foreground/70">{error.timestamp}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSyncModalOpen(false)
+                setSelectedSyncItem(null)
+              }}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

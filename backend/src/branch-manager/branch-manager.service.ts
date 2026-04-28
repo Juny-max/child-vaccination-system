@@ -149,7 +149,7 @@ export class BranchManagerService {
         childIdList.length > 0
           ? db
               .from('aefi_reports')
-              .select('id, severity, status, symptoms, created_at, children(full_name)')
+              .select('id, severity, status, symptoms, notes, created_at, children(full_name), vaccination_events(vaccines(name))')
               .in('child_id', childIdList)
               .order('created_at', { ascending: false })
               .limit(10)
@@ -407,6 +407,7 @@ export class BranchManagerService {
                   status: daysOverdue > 30 ? 'Critical' : daysOverdue > 14 ? 'High' : 'Moderate',
                   daysOverdue,
                   timestamp: `${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue`,
+                  createdAt: dueDate.toISOString(),
                 };
               }
             }
@@ -418,21 +419,32 @@ export class BranchManagerService {
       const overdueList = rawOverdue.slice(0, 20);
 
       // ── Step 8: Format AEFI events ────────────────────────────────────
-      const aefiList = (aefiRows.data ?? []).map((a: any) => ({
-        id: a.id,
-        child: (a.children as any)?.full_name ?? 'Unknown',
-        detail: (a.symptoms ?? []).join(', ') || 'Symptoms reported',
-        status: this.formatAefiStatus(a.status),
-        timestamp: this.timeAgo(new Date(a.created_at)),
-      }));
+      const aefiList = (aefiRows.data ?? []).map((a: any) => {
+        const vaccineName = (a.vaccination_events as any)?.vaccines?.name as string | undefined;
+        const symptoms = (a.symptoms ?? []).join(', ') || 'Symptoms reported';
+        const createdAt = new Date(a.created_at);
+        return {
+          id: a.id,
+          child: (a.children as any)?.full_name ?? 'Unknown',
+          detail: vaccineName ? `${vaccineName} — ${symptoms}` : symptoms,
+          status: this.formatAefiStatus(a.status, createdAt),
+          notes: (a.notes as string | null) ?? undefined,
+          timestamp: this.timeAgo(createdAt),
+          createdAt: createdAt.toISOString(),
+        };
+      });
 
       // ── Step 9: Format sync errors ────────────────────────────────────
-      const syncErrors = (syncQueueRows.data ?? []).map((s: any) => ({
-        id: s.id,
-        child: 'N/A',
-        detail: `${s.status === 'conflict' ? 'Data conflict' : 'Failed to sync'} on ${s.entity_type} (${(s.users as any)?.full_name ?? 'Staff'})`,
-        timestamp: this.timeAgo(new Date(s.created_at)),
-      }));
+      const syncErrors = (syncQueueRows.data ?? []).map((s: any) => {
+        const createdAt = new Date(s.created_at);
+        return {
+          id: s.id,
+          child: (s.users as any)?.full_name ?? 'Staff',
+          detail: `${s.status === 'conflict' ? 'Data conflict' : 'Failed to sync'} on ${(s.entity_type ?? 'record').replace(/_/g, ' ')}`,
+          timestamp: this.timeAgo(createdAt),
+          createdAt: createdAt.toISOString(),
+        };
+      });
 
       // ── Step 10: Format notification failures ─────────────────────────
       const notificationFailures = (notificationRows.data ?? []).map((n: any) => ({
@@ -654,9 +666,14 @@ export class BranchManagerService {
     return date.toLocaleDateString('en-GH', { month: 'short', day: 'numeric' }) + ` · ${time}`;
   }
 
-  private formatAefiStatus(status: string): string {
+  private formatAefiStatus(status: string, createdAt?: Date): string {
+    if (status === 'reported') {
+      const hoursOld = createdAt
+        ? (Date.now() - createdAt.getTime()) / (1000 * 60 * 60)
+        : Infinity;
+      return hoursOld <= 72 ? 'New' : 'Reported';
+    }
     const map: Record<string, string> = {
-      reported: 'New',
       'under-review': 'Under review',
       investigated: 'Investigated',
       resolved: 'Resolved',

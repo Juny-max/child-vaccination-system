@@ -34,6 +34,8 @@ export interface AlertItem {
   status?: string;
   daysOverdue?: number;
   timestamp: string;
+  createdAt?: string;
+  notes?: string;
 }
 
 export interface StaffMember {
