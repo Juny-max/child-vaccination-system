@@ -74,6 +74,7 @@ export default function FacilityDashboardPage() {
   const [isLoadingMissedAppointments, setIsLoadingMissedAppointments] = useState(true)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [contactDetail, setContactDetail] = useState<facilityApi.UrgentFollowUp | null>(null)
+  const [followUpsModalOpen, setFollowUpsModalOpen] = useState(false)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [pendingAppointmentRequestsCount, setPendingAppointmentRequestsCount] = useState(0)
 
@@ -411,6 +412,7 @@ export default function FacilityDashboardPage() {
   const todaysAppointments = useMemo(() => appointments, [appointments])
   const todaysAppointmentsPreview = useMemo(() => todaysAppointments.slice(0, 4), [todaysAppointments])
   const todaysFollowUps = useMemo(() => followUps, [followUps])
+  const followUpsPreview = useMemo(() => todaysFollowUps.slice(0, 4), [todaysFollowUps])
   const recentMissedAppointments = useMemo(
     () => missedAppointments.filter((appointment) => appointment.daysSinceMissed <= 14),
     [missedAppointments],
@@ -803,6 +805,11 @@ export default function FacilityDashboardPage() {
             <CardHeader className="space-y-1">
               <CardTitle className="flex items-center gap-2 text-lg text-destructive">
                 <AlertTriangle className="h-5 w-5" /> Urgent follow-ups
+                {!isLoadingFollowUps && todaysFollowUps.length > 0 && (
+                  <Badge variant="destructive" className="ml-auto text-xs">
+                    {todaysFollowUps.length}
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription>Prioritise these children if they attend clinic today.</CardDescription>
             </CardHeader>
@@ -815,7 +822,7 @@ export default function FacilityDashboardPage() {
               ) : todaysFollowUps.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No flagged children for today.</p>
               ) : (
-                todaysFollowUps.map((followUp, index) => (
+                followUpsPreview.map((followUp, index) => (
                   <div key={`${followUp.id}-${index}`} className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -840,6 +847,17 @@ export default function FacilityDashboardPage() {
                     </div>
                   </div>
                 ))
+              )}
+              {!isLoadingFollowUps && todaysFollowUps.length > 4 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setFollowUpsModalOpen(true)}
+                >
+                  View all urgent follow-ups ({todaysFollowUps.length})
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               )}
             </CardContent>
           </Card>
@@ -1032,6 +1050,64 @@ export default function FacilityDashboardPage() {
             <Button onClick={() => setShowErrorModal(false)} className="w-full sm:w-auto px-8">
               OK, Got it
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* All Urgent Follow-ups Modal */}
+      <Dialog open={followUpsModalOpen} onOpenChange={setFollowUpsModalOpen}>
+        <DialogContent className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b border-border px-6 py-4">
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" /> Urgent follow-ups
+              <Badge variant="destructive" className="ml-1">{todaysFollowUps.length}</Badge>
+            </DialogTitle>
+            <DialogDescription>
+              All children with overdue vaccinations. Prioritise these if they attend clinic today.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
+            {todaysFollowUps.map((followUp, index) => (
+              <div key={`modal-${followUp.id}-${index}`} className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{followUp.childName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Guardian: {followUp.caregiver}{followUp.relationship ? ` (${followUp.relationship})` : ""}
+                    </p>
+                  </div>
+                  <Badge variant="destructive" className="shrink-0 text-[10px]">
+                    {followUp.daysOverdue} days overdue
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs text-destructive">{followUp.reason}</p>
+                <div className="mt-3 flex items-center gap-3">
+                  <Link
+                    href={`tel:${followUp.contact.replace(/\s+/g, "")}`}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-destructive/15 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/25"
+                  >
+                    <Phone className="h-3 w-3" /> {followUp.contact !== "N/A" ? followUp.contact : "No phone"}
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setFollowUpsModalOpen(false)
+                      setContactDetail(followUp)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Info className="h-3 w-3" /> Contact info
+                  </button>
+                  <Button variant="outline" size="sm" className="ml-auto h-7 text-xs" asChild>
+                    <Link href={`/facility/child/${followUp.childId}`}>
+                      Open chart <ChevronRight className="ml-1 h-3 w-3" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-border px-6 py-3 flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setFollowUpsModalOpen(false)}>Close</Button>
           </div>
         </DialogContent>
       </Dialog>
