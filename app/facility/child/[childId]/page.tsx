@@ -1132,13 +1132,13 @@ export default function ChildPatientChartPage() {
           {entry.status === "completed" ? (
             <Badge variant="secondary" className="w-fit shrink-0">Completed</Badge>
           ) : entry.status === "upcoming" ? (
-            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 dark:border-sky-800 dark:bg-sky-950/40">
-              <CalendarDays className="h-4 w-4 shrink-0 text-sky-500" />
+            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+              <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
               <div className="leading-tight">
-                <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">
+                <p className="text-xs font-semibold text-primary">
                   In {daysUntil} day{daysUntil !== 1 ? "s" : ""}
                 </p>
-                <p className="text-[10px] text-sky-500/80 dark:text-sky-400/60">{formatDate(entry.scheduledDate)}</p>
+                <p className="text-[10px] text-primary/60">{formatDate(entry.scheduledDate)}</p>
               </div>
             </div>
           ) : (
