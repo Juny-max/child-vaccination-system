@@ -755,6 +755,52 @@ export class FacilityService {
   }
 
   /**
+   * Get AEFI reports for a child (last 30 days only — older entries age out)
+   */
+  async getChildAefiReports(childId: string): Promise<any[]> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+
+    const { data, error } = await this.db.supabase
+      .from('aefi_reports')
+      .select(`
+        id,
+        symptoms,
+        severity,
+        status,
+        onset_date,
+        notes,
+        created_at,
+        vaccination_events (
+          dose_number,
+          vaccines ( name )
+        ),
+        users ( full_name )
+      `)
+      .eq('child_id', childId)
+      .gte('created_at', cutoff.toISOString())
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      this.logger.error(`Failed to fetch AEFI reports for child ${childId}: ${error.message}`);
+      return [];
+    }
+
+    return (data ?? []).map((r: any) => ({
+      id: r.id,
+      vaccineName: r.vaccination_events?.vaccines?.name ?? 'Unknown vaccine',
+      doseNumber: r.vaccination_events?.dose_number ?? null,
+      severity: r.severity,
+      status: r.status,
+      symptoms: r.symptoms ?? [],
+      onsetDate: r.onset_date,
+      notes: r.notes ?? null,
+      reportedBy: r.users?.full_name ?? null,
+      createdAt: r.created_at,
+    }));
+  }
+
+  /**
    * Get guardian details for a child
    */
   async getGuardianByChildId(childId: string): Promise<GuardianDto> {

@@ -126,6 +126,15 @@ export class FacilityController {
   }
 
   /**
+   * GET /api/facility/children/:childId/aefi
+   * Get AEFI reports for a child (last 30 days)
+   */
+  @Get('children/:childId/aefi')
+  async getChildAefiReports(@Param('childId') childId: string) {
+    return this.facilityService.getChildAefiReports(childId);
+  }
+
+  /**
    * GET /api/facility/children/:childId/guardian
    * Get guardian details for a child
    */

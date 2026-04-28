@@ -172,6 +172,23 @@ export async function getVaccineStockInfo(
 /**
  * Growth monitoring measurement
  */
+export interface FacilityAefiReport {
+  id: string;
+  vaccineName: string;
+  doseNumber: number | null;
+  severity: 'mild' | 'moderate' | 'severe';
+  status: string;
+  symptoms: string[];
+  onsetDate: string;
+  notes: string | null;
+  reportedBy: string | null;
+  createdAt: string;
+}
+
+export async function getChildAefiReports(childId: string): Promise<FacilityAefiReport[]> {
+  return apiRequest<FacilityAefiReport[]>(`/facility/children/${childId}/aefi`);
+}
+
 export interface GrowthMeasurement {
   id: string;
   childId: string;

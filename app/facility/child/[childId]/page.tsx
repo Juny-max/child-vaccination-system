@@ -37,6 +37,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -330,6 +331,11 @@ export default function ChildPatientChartPage() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
+  // AEFI watchlist state
+  const [aefiReports, setAefiReports] = useState<facilityApi.FacilityAefiReport[]>([])
+  const [isLoadingAefi, setIsLoadingAefi] = useState(false)
+  const [aefiModalOpen, setAefiModalOpen] = useState(false)
+
   useEffect(() => {
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
@@ -399,6 +405,23 @@ export default function ChildPatientChartPage() {
     fetchVaccinationData()
   }, [childId, childProfile?.dateOfBirth, isValidChildId])
   
+  // Fetch AEFI watchlist (last 30 days)
+  useEffect(() => {
+    const fetchAefi = async () => {
+      if (!childId || childId === "new-child" || !isValidChildId) return
+      setIsLoadingAefi(true)
+      try {
+        const reports = await facilityApi.getChildAefiReports(childId)
+        setAefiReports(reports)
+      } catch (error) {
+        console.error("Failed to load AEFI reports:", error)
+      } finally {
+        setIsLoadingAefi(false)
+      }
+    }
+    fetchAefi()
+  }, [childId, isValidChildId])
+
   // Fetch growth monitoring data
   useEffect(() => {
     const fetchMeasurements = async () => {
@@ -814,15 +837,16 @@ export default function ChildPatientChartPage() {
         await facilityApi.administerVaccine(childId, requestData)
 
         // Refetch vaccination data to update the timeline
+        const refreshPromises: Promise<any>[] = [
+          facilityApi.getChildAefiReports(childId).then(setAefiReports),
+        ]
         if (childProfile?.dateOfBirth) {
-          const [history, scheduled] = await Promise.all([
-            facilityApi.getVaccinationHistory(childId),
-            facilityApi.getScheduledVaccinations(childId, childProfile.dateOfBirth),
-          ])
-          
-          setVaccinationHistory(history)
-          setScheduledVaccines(scheduled)
+          refreshPromises.push(
+            facilityApi.getVaccinationHistory(childId).then(setVaccinationHistory),
+            facilityApi.getScheduledVaccinations(childId, childProfile.dateOfBirth).then(setScheduledVaccines),
+          )
         }
+        await Promise.all(refreshPromises)
 
         closeAdministerModal()
         toast.success(
@@ -1662,17 +1686,71 @@ export default function ChildPatientChartPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Flame className="h-5 w-5 text-primary" /> AEFI watchlist
-              </CardTitle>
-              <CardDescription>Flag adverse events immediately for rapid escalation.</CardDescription>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Flame className="h-5 w-5 text-primary" /> AEFI watchlist
+                  </CardTitle>
+                  <CardDescription>Adverse events flagged in the last 30 days.</CardDescription>
+                </div>
+                {aefiReports.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={() => setAefiModalOpen(true)}>
+                    View all
+                  </Button>
+                )}
+              </div>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>No AEFI recorded for this child.</p>
-              <p>
-                If you suspect an adverse event, tick the AEFI checkbox in the administer modal. An SMS and email alert will
-                automatically notify the Branch Manager and district focal person.
-              </p>
+            <CardContent className="space-y-3">
+              {isLoadingAefi ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading watchlist...
+                </div>
+              ) : aefiReports.length === 0 ? (
+                <div className="space-y-1.5 text-sm text-muted-foreground">
+                  <p>No AEFI recorded in the last 30 days.</p>
+                  <p>
+                    If you suspect an adverse event, tick the AEFI checkbox in the administer modal. An alert will notify the Branch Manager.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {aefiReports.slice(0, 5).map((report) => (
+                    <div key={report.id} className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold text-foreground">
+                          {report.vaccineName}{report.doseNumber ? ` (Dose ${report.doseNumber})` : ""}
+                        </p>
+                        <div className="flex shrink-0 gap-1.5">
+                          <Badge
+                            variant={report.severity === "severe" ? "destructive" : report.severity === "moderate" ? "secondary" : "outline"}
+                            className="text-xs capitalize"
+                          >
+                            {report.severity}
+                          </Badge>
+                          <Badge
+                            variant={report.status === "reported" || report.status === "escalated" ? "destructive" : report.status === "resolved" ? "default" : "secondary"}
+                            className="text-xs"
+                          >
+                            {report.status === "under-review" ? "Under review" : report.status.charAt(0).toUpperCase() + report.status.slice(1)}
+                          </Badge>
+                        </div>
+                      </div>
+                      {report.symptoms.length > 0 && (
+                        <p className="text-xs text-muted-foreground">{report.symptoms.join(", ")}</p>
+                      )}
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">{formatDate(report.onsetDate)}</p>
+                    </div>
+                  ))}
+                  {aefiReports.length > 5 && (
+                    <p className="text-xs text-muted-foreground">
+                      Showing 5 of {aefiReports.length}.{" "}
+                      <button type="button" className="underline hover:text-foreground" onClick={() => setAefiModalOpen(true)}>
+                        View all
+                      </button>
+                    </p>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
         </section>
@@ -2326,6 +2404,70 @@ export default function ChildPatientChartPage() {
           </div>
         </div>
       )}
+
+      {/* ── AEFI Watchlist Modal ───────────────────────────────────────── */}
+      <Dialog open={aefiModalOpen} onOpenChange={setAefiModalOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Flame className="h-5 w-5 text-primary" /> AEFI watchlist — last 30 days
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {aefiReports.length} report{aefiReports.length !== 1 ? "s" : ""} on record for this child
+            </p>
+          </DialogHeader>
+
+          <div className="max-h-[480px] space-y-3 overflow-y-auto pr-1">
+            {aefiReports.map((report) => (
+              <div key={report.id} className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-foreground">
+                      {report.vaccineName}{report.doseNumber ? ` — Dose ${report.doseNumber}` : ""}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Onset: {formatDate(report.onsetDate)}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <Badge
+                      variant={report.severity === "severe" ? "destructive" : report.severity === "moderate" ? "secondary" : "outline"}
+                      className="capitalize"
+                    >
+                      {report.severity}
+                    </Badge>
+                    <Badge
+                      variant={report.status === "reported" || report.status === "escalated" ? "destructive" : report.status === "resolved" ? "default" : "secondary"}
+                    >
+                      {report.status === "under-review" ? "Under review" : report.status.charAt(0).toUpperCase() + report.status.slice(1)}
+                    </Badge>
+                  </div>
+                </div>
+
+                {report.symptoms.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Symptoms</p>
+                    <p className="mt-0.5 text-sm text-foreground">{report.symptoms.join(", ")}</p>
+                  </div>
+                )}
+
+                {report.notes ? (
+                  <div className="rounded-lg border border-border bg-background p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Nurse note</p>
+                    <p className="mt-1 text-sm leading-relaxed text-foreground">{report.notes}</p>
+                  </div>
+                ) : null}
+
+                {report.reportedBy ? (
+                  <p className="text-xs text-muted-foreground">Reported by: {report.reportedBy}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end border-t border-border pt-3">
+            <Button variant="outline" onClick={() => setAefiModalOpen(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </div>
   )
