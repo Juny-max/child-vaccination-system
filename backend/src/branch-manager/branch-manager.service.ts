@@ -2352,36 +2352,28 @@ export class BranchManagerService {
 
   async createHqBranch(dto: CreateHqBranchDto) {
     const db = this.databaseService.supabase;
-    const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
+    const normalizedCatchments = dto.catchmentAreas?.length
+      ? this.normalizeUniqueValues(dto.catchmentAreas)
+      : [];
 
-    if (!normalizedCatchments.length) {
-      throw new BadRequestException({
-        message: 'At least one catchment area is required',
-        code: 'CATCHMENT_REQUIRED',
-      });
-    }
-
-    // Validate branch name and region
     if (!dto.name?.trim()) {
-      throw new BadRequestException({
-        message: 'Branch name is required',
-        code: 'BRANCH_NAME_REQUIRED',
-      });
+      throw new BadRequestException({ message: 'Branch name is required', code: 'BRANCH_NAME_REQUIRED' });
     }
-
     if (!dto.region?.trim()) {
-      throw new BadRequestException({
-        message: 'Region is required',
-        code: 'REGION_REQUIRED',
-      });
+      throw new BadRequestException({ message: 'Region is required', code: 'REGION_REQUIRED' });
     }
 
-    // Validate manager name if provided
-    if (dto.manager !== undefined && dto.manager !== null && !dto.manager.trim()) {
-      throw new BadRequestException({
-        message: 'Manager name cannot be empty',
-        code: 'MANAGER_NAME_INVALID',
-      });
+    // Resolve manager name from userId if provided
+    let managerName = dto.manager?.trim() || 'Unassigned';
+    if (dto.managerId) {
+      const { data: managerUser } = await db
+        .from('users')
+        .select('id, full_name, role, branch_id')
+        .eq('id', dto.managerId)
+        .maybeSingle();
+      if (managerUser?.role === 'branch-manager') {
+        managerName = managerUser.full_name ?? 'Unassigned';
+      }
     }
 
     const code = await this.generateNextBranchCode();
@@ -2392,10 +2384,7 @@ export class BranchManagerService {
         code,
         region: dto.region.trim(),
         status: 'active',
-        metadata: {
-          managerName: dto.manager?.trim() || 'Unassigned',
-          assignedChwNames: [],
-        },
+        metadata: { managerName, assignedChwNames: [] },
       })
       .select('id, name, code, region, status, metadata')
       .single();
@@ -2407,7 +2396,14 @@ export class BranchManagerService {
       });
     }
 
-    await this.replaceCatchmentsForBranch(createdBranch.id, createdBranch.code, normalizedCatchments);
+    // Link the selected branch manager user to this branch
+    if (dto.managerId) {
+      await db.from('users').update({ branch_id: createdBranch.id }).eq('id', dto.managerId);
+    }
+
+    if (normalizedCatchments.length) {
+      await this.replaceCatchmentsForBranch(createdBranch.id, createdBranch.code, normalizedCatchments);
+    }
     const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === createdBranch.id));
     return fullBranch;
   }
@@ -2415,36 +2411,15 @@ export class BranchManagerService {
   async updateHqBranch(code: string, dto: UpdateHqBranchDto) {
     const db = this.databaseService.supabase;
     const normalizedCode = code.trim();
-    const normalizedCatchments = this.normalizeUniqueValues(dto.catchmentAreas);
+    const normalizedCatchments = dto.catchmentAreas?.length
+      ? this.normalizeUniqueValues(dto.catchmentAreas)
+      : [];
 
-    if (!normalizedCatchments.length) {
-      throw new BadRequestException({
-        message: 'At least one catchment area is required',
-        code: 'CATCHMENT_REQUIRED',
-      });
-    }
-
-    // Validate branch name and region
     if (!dto.name?.trim()) {
-      throw new BadRequestException({
-        message: 'Branch name is required',
-        code: 'BRANCH_NAME_REQUIRED',
-      });
+      throw new BadRequestException({ message: 'Branch name is required', code: 'BRANCH_NAME_REQUIRED' });
     }
-
     if (!dto.region?.trim()) {
-      throw new BadRequestException({
-        message: 'Region is required',
-        code: 'REGION_REQUIRED',
-      });
-    }
-
-    // Validate manager name if provided
-    if (dto.manager !== undefined && dto.manager !== null && !dto.manager.trim()) {
-      throw new BadRequestException({
-        message: 'Manager name cannot be empty',
-        code: 'MANAGER_NAME_INVALID',
-      });
+      throw new BadRequestException({ message: 'Region is required', code: 'REGION_REQUIRED' });
     }
 
     const { data: currentBranch, error: currentError } = await db
@@ -2454,16 +2429,28 @@ export class BranchManagerService {
       .single();
 
     if (currentError || !currentBranch) {
-      throw new NotFoundException({
-        message: `Branch not found: ${normalizedCode}`,
-        code: 'BRANCH_NOT_FOUND',
-      });
+      throw new NotFoundException({ message: `Branch not found: ${normalizedCode}`, code: 'BRANCH_NOT_FOUND' });
     }
 
     const currentMetadata = (currentBranch.metadata ?? {}) as {
       assignedChwNames?: string[];
       managerName?: string;
     };
+
+    // Resolve manager name: userId takes priority, then text field, then keep existing
+    let managerName = currentMetadata.managerName ?? 'Unassigned';
+    if (dto.managerId) {
+      const { data: newManager } = await db
+        .from('users')
+        .select('id, full_name, role')
+        .eq('id', dto.managerId)
+        .maybeSingle();
+      if (newManager?.role === 'branch-manager') {
+        managerName = newManager.full_name ?? 'Unassigned';
+      }
+    } else if (dto.manager?.trim()) {
+      managerName = dto.manager.trim();
+    }
 
     const { error: updateError } = await db
       .from('branches')
@@ -2472,7 +2459,7 @@ export class BranchManagerService {
         region: dto.region.trim(),
         metadata: {
           ...currentMetadata,
-          managerName: dto.manager?.trim() || 'Unassigned',
+          managerName,
           assignedChwNames: currentMetadata.assignedChwNames ?? [],
         },
       })
@@ -2485,7 +2472,23 @@ export class BranchManagerService {
       });
     }
 
-    await this.replaceCatchmentsForBranch(currentBranch.id, normalizedCode, normalizedCatchments);
+    // Re-assign manager user: unlink old manager, link new one
+    if (dto.managerId) {
+      await db
+        .from('users')
+        .update({ branch_id: null })
+        .eq('branch_id', currentBranch.id)
+        .eq('role', 'branch-manager')
+        .neq('id', dto.managerId);
+      await db
+        .from('users')
+        .update({ branch_id: currentBranch.id })
+        .eq('id', dto.managerId);
+    }
+
+    if (normalizedCatchments.length) {
+      await this.replaceCatchmentsForBranch(currentBranch.id, normalizedCode, normalizedCatchments);
+    }
 
     const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === currentBranch.id));
     return fullBranch;

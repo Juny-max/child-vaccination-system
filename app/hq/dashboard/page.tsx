@@ -36,6 +36,7 @@ import {
 import { ResponsiveContainer, RadialBarChart, RadialBar, Legend, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, ReferenceLine } from "recharts"
 
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -453,7 +454,12 @@ export default function HqDashboardPage() {
   const [branchForm, setBranchForm] = useState({
     name: "",
     region: "",
-    manager: "",
+    managerId: "",
+  })
+  const [editBranchForm, setEditBranchForm] = useState({
+    name: "",
+    region: "",
+    managerId: "",
   })
   const [editingBranchId, setEditingBranchId] = useState<string | null>(null)
 
@@ -545,6 +551,13 @@ export default function HqDashboardPage() {
   const [isDownloadingBackup, setIsDownloadingBackup] = useState(false)
   const [retentionDays, setRetentionDays] = useState(90)
   const [isSchedulingBackup, setIsSchedulingBackup] = useState(false)
+
+  // Branch management modals & spinners
+  const [isBranchEditModalOpen, setIsBranchEditModalOpen] = useState(false)
+  const [isBranchSaving, setIsBranchSaving] = useState(false)
+  const [togglingBranchStatusId, setTogglingBranchStatusId] = useState<string | null>(null)
+  const [isAssigningChws, setIsAssigningChws] = useState(false)
+  const [isCleaningDuplicates, setIsCleaningDuplicates] = useState(false)
 
   // FEATURE 7: User Roles & Permissions
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([])
@@ -1086,12 +1099,12 @@ export default function HqDashboardPage() {
   }
 
   const handleCleanupDuplicateChws = async () => {
+    setIsCleaningDuplicates(true)
     try {
       const result = await cleanupDuplicateChwAssignments()
       setSystemMessage(`✓ ${result.message}`)
       appendAuditLog({ action: `Cleaned up ${result.cleaned} duplicate CHW assignments`, category: "Branch" })
 
-      // Refetch branches to reflect changes
       const updatedBranches = await getHqBranches()
       if (updatedBranches.length > 0) {
         setBranches(updatedBranches)
@@ -1099,26 +1112,29 @@ export default function HqDashboardPage() {
     } catch (error) {
       console.error("Failed to cleanup duplicate CHWs", error)
       setSystemMessage("No duplicate CHW assignments found or cleanup failed.")
+    } finally {
+      setIsCleaningDuplicates(false)
     }
   }
 
   const startEditingBranch = (branch: Branch) => {
     cancelChwAssignment()
     setEditingBranchId(branch.id)
-    setBranchForm({
+    const currentManagerUser = users.find(
+      (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && u.branch === branch.name
+    )
+    setEditBranchForm({
       name: branch.name,
       region: branch.region,
-      manager: branch.manager,
+      managerId: currentManagerUser?.id ?? "",
     })
-
-    window.setTimeout(() => {
-      branchEditPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-    }, 80)
+    setIsBranchEditModalOpen(true)
   }
 
   const cancelBranchEditing = () => {
     setEditingBranchId(null)
-    setBranchForm({ name: "", region: "", manager: "" })
+    setEditBranchForm({ name: "", region: "", managerId: "" })
+    setIsBranchEditModalOpen(false)
   }
 
   const toggleBranchStatus = async (branchId: string) => {
@@ -1126,6 +1142,7 @@ export default function HqDashboardPage() {
     if (!branch) return
 
     const nextStatus: Branch["status"] = branch.status === "active" ? "inactive" : "active"
+    setTogglingBranchStatusId(branchId)
 
     try {
       const updatedBranch = await updateHqBranchStatus(branch.id, nextStatus)
@@ -1139,6 +1156,8 @@ export default function HqDashboardPage() {
     } catch (error) {
       console.error("Failed to update branch status", error)
       setSystemMessage("Could not update branch status. Please try again.")
+    } finally {
+      setTogglingBranchStatusId(null)
     }
 
     cancelBranchEditing()
@@ -1171,6 +1190,7 @@ export default function HqDashboardPage() {
       return user?.name ?? id
     })
     const targetBranch = branches.find((branch) => branch.id === activeChwBranchId)
+    setIsAssigningChws(true)
 
     try {
       const updatedBranch = await updateHqBranchChws(activeChwBranchId, selectedChwNames)
@@ -1196,6 +1216,8 @@ export default function HqDashboardPage() {
       } else {
         setSystemMessage("Could not save CHW assignments. Please try again.")
       }
+    } finally {
+      setIsAssigningChws(false)
     }
 
     cancelChwAssignment()
@@ -1203,14 +1225,16 @@ export default function HqDashboardPage() {
 
   const handleBranchSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!branchForm.name.trim() || !branchForm.region.trim()) return
+    const activeForm = editingBranchId ? editBranchForm : branchForm
+    if (!activeForm.name.trim() || !activeForm.region.trim()) return
 
+    setIsBranchSaving(true)
     try {
       if (editingBranchId) {
         const updatedBranch = await updateHqBranch(editingBranchId, {
-          name: branchForm.name.trim(),
-          region: branchForm.region.trim(),
-          manager: branchForm.manager.trim() || "Unassigned",
+          name: editBranchForm.name.trim(),
+          region: editBranchForm.region.trim(),
+          managerId: editBranchForm.managerId || undefined,
         })
 
         setBranches((previous) =>
@@ -1222,7 +1246,7 @@ export default function HqDashboardPage() {
         const createdBranch = await createHqBranch({
           name: branchForm.name.trim(),
           region: branchForm.region.trim(),
-          manager: branchForm.manager.trim() || "Unassigned",
+          managerId: branchForm.managerId || undefined,
         })
 
         setBranches((previous) => [createdBranch, ...previous])
@@ -1243,10 +1267,16 @@ export default function HqDashboardPage() {
       console.error("Failed to save branch", error)
       setSystemMessage("Could not save branch details. Please try again.")
       return
+    } finally {
+      setIsBranchSaving(false)
     }
 
-    setBranchForm({ name: "", region: "", manager: "" })
+    if (!editingBranchId) {
+      setBranchForm({ name: "", region: "", managerId: "" })
+    }
     setEditingBranchId(null)
+    setEditBranchForm({ name: "", region: "", managerId: "" })
+    setIsBranchEditModalOpen(false)
   }
 
   // ===== FEATURE 1: CATCHMENT AREA HANDLERS =====
@@ -2750,10 +2780,11 @@ export default function HqDashboardPage() {
 
   const renderBranches = () => (
     <div className="space-y-6">
-      <Card ref={branchEditPanelRef} className="border-primary/40">
+      {/* Register New Branch */}
+      <Card className="border-primary/40">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Building2 className="h-5 w-5 text-primary" /> {editingBranchId ? "Edit Branch Profile" : "Register New Branch"}
+            <Building2 className="h-5 w-5 text-primary" /> Register New Branch
           </CardTitle>
           <CardDescription>Capture essential branch details and assign leadership.</CardDescription>
         </CardHeader>
@@ -2780,27 +2811,125 @@ export default function HqDashboardPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="branchManager">Branch manager</Label>
-              <Input
-                id="branchManager"
-                placeholder="Manager full name"
-                value={branchForm.manager}
-                onChange={(event) => setBranchForm((prev) => ({ ...prev, manager: event.target.value }))}
-              />
+              <Label htmlFor="branchManagerSelect">Branch manager</Label>
+              {(() => {
+                const available = users.filter(
+                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active"
+                )
+                const selected = users.find((u) => u.id === branchForm.managerId)
+                return (
+                  <>
+                    <select
+                      id="branchManagerSelect"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={branchForm.managerId}
+                      onChange={(e) => setBranchForm((prev) => ({ ...prev, managerId: e.target.value }))}
+                    >
+                      <option value="">— Select a branch manager —</option>
+                      {available.map((u) => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
+                      ))}
+                    </select>
+                    {selected && (
+                      <p className="text-xs text-muted-foreground">{selected.email}</p>
+                    )}
+                    {available.length === 0 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        No unassigned branch managers found. Create one in User Management first.
+                      </p>
+                    )}
+                  </>
+                )
+              })()}
             </div>
-            <div className="md:col-span-2 flex flex-wrap justify-end gap-2">
-              {editingBranchId ? (
-                <Button type="button" variant="ghost" onClick={cancelBranchEditing}>
-                  Cancel edit
-                </Button>
-              ) : null}
-              <Button type="submit" className="gap-2">
-                <MapPinned className="h-4 w-4" /> {editingBranchId ? "Save branch" : "Register branch"}
+            <div className="md:col-span-2 flex justify-end">
+              <Button type="submit" disabled={isBranchSaving} className="gap-2">
+                {isBranchSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPinned className="h-4 w-4" />}
+                Register branch
               </Button>
             </div>
           </form>
         </CardContent>
       </Card>
+
+      {/* Edit Branch Modal */}
+      <Dialog open={isBranchEditModalOpen} onOpenChange={(open) => { if (!open) cancelBranchEditing() }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-primary" /> Edit Branch Profile
+            </DialogTitle>
+            <DialogDescription>Update the branch details below and save.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleBranchSubmit} className="grid gap-4 mt-2">
+            <div className="space-y-2">
+              <Label htmlFor="editBranchName">Branch name</Label>
+              <Input
+                id="editBranchName"
+                placeholder="e.g. Kasoa Polyclinic"
+                value={editBranchForm.name}
+                onChange={(event) => setEditBranchForm((prev) => ({ ...prev, name: event.target.value }))}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editBranchRegion">Region</Label>
+              <Input
+                id="editBranchRegion"
+                placeholder="Greater Accra"
+                value={editBranchForm.region}
+                onChange={(event) => setEditBranchForm((prev) => ({ ...prev, region: event.target.value }))}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editBranchManagerSelect">Branch manager</Label>
+              {(() => {
+                const editingBranch = branches.find((b) => b.id === editingBranchId)
+                const currentManagerUser = editingBranch
+                  ? users.find((u) => (u.role === "Branch Manager" || u.role === "branch-manager") && u.branch === editingBranch.name)
+                  : null
+                const unassigned = users.filter(
+                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active"
+                )
+                const options = currentManagerUser
+                  ? [currentManagerUser, ...unassigned.filter((u) => u.id !== currentManagerUser.id)]
+                  : unassigned
+                const selected = users.find((u) => u.id === editBranchForm.managerId)
+                return (
+                  <>
+                    <select
+                      id="editBranchManagerSelect"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={editBranchForm.managerId}
+                      onChange={(e) => setEditBranchForm((prev) => ({ ...prev, managerId: e.target.value }))}
+                    >
+                      <option value="">— No manager —</option>
+                      {options.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}{currentManagerUser && u.id === currentManagerUser.id ? " (current)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {selected && (
+                      <p className="text-xs text-muted-foreground">{selected.email}</p>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={cancelBranchEditing} disabled={isBranchSaving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isBranchSaving} className="gap-2">
+                {isBranchSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Save branch
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader>
@@ -2813,15 +2942,18 @@ export default function HqDashboardPage() {
               variant="outline"
               size="sm"
               onClick={handleCleanupDuplicateChws}
+              disabled={isCleaningDuplicates}
               className="gap-2"
             >
-              <Layers className="h-4 w-4" /> Clean up duplicates
+              {isCleaningDuplicates ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
+              Clean up duplicates
             </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {branches.map((branch) => {
             const isInactive = branch.status === "inactive"
+            const isToggling = togglingBranchStatusId === branch.id
             return (
               <div
                 key={branch.id}
@@ -2848,8 +2980,8 @@ export default function HqDashboardPage() {
                   </p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => startEditingBranch(branch)}>
-                    Edit profile
+                  <Button size="sm" variant="outline" className="gap-1" onClick={() => startEditingBranch(branch)}>
+                    <Pencil className="h-3 w-3" /> Edit profile
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => startChwAssignment(branch)}>
                     {branch.assignedChws.length ? "Update CHWs" : "Assign CHWs"}
@@ -2857,9 +2989,11 @@ export default function HqDashboardPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className={isInactive ? "text-foreground" : "text-destructive"}
+                    disabled={isToggling}
+                    className={`gap-1 ${isInactive ? "text-foreground" : "text-destructive"}`}
                     onClick={() => toggleBranchStatus(branch.id)}
                   >
+                    {isToggling ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                     {isInactive ? "Activate" : "Deactivate"}
                   </Button>
                 </div>
@@ -2944,11 +3078,12 @@ export default function HqDashboardPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" onClick={cancelChwAssignment}>
+                  <Button type="button" variant="outline" onClick={cancelChwAssignment} disabled={isAssigningChws}>
                     Cancel
                   </Button>
-                  <Button type="submit" className="gap-2">
-                    <ListChecks className="h-4 w-4" /> Save ({chwSelectedIds.size})
+                  <Button type="submit" disabled={isAssigningChws} className="gap-2">
+                    {isAssigningChws ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListChecks className="h-4 w-4" />}
+                    Save ({chwSelectedIds.size})
                   </Button>
                 </div>
               </form>
@@ -3101,15 +3236,6 @@ export default function HqDashboardPage() {
               {lockRoleSelection ? (
                 <p className="text-xs text-muted-foreground">Admin role assignment is restricted in this console.</p>
               ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="userBranch">Branch (optional)</Label>
-              <Input
-                id="userBranch"
-                placeholder="Assign branch"
-                value={userForm.branch}
-                onChange={(event) => setUserForm((prev) => ({ ...prev, branch: event.target.value }))}
-              />
             </div>
             <div className="md:col-span-2 flex justify-end gap-2">
               {editingUserId ? (

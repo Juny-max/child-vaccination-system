@@ -15,7 +15,8 @@ export interface UpsertHqBranchPayload {
   name: string;
   region: string;
   manager?: string;
-  catchmentAreas: string[];
+  managerId?: string;
+  catchmentAreas?: string[];
 }
 
 export async function getHqBranches(): Promise<HqBranch[]> {
