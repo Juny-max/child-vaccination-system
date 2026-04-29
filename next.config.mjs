@@ -6,9 +6,9 @@ const skipAuthRedirectPlugin = {
 
     try {
       if (response.redirected) return null
-      const responsePath = new URL(response.url).pathname
+      const responsePath = new URL(response.url).pathname;
       if (responsePath.startsWith("/auth")) return null
-      const requestPath = new URL(request.url).pathname
+      const requestPath = new URL(request.url).pathname;
       if (requestPath.startsWith("/chw") && !responsePath.startsWith("/chw")) {
         return null
       }
