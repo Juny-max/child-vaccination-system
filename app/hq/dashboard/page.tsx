@@ -3282,9 +3282,11 @@ export default function HqDashboardPage() {
                 <p className="text-sm text-muted-foreground">
                   <span className="font-medium text-foreground">Role:</span> {formatRoleLabel(user.role)}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">Branch:</span> {user.branch ?? "Admin"}
-                </p>
+                {["Branch Manager", "branch-manager", "Facility Nurse", "facility-nurse", "Community Health Worker", "chw"].includes(user.role) && (
+                  <p className="text-sm text-muted-foreground">
+                    <span className="font-medium text-foreground">Branch:</span> {user.branch ?? "Unassigned"}
+                  </p>
+                )}
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" onClick={() => handleUserResetPassword(user)}>
