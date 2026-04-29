@@ -320,9 +320,16 @@ const normalizeCommaSeparatedValues = (value: string): string[] => {
   return Array.from(deduplicated)
 }
 
+const isAdminRole = (role?: string | null): boolean =>
+  role === "HQ Admin" || role === "Admin" || role === "hq-admin"
+
+const formatRoleLabel = (role: string): string =>
+  isAdminRole(role) ? "Admin" : role
+
 const mapUserRoleToApiRole = (role: string): string => {
+  if (isAdminRole(role)) return "hq-admin"
+
   const roleMap: Record<string, string> = {
-    "HQ Admin": "hq-admin",
     "Branch Manager": "branch-manager",
     "Facility Nurse": "facility-nurse",
     "Community Health Worker": "chw",
@@ -360,7 +367,7 @@ const mapUserManagementError = (error: unknown): { tone: "warning" | "destructiv
     return {
       tone: "warning",
       title: "Branch not found",
-      detail: "Enter a valid branch code/name or leave branch empty for HQ users.",
+      detail: "Enter a valid branch code/name or leave branch empty for admin users.",
     }
   }
 
@@ -368,7 +375,7 @@ const mapUserManagementError = (error: unknown): { tone: "warning" | "destructiv
     return {
       tone: "warning",
       title: "Role restricted",
-      detail: "HQ Admin cannot create or assign another HQ Admin from this console.",
+      detail: "Admin cannot create or assign another Admin from this console.",
     }
   }
 
@@ -400,7 +407,7 @@ const mapUserManagementError = (error: unknown): { tone: "warning" | "destructiv
     return {
       tone: "warning",
       title: "Branch not found",
-      detail: "Enter a valid branch code/name or leave branch empty for HQ users.",
+      detail: "Enter a valid branch code/name or leave branch empty for admin users.",
     }
   }
 
@@ -579,7 +586,7 @@ export default function HqDashboardPage() {
       setAuditLogs((previous) => [
         {
           id: `LOG-${Math.floor(Math.random() * 9000 + 1000)}`,
-          actor: userName || "HQ Admin",
+          actor: userName || "Admin",
           action,
           timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
           category,
@@ -694,7 +701,7 @@ export default function HqDashboardPage() {
       } catch (error) {
         console.error("Failed to load HQ branches from backend", error)
         if (!isMounted) return
-        setSystemMessage("Using local fallback data while branch API is unavailable.")
+        setSystemMessage("Backend is offline. Showing saved branch data.")
       }
     }
 
@@ -851,7 +858,7 @@ export default function HqDashboardPage() {
       } catch (error) {
         console.error("Failed to load HQ vaccines from backend", error)
         if (!isMounted) return
-        setSystemMessage("Using local fallback data for vaccines while API is unavailable.")
+        setSystemMessage("Backend is offline. Showing saved vaccine data.")
       } finally {
         if (isMounted) {
           setIsVaccinesLoading(false)
@@ -950,7 +957,7 @@ export default function HqDashboardPage() {
       } catch (error) {
         console.error("Failed to load system data from backend", error)
         if (!isMounted) return
-        setSystemMessage("Using local fallback data for audit logs while API is unavailable.")
+        setSystemMessage("Backend is offline. Showing saved audit logs.")
       }
     }
 
@@ -1006,7 +1013,7 @@ export default function HqDashboardPage() {
     if (normalized.includes("could not") || normalized.includes("failed") || normalized.includes("error")) {
       return "error"
     }
-    if (normalized.includes("fallback") || normalized.includes("saved locally")) {
+    if (normalized.includes("fallback") || normalized.includes("saved locally") || normalized.includes("offline")) {
       return "warning"
     }
     return "success"
@@ -1571,14 +1578,14 @@ export default function HqDashboardPage() {
     const normalizedEmail = userForm.email.trim().toLowerCase()
     const role = mapUserRoleToApiRole(userForm.role)
     const editingUser = editingUserId ? users.find((user) => user.id === editingUserId) ?? null : null
-    const isEditingExistingHqAdmin = editingUser?.role === "HQ Admin"
+    const isEditingExistingHqAdmin = isAdminRole(editingUser?.role)
 
     if (!editingUserId && role === "hq-admin") {
-      setSystemMessage("HQ Admin cannot create another HQ Admin from this console.")
+      setSystemMessage("Admin cannot create another Admin from this console.")
       setUserActionNotice({
         tone: "warning",
         title: "Role restricted",
-        detail: "Choose another role or ask a Super Admin for HQ Admin provisioning.",
+        detail: "Choose another role or ask a Super Admin to create an admin account.",
       })
       return
     }
@@ -2650,7 +2657,7 @@ export default function HqDashboardPage() {
               <ShieldAlert className="h-5 w-5" /> Conflicts escalated by Data Officers
             </CardTitle>
             <CardDescription className="text-xs text-amber-800/90">
-              Sync collisions awaiting HQ resolution after being queued from the field.
+              Sync collisions awaiting admin review after being queued from the field.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
@@ -3027,7 +3034,7 @@ export default function HqDashboardPage() {
     <div className="space-y-6">
       {(() => {
         const editingUser = editingUserId ? users.find((user) => user.id === editingUserId) ?? null : null
-        const lockRoleSelection = editingUser?.role === "HQ Admin"
+        const lockRoleSelection = isAdminRole(editingUser?.role)
 
         return (
       <Card ref={userFormPanelRef} className="border-primary/40">
@@ -3035,7 +3042,7 @@ export default function HqDashboardPage() {
           <CardTitle className="flex items-center gap-2 text-lg">
             <UsersIcon className="h-5 w-5 text-primary" /> {editingUserId ? "Edit User Profile" : "Create or Assign User"}
           </CardTitle>
-          <CardDescription>Provision HQ, branch, and supervisory accounts.</CardDescription>
+          <CardDescription>Provision admin, branch, and supervisory accounts.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleAddUser} className="grid gap-4 md:grid-cols-2">
@@ -3069,14 +3076,14 @@ export default function HqDashboardPage() {
                 onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))}
                 disabled={lockRoleSelection}
               >
-                {lockRoleSelection ? <option>HQ Admin</option> : null}
+                {lockRoleSelection ? <option>Admin</option> : null}
                 <option>Branch Manager</option>
                 <option>Facility Nurse</option>
                 <option>Community Health Worker</option>
                 <option>Parent</option>
               </select>
               {lockRoleSelection ? (
-                <p className="text-xs text-muted-foreground">HQ Admin role assignment is restricted in this console.</p>
+                <p className="text-xs text-muted-foreground">Admin role assignment is restricted in this console.</p>
               ) : null}
             </div>
             <div className="space-y-2">
@@ -3110,7 +3117,7 @@ export default function HqDashboardPage() {
           <CardDescription>Search, review and manage nationwide accounts.</CardDescription>
           {isUsingUsersFallback ? (
             <p className="text-xs text-amber-600 dark:text-amber-400">
-              Live user directory is temporarily unavailable. Showing fallback data.
+              User list is offline. Showing saved data.
             </p>
           ) : null}
         </CardHeader>
@@ -3131,10 +3138,10 @@ export default function HqDashboardPage() {
               </div>
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">Role:</span> {user.role}
+                  <span className="font-medium text-foreground">Role:</span> {formatRoleLabel(user.role)}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">Branch:</span> {user.branch ?? "HQ"}
+                  <span className="font-medium text-foreground">Branch:</span> {user.branch ?? "Admin"}
                 </p>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -3603,7 +3610,7 @@ export default function HqDashboardPage() {
           <CardDescription>Filter by region, branch, and reporting window.</CardDescription>
           {isUsingAnalyticsFallback ? (
             <p className="text-xs text-amber-600 dark:text-amber-400">
-              Live analytics is temporarily unavailable. Showing fallback trend data.
+              Analytics is offline. Showing saved trend data.
             </p>
           ) : null}
         </CardHeader>
@@ -3905,7 +3912,7 @@ export default function HqDashboardPage() {
               <Image src="/images/cvcc-logo.png" alt="Child Vaccination Command Center logo" fill sizes="48px" className="object-cover" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">HQ Administration Console</p>
+              <p className="text-sm text-muted-foreground">Administration Console</p>
               <p className="text-xl font-semibold text-foreground">Child Vaccination Command Center</p>
             </div>
           </div>
@@ -3913,7 +3920,7 @@ export default function HqDashboardPage() {
             <ThemeToggle />
             <div className="flex flex-col items-end">
               <span className="text-sm text-muted-foreground">Welcome, {userName}</span>
-              <span className="text-xs text-muted-foreground/80">Role: HQ Admin</span>
+              <span className="text-xs text-muted-foreground/80">Role: Admin</span>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2" disabled={isLoggingOut}>
               {isLoggingOut ? (
@@ -3934,7 +3941,7 @@ export default function HqDashboardPage() {
             <div className="rounded-xl border border-border bg-background/80 shadow-sm lg:sticky lg:top-24">
               <div className="border-b border-border px-4 py-3">
                 <p className="text-sm font-semibold text-foreground">Command Modules</p>
-                <p className="text-xs text-muted-foreground">Switch between HQ workflows.</p>
+                <p className="text-xs text-muted-foreground">Switch between admin workflows.</p>
               </div>
               <nav className="flex flex-col gap-1 p-3">
                 {SECTIONS.map((section) => {
