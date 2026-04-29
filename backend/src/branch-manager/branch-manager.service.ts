@@ -2153,7 +2153,7 @@ export class BranchManagerService {
     if (childIds.length > 0) {
       const { data: children } = await db
         .from('children')
-        .select('id, name')
+        .select('id, full_name')
         .in('id', [...new Set(childIds)]);
       childMap = Object.fromEntries(
         (children ?? []).map((c: any) => [c.id, c])
@@ -2195,13 +2195,51 @@ export class BranchManagerService {
 
       return {
         id: report.id,
-        child: childMap[report.child_id]?.name || 'Unknown',
+        child: childMap[report.child_id]?.full_name || 'Unknown',
         vaccine: vaccineMap[vaccineId]?.name || 'Unknown vaccine',
         branch: 'Field Report',
         reportedAt: report.created_at,
         priority: report.severity === 'severe' ? 'High' : report.severity === 'moderate' ? 'Medium' : 'Low',
       };
     });
+  }
+
+  async getHqChwProductivity(limit = 10) {
+    const db = this.databaseService.supabase;
+
+    const { data: chwUsers } = await db
+      .from('users')
+      .select('id, full_name')
+      .eq('role', 'chw')
+      .eq('status', 'active')
+      .limit(limit);
+
+    if (!chwUsers?.length) return [];
+
+    const chwIds = chwUsers.map((u: any) => u.id);
+
+    const [{ data: registrations }, { data: vaccinations }] = await Promise.all([
+      db.from('children').select('created_by_user_id').in('created_by_user_id', chwIds),
+      db.from('vaccination_events').select('administered_by_user_id').eq('status', 'completed').in('administered_by_user_id', chwIds),
+    ]);
+
+    const regMap = new Map<string, number>();
+    (registrations ?? []).forEach((r: any) => {
+      if (r.created_by_user_id) regMap.set(r.created_by_user_id, (regMap.get(r.created_by_user_id) ?? 0) + 1);
+    });
+
+    const vaccMap = new Map<string, number>();
+    (vaccinations ?? []).forEach((v: any) => {
+      if (v.administered_by_user_id) vaccMap.set(v.administered_by_user_id, (vaccMap.get(v.administered_by_user_id) ?? 0) + 1);
+    });
+
+    return chwUsers
+      .map((chw: any) => ({
+        label: chw.full_name,
+        registrations: regMap.get(chw.id) ?? 0,
+        vaccinations: vaccMap.get(chw.id) ?? 0,
+      }))
+      .sort((a: any, b: any) => (b.registrations + b.vaccinations) - (a.registrations + a.vaccinations));
   }
 
   async getHqDeviceSyncStatus() {

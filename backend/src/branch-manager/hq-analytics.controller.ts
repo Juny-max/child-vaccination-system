@@ -36,4 +36,9 @@ export class HqAnalyticsController {
   async getDeviceSyncStatus() {
     return this.branchManagerService.getHqDeviceSyncStatus();
   }
+
+  @Get('chw-productivity')
+  async getChwProductivity(@Query('limit') limit?: number) {
+    return this.branchManagerService.getHqChwProductivity(limit ? Number(limit) : 10);
+  }
 }

@@ -56,7 +56,7 @@ import {
   updateHqUser,
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
-import { getHqAnalytics, getHqOverviewStats, HqOverviewStats, getHqAefiReports, getHqDeviceSyncStatus } from "@/lib/api/hq-analytics"
+import { getHqAnalytics, getHqOverviewStats, HqOverviewStats, getHqAefiReports, getHqDeviceSyncStatus, getHqChwProductivity, HqChwProductivity } from "@/lib/api/hq-analytics"
 import {
   getHqVaccines,
   createHqVaccine,
@@ -75,6 +75,7 @@ import {
 } from "@/lib/api/hq-catchment-areas"
 import {
   configureBackup,
+  getBackupConfig,
   getAuditActivity,
 } from "@/lib/api/hq-system"
 import {
@@ -94,12 +95,11 @@ import { API_BASE_URL, getAuthHeaders } from "@/lib/api/config"
 
 const SECTIONS = [
   { id: "overview", label: "National Dashboard", icon: Activity },
-  { id: "branches", label: "Branch & Catchments", icon: Building2 },
+  { id: "branches", label: "Branch Management", icon: Building2 },
   { id: "users", label: "User Management", icon: UsersIcon },
-  { id: "vaccines", label: "Vaccine & Schedule", icon: Shield },
+  { id: "vaccines", label: "Vaccine Setup & Timing", icon: Shield },
   { id: "analytics", label: "Analytics & Reports", icon: FileText },
-  { id: "notifications", label: "Notifications", icon: Megaphone },
-  { id: "system", label: "System Health", icon: ServerCog },
+  { id: "system", label: "Audit & Backups", icon: ServerCog },
 ] as const
 
 const HQ_REVIEW_QUEUE_STORAGE_KEY = "hqReviewQueue"
@@ -300,9 +300,8 @@ const initialAuditLogs: AuditLog[] = []
 // Coverage gauge data is computed from overview stats API response
 const coverageGaugeData: Array<{ name: string; value: number; fill: string }> = []
 
-// Coverage trend and CHW productivity data are loaded from API
+// Coverage trend data is loaded from API
 const coverageTrendData: Array<{ period: string; measles: number; dpt3: number }> = []
-const chwProductivityData: Array<{ label: string; registrations: number; visits: number }> = []
 
 // AEFI Feed is loaded from API via getHqAefiReports()
 const aefiFeed: any[] = []
@@ -448,7 +447,6 @@ export default function HqDashboardPage() {
     name: "",
     region: "",
     manager: "",
-    catchmentAreas: "",
   })
   const [editingBranchId, setEditingBranchId] = useState<string | null>(null)
 
@@ -474,6 +472,7 @@ export default function HqDashboardPage() {
     window: "Last 6 months",
   })
   const [analyticsTrendData, setAnalyticsTrendData] = useState(coverageTrendData)
+  const [chwProductivityData, setChwProductivityData] = useState<HqChwProductivity[]>([])
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false)
   const [isUsingAnalyticsFallback, setIsUsingAnalyticsFallback] = useState(false)
   const [isUsingUsersFallback, setIsUsingUsersFallback] = useState(false)
@@ -534,6 +533,9 @@ export default function HqDashboardPage() {
 
   // FEATURE 6: Backup Management Config
   const [backupSchedule, setBackupSchedule] = useState<"daily" | "weekly" | "monthly">("weekly")
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(null)
+  const [isBackingUp, setIsBackingUp] = useState(false)
+  const [isDownloadingBackup, setIsDownloadingBackup] = useState(false)
   const [retentionDays, setRetentionDays] = useState(90)
   const [isSchedulingBackup, setIsSchedulingBackup] = useState(false)
 
@@ -978,6 +980,12 @@ export default function HqDashboardPage() {
     loadVaccineInventory()
     loadNotificationDeliveries()
     loadAdvancedAnalytics()
+    loadBackupStatus()
+    getHqChwProductivity(10).then(setChwProductivityData).catch(() => {})
+    getBackupConfig().then(cfg => {
+      setBackupSchedule(cfg.frequency)
+      setRetentionDays(cfg.retentionDays)
+    }).catch(() => {})
     initializeSystemAlerts()
     
     // Load permissions from API
@@ -1089,7 +1097,6 @@ export default function HqDashboardPage() {
       name: branch.name,
       region: branch.region,
       manager: branch.manager,
-      catchmentAreas: branch.catchmentAreas.join(", "),
     })
 
     window.setTimeout(() => {
@@ -1099,7 +1106,7 @@ export default function HqDashboardPage() {
 
   const cancelBranchEditing = () => {
     setEditingBranchId(null)
-    setBranchForm({ name: "", region: "", manager: "", catchmentAreas: "" })
+    setBranchForm({ name: "", region: "", manager: "" })
   }
 
   const toggleBranchStatus = async (branchId: string) => {
@@ -1186,20 +1193,12 @@ export default function HqDashboardPage() {
     event.preventDefault()
     if (!branchForm.name.trim() || !branchForm.region.trim()) return
 
-    const normalizedCatchments = normalizeCommaSeparatedValues(branchForm.catchmentAreas)
-
-    if (!normalizedCatchments.length) {
-      setSystemMessage("Please provide at least one catchment area.")
-      return
-    }
-
     try {
       if (editingBranchId) {
         const updatedBranch = await updateHqBranch(editingBranchId, {
           name: branchForm.name.trim(),
           region: branchForm.region.trim(),
           manager: branchForm.manager.trim() || "Unassigned",
-          catchmentAreas: normalizedCatchments,
         })
 
         setBranches((previous) =>
@@ -1212,7 +1211,6 @@ export default function HqDashboardPage() {
           name: branchForm.name.trim(),
           region: branchForm.region.trim(),
           manager: branchForm.manager.trim() || "Unassigned",
-          catchmentAreas: normalizedCatchments,
         })
 
         setBranches((previous) => [createdBranch, ...previous])
@@ -1235,7 +1233,7 @@ export default function HqDashboardPage() {
       return
     }
 
-    setBranchForm({ name: "", region: "", manager: "", catchmentAreas: "" })
+    setBranchForm({ name: "", region: "", manager: "" })
     setEditingBranchId(null)
   }
 
@@ -1737,8 +1735,36 @@ export default function HqDashboardPage() {
     }
   }
 
+  const loadBackupStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/common/backup/status`, {
+        headers: getAuthHeaders(),
+        credentials: "include",
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setLastBackupAt(data.lastBackupAt ?? null)
+      }
+    } catch {
+      // silently fail — not critical
+    }
+  }
+
+  const formatBackupTime = (isoString: string | null): string => {
+    if (!isoString) return "No backup found"
+    const diff = Date.now() - new Date(isoString).getTime()
+    const mins = Math.floor(diff / 60000)
+    const hours = Math.floor(mins / 60)
+    const days = Math.floor(hours / 24)
+    if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`
+    if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`
+    if (mins > 0) return `${mins} minute${mins > 1 ? "s" : ""} ago`
+    return "just now"
+  }
+
   const handleBackup = async () => {
     try {
+      setIsBackingUp(true)
       setSystemMessage("Triggering backup...")
       const response = await fetch(`${API_BASE_URL}/common/backup/trigger`, {
         method: "POST",
@@ -1748,6 +1774,7 @@ export default function HqDashboardPage() {
       const data = await response.json()
       if (response.ok) {
         setSystemMessage(`✓ ${data.message}`)
+        loadBackupStatus()
       } else {
         setSystemMessage(data.message || "Failed to trigger backup")
       }
@@ -1759,11 +1786,14 @@ export default function HqDashboardPage() {
       } else {
         setSystemMessage("Failed to trigger backup. Please try again.")
       }
+    } finally {
+      setIsBackingUp(false)
     }
   }
 
   const handleBackupDownload = () => {
     try {
+      setIsDownloadingBackup(true)
       setSystemMessage("Fetching latest encrypted backup...")
 
       fetch(`${API_BASE_URL}/common/backup/download-latest`, {
@@ -1792,6 +1822,7 @@ export default function HqDashboardPage() {
           window.URL.revokeObjectURL(url)
 
           setSystemMessage("✓ Encrypted backup downloaded successfully")
+          setIsDownloadingBackup(false)
           appendAuditLog({
             action: "Downloaded latest encrypted backup",
             category: "System",
@@ -1799,6 +1830,7 @@ export default function HqDashboardPage() {
         })
         .catch((error) => {
           console.error("Backup download failed:", error)
+          setIsDownloadingBackup(false)
 
           if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
             setSystemMessage(
@@ -2733,15 +2765,6 @@ export default function HqDashboardPage() {
                 onChange={(event) => setBranchForm((prev) => ({ ...prev, manager: event.target.value }))}
               />
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="catchmentAreas">Catchment areas (comma separated)</Label>
-              <Input
-                id="catchmentAreas"
-                placeholder="e.g. Kasoa Central, Ofaakor, Amanfrom"
-                value={branchForm.catchmentAreas}
-                onChange={(event) => setBranchForm((prev) => ({ ...prev, catchmentAreas: event.target.value }))}
-              />
-            </div>
             <div className="md:col-span-2 flex flex-wrap justify-end gap-2">
               {editingBranchId ? (
                 <Button type="button" variant="ghost" onClick={cancelBranchEditing}>
@@ -2797,9 +2820,6 @@ export default function HqDashboardPage() {
                   <p className="text-sm text-muted-foreground">
                     <span className="font-medium text-foreground">Manager:</span> {branch.manager}
                   </p>
-                  <p className="text-sm text-muted-foreground">
-                    <span className="font-medium text-foreground">Catchment areas:</span> {branch.catchmentAreas.join(", ") || "Pending assignment"}
-                  </p>
                   <p className="text-sm text-muted-foreground md:col-span-2">
                     <span className="font-medium text-foreground">Assigned CHWs:</span> {branch.assignedChws.length ? branch.assignedChws.join(", ") : "None assigned yet"}
                   </p>
@@ -2823,170 +2843,6 @@ export default function HqDashboardPage() {
               </div>
             )
           })}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <MapPin className="h-5 w-5 text-primary" /> Catchment Area Management
-              </CardTitle>
-              <CardDescription>Define and manage geographical service areas for branches.</CardDescription>
-            </div>
-            {selectedBranchForCatchment && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedBranchForCatchment(null)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {!selectedBranchForCatchment ? (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground mb-4">Select a branch to manage its catchment areas:</p>
-              <div className="grid gap-2 md:grid-cols-2">
-                {branches.map((branch) => (
-                  <Button
-                    key={branch.id}
-                    variant="outline"
-                    className="h-auto justify-start"
-                    onClick={() => {
-                      setSelectedBranchForCatchment(branch)
-                      setCatchmentForm({ name: "", population: "", boundaries: "" })
-                      setIsEditingCatchment(false)
-                    }}
-                  >
-                    <div className="text-left">
-                      <p className="font-medium">{branch.name}</p>
-                      <p className="text-xs text-muted-foreground">{branch.region}</p>
-                    </div>
-                  </Button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <Building2 className="h-4 w-4" /> {selectedBranchForCatchment.name} - Catchment Areas
-                </h3>
-              </div>
-
-              {!isEditingCatchment && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Current catchment areas:</p>
-                  {catchmentAreas.length > 0 ? (
-                    <div className="space-y-2">
-                      {catchmentAreas.map((area) => (
-                        <div key={area.id} className="flex items-start justify-between rounded-lg border border-border bg-muted/30 p-3">
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{area.name}</p>
-                            <p className="text-xs text-muted-foreground mt-1">Population: ~{area.population}</p>
-                            <p className="text-xs text-muted-foreground">Boundaries: {area.boundaries}</p>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setIsEditingCatchment(true)
-                                setEditingCatchmentId(area.id)
-                                setCatchmentForm({
-                                  name: area.name,
-                                  population: area.population.toString(),
-                                  boundaries: area.boundaries,
-                                })
-                              }}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => handleDeleteCatchment(area.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground py-4 text-center">No catchment areas defined yet.</p>
-                  )}
-                  <Button
-                    size="sm"
-                    className="gap-2 w-full mt-4"
-                    onClick={() => {
-                      setIsEditingCatchment(true)
-                      setEditingCatchmentId(null)
-                      setCatchmentForm({ name: "", population: "", boundaries: "" })
-                    }}
-                  >
-                    <Plus className="h-4 w-4" /> Add new catchment area
-                  </Button>
-                </div>
-              )}
-
-              {isEditingCatchment && (
-                <form onSubmit={(e) => { e.preventDefault(); handleSaveCatchment() }} className="space-y-3 p-3 rounded-lg border border-primary/40 bg-primary/5">
-                  <p className="font-medium text-sm">{editingCatchmentId ? "Edit" : "New"} catchment area</p>
-                  <div className="space-y-2">
-                    <Label htmlFor="catchmentName">Area name</Label>
-                    <Input
-                      id="catchmentName"
-                      placeholder="e.g. Kasoa Central"
-                      value={catchmentForm.name}
-                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, name: e.target.value }))}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="catchmentPop">Population (estimated)</Label>
-                    <Input
-                      id="catchmentPop"
-                      type="number"
-                      placeholder="5000"
-                      value={catchmentForm.population}
-                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, population: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="catchmentBound">Boundaries</Label>
-                    <Input
-                      id="catchmentBound"
-                      placeholder="e.g. From Main Street to Railway Road"
-                      value={catchmentForm.boundaries}
-                      onChange={(e) => setCatchmentForm((prev) => ({ ...prev, boundaries: e.target.value }))}
-                    />
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setIsEditingCatchment(false)
-                        setEditingCatchmentId(null)
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit" size="sm" className="gap-2">
-                      <Check className="h-3.5 w-3.5" /> Save area
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -3558,7 +3414,7 @@ export default function HqDashboardPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="vaccineSchedule">Schedule descriptor</Label>
+              <Label htmlFor="vaccineSchedule">When to Give</Label>
               <Input
                 id="vaccineSchedule"
                 placeholder="e.g. 10 weeks"
@@ -3654,13 +3510,6 @@ export default function HqDashboardPage() {
                         <>{isArchived ? "Restore" : "Archive"}</>
                       )}
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => handleVaccineDelete(vaccine)}
-                    >
-                      Delete
-                    </Button>
                   </div>
                 </div>
               )
@@ -3743,171 +3592,6 @@ export default function HqDashboardPage() {
       )}
 
       {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && vaccineToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <Card className="w-full max-w-md mx-4">
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex-shrink-0 w-10 h-10 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center">
-                  <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">Delete Vaccine</CardTitle>
-                  <CardDescription className="text-sm text-muted-foreground">
-                    This action cannot be undone
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                <p className="text-sm text-red-800 dark:text-red-200">
-                  Are you sure you want to permanently delete <span className="font-semibold">"{vaccineToDelete.name}"</span>?
-                </p>
-                <p className="text-xs text-red-600 dark:text-red-300 mt-1">
-                  This will remove the vaccine from all schedules and cannot be undone.
-                </p>
-              </div>
-              {deleteError && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                        Cannot Delete Vaccine
-                      </p>
-                      <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
-                        {deleteError}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsDeleteModalOpen(false)
-                    setVaccineToDelete(null)
-                    setDeleteError(null)
-                  }}
-                  disabled={isVaccineDeleting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={confirmVaccineDelete}
-                  disabled={isVaccineDeleting}
-                >
-                  {isVaccineDeleting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Deleting...
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="h-4 w-4 mr-2" /> Delete Permanently
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Gauge className="h-5 w-5 text-primary" /> Vaccine Inventory Management
-              </CardTitle>
-              <CardDescription>Track stock levels and manage reorder points.</CardDescription>
-            </div>
-            <Button size="sm" variant="outline" onClick={loadVaccineInventory} disabled={isInventoryLoading} className="gap-2">
-              <RefreshCw className={`h-4 w-4 ${isInventoryLoading ? "animate-spin" : ""}`} /> Refresh
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isInventoryLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-border overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 border-b border-border">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-medium">Vaccine</th>
-                      <th className="px-4 py-2 text-center font-medium">Quantity</th>
-                      <th className="px-4 py-2 text-center font-medium">Reorder Level</th>
-                      <th className="px-4 py-2 text-center font-medium">Days to Expiry</th>
-                      <th className="px-4 py-2 text-center font-medium">Status</th>
-                      <th className="px-4 py-2 text-center font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vaccineInventory.map(stock => {
-                      const isLowStock = stock.quantity < stock.reorderLevel
-                      const isExpiringSoon = stock.daysUntilExpiry < 60
-                      return (
-                        <tr key={stock.id} className={`border-b border-border hover:bg-muted/30 transition ${isExpiringSoon ? "bg-amber-50 dark:bg-amber-900/20" : isLowStock ? "bg-red-50 dark:bg-red-900/20" : ""}`}>
-                          <td className="px-4 py-3 font-medium">{stock.name}</td>
-                          <td className="px-4 py-3 text-center">{stock.quantity}</td>
-                          <td className="px-4 py-3 text-center">{stock.reorderLevel}</td>
-                          <td className="px-4 py-3 text-center">{stock.daysUntilExpiry}</td>
-                          <td className="px-4 py-3 text-center">
-                            <Badge variant={isExpiringSoon ? "destructive" : isLowStock ? "secondary" : "outline"}>
-                              {isExpiringSoon ? "Expiring Soon" : isLowStock ? "Low Stock" : "In Stock"}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <Button size="sm" variant="ghost" onClick={() => {setEditingVaccineId(stock.id); setVaccineReorderForm({reorderLevel: stock.reorderLevel, supplier: stock.supplier})}}>
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {editingVaccineId && (
-                <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3">
-                  <p className="font-medium text-sm">Edit vaccine configuration</p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="reorderLevel">Reorder level</Label>
-                      <Input
-                        id="reorderLevel"
-                        type="number"
-                        value={vaccineReorderForm.reorderLevel}
-                        onChange={(e) => setVaccineReorderForm(prev => ({...prev, reorderLevel: parseInt(e.target.value)}))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="supplier">Supplier</Label>
-                      <Input
-                        id="supplier"
-                        value={vaccineReorderForm.supplier}
-                        onChange={(e) => setVaccineReorderForm(prev => ({...prev, supplier: e.target.value}))}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setEditingVaccineId(null)}>Cancel</Button>
-                    <Button size="sm" onClick={() => updateVaccineStock(editingVaccineId)}>Save</Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 
@@ -3931,9 +3615,9 @@ export default function HqDashboardPage() {
               onChange={(event) => setAnalyticsFilters((previous) => ({ ...previous, region: event.target.value }))}
             >
               <option>All regions</option>
-              <option>Greater Accra</option>
-              <option>Ashanti</option>
-              <option>Northern</option>
+              {[...new Set(branches.map((b) => b.region).filter(Boolean))].map((region) => (
+                <option key={region}>{region}</option>
+              ))}
             </select>
             <select
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
@@ -3952,7 +3636,6 @@ export default function HqDashboardPage() {
             >
               <option>Last 6 months</option>
               <option>Last 12 months</option>
-              <option>Custom range</option>
             </select>
           </div>
           <div className="h-[300px]">
@@ -4016,339 +3699,31 @@ export default function HqDashboardPage() {
             </p>
           </div>
           <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chwProductivityData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="label" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="registrations" fill="#2563eb" name="Registrations" />
-                <Bar dataKey="visits" fill="#10b981" name="Visits logged" />
-              </BarChart>
-            </ResponsiveContainer>
-            <p className="mt-2 text-xs text-muted-foreground text-center">
-              Productivity trending upward after refresher training.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe2 className="h-5 w-5 text-primary" /> Advanced Analytics
-          </CardTitle>
-          <CardDescription>Deep-dive insights into immunization patterns and program performance.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="chartType">Analysis type</Label>
-            <select
-              id="chartType"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-              value={selectedChartType}
-              onChange={(e) => setSelectedChartType(e.target.value)}
-            >
-              <option value="cohort">Immunization Cohort Analysis</option>
-              <option value="dropout">Dropout Prevention Timeline</option>
-              <option value="supply">Supply Chain Optimization</option>
-              <option value="equity">Equity & Coverage Disparity</option>
-            </select>
-          </div>
-
-          {selectedChartType === "cohort" && (
-            <div className="space-y-2">
-              <p className="font-medium text-sm">Cohort Performance 2024</p>
-              <div className="rounded-lg border border-border bg-muted/30 p-4">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="px-3 py-2 text-left">Cohort</th>
-                      <th className="px-3 py-2 text-center">On-Time %</th>
-                      <th className="px-3 py-2 text-center">Delayed %</th>
-                      <th className="px-3 py-2 text-center">Defaulted %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-border hover:bg-muted/50">
-                      <td className="px-3 py-2">Jan 2024</td>
-                      <td className="px-3 py-2 text-center text-emerald-600">92%</td>
-                      <td className="px-3 py-2 text-center text-amber-600">6%</td>
-                      <td className="px-3 py-2 text-center text-red-600">2%</td>
-                    </tr>
-                    <tr className="border-b border-border hover:bg-muted/50">
-                      <td className="px-3 py-2">Feb 2024</td>
-                      <td className="px-3 py-2 text-center text-emerald-600">94%</td>
-                      <td className="px-3 py-2 text-center text-amber-600">4%</td>
-                      <td className="px-3 py-2 text-center text-red-600">2%</td>
-                    </tr>
-                    <tr className="border-b border-border hover:bg-muted/50">
-                      <td className="px-3 py-2">Mar 2024</td>
-                      <td className="px-3 py-2 text-center text-emerald-600">91%</td>
-                      <td className="px-3 py-2 text-center text-amber-600">7%</td>
-                      <td className="px-3 py-2 text-center text-red-600">2%</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {selectedChartType === "dropout" && (
-            <div className="rounded-lg border border-border bg-amber-50 dark:bg-amber-900/20 p-4 text-sm">
-              <p className="font-medium mb-2">Dropout Risk Indicators</p>
-              <ul className="space-y-2 text-muted-foreground">
-                <li>• DPT-3 dropout rates peaked at 8% in Q2 (seasonal pattern)</li>
-                <li>• Remote areas show 15% higher default rates</li>
-                <li>• SMS reminders reduce dropout by 23%</li>
-                <li>• CHW follow-up effectiveness: 89% recall rate</li>
-              </ul>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
-
-  const renderNotifications = () => (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Notification Templates</CardTitle>
-          <CardDescription>Edit SMS and email content sent to guardians and staff.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-[240px,1fr]">
-            <div className="space-y-2">
-              <Label htmlFor="templateSelect">Select template</Label>
-              <select
-                id="templateSelect"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                value={activeTemplateId}
-                onChange={(event) => setActiveTemplateId(event.target.value)}
-              >
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.label}
-                  </option>
-                ))}
-              </select>
-              {activeTemplate ? (
-                <p className="text-xs text-muted-foreground">{activeTemplate.description}</p>
-              ) : null}
-            </div>
-            {activeTemplate ? (
-              <div className="space-y-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="previewChannel">Preview channel</Label>
-                  <select
-                    id="previewChannel"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm md:w-56"
-                    value={previewChannel}
-                    onChange={(event) => setPreviewChannel(event.target.value as PreviewChannel)}
-                  >
-                    <option value="sms">SMS</option>
-                    <option value="email">Email</option>
-                  </select>
-                  <p className="text-xs text-muted-foreground">
-                    Tokens supported: {"{guardianName}"}, {"{childName}"}, {"{vaccineName}"}, {"{scheduledDate}"}, {"{facilityName}"}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="smsContent">SMS content</Label>
-                  <textarea
-                    id="smsContent"
-                    className="w-full min-h-[120px] rounded-md border border-border bg-background px-3 py-2 text-sm"
-                    value={activeTemplate.sms}
-                    onChange={(event) =>
-                      setTemplates((previous) =>
-                        previous.map((template) =>
-                          template.id === activeTemplate.id ? { ...template, sms: event.target.value } : template,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="emailContent">Email HTML content</Label>
-                  <textarea
-                    id="emailContent"
-                    className="w-full min-h-[160px] rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
-                    value={activeTemplate.email}
-                    onChange={(event) =>
-                      setTemplates((previous) =>
-                        previous.map((template) =>
-                          template.id === activeTemplate.id ? { ...template, email: event.target.value } : template,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" className="gap-2" onClick={handleTemplatePreview}>
-                    <ListChecks className="h-4 w-4" /> Preview delivery
-                  </Button>
-                  <Button type="button" onClick={handleTemplateUpdate} className="gap-2">
-                    <CheckCircle2 className="h-4 w-4" /> Save template
-                  </Button>
-                </div>
+            {chwProductivityData.length === 0 ? (
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                No CHW activity data available.
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
-                Select a template to edit SMS and email content.
-              </div>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chwProductivityData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="registrations" fill="#2563eb" name="Registrations" />
+                  <Bar dataKey="vaccinations" fill="#10b981" name="Vaccinations" />
+                </BarChart>
+              </ResponsiveContainer>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {isPreviewModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <Card className="w-full max-w-2xl">
-            <CardHeader className="flex flex-row items-center justify-between border-b">
-              <div>
-                <CardTitle>Preview: {activeTemplate?.label}</CardTitle>
-                <CardDescription>Channel: {previewChannel.toUpperCase()}</CardDescription>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setIsPreviewModalOpen(false)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-4 p-6">
-              {previewChannel === "sms" ? (
-                <div className="rounded-lg border border-border bg-muted/30 p-4">
-                  <p className="text-sm font-medium text-foreground mb-2">SMS Preview</p>
-                  <div className="bg-background p-4 rounded border border-border">
-                    <p className="text-sm whitespace-pre-wrap">{templatePreview}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-border bg-muted/30 p-4">
-                  <p className="text-sm font-medium text-foreground mb-2">Email Preview</p>
-                  <div className="bg-background p-4 rounded border border-border max-h-96 overflow-auto">
-                    <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(templatePreview) }} />
-                  </div>
-                </div>
-              )}
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsPreviewModalOpen(false)}>
-                  Close
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(templatePreview)
-                      setSystemMessage("Preview copied to clipboard.")
-                    } catch (error) {
-                      console.error("Failed to copy preview", error)
-                      setSystemMessage("Could not copy preview.")
-                    }
-                  }}
-                >
-                  Copy preview
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+    </div>
+  )
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <BellRing className="h-5 w-5 text-primary" /> Notification Delivery Status
-              </CardTitle>
-              <CardDescription>Monitor SMS and email delivery success rates.</CardDescription>
-            </div>
-            <Button size="sm" variant="outline" onClick={loadNotificationDeliveries} disabled={isNotifLoading} className="gap-2">
-              <RefreshCw className={`h-4 w-4 ${isNotifLoading ? "animate-spin" : ""}`} /> Refresh
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              {(["all", "sent", "failed", "pending"] as const).map(status => (
-                <Button
-                  key={status}
-                  variant={notifStatusFilter === status ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setNotifStatusFilter(status)}
-                >
-                  {status.charAt(0).toUpperCase() + status.slice(1)}
-                </Button>
-              ))}
-            </div>
-
-            <div className="rounded-lg border border-border overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50 border-b border-border">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Recipient</th>
-                    <th className="px-4 py-2 text-center">Channel</th>
-                    <th className="px-4 py-2 text-center">Type</th>
-                    <th className="px-4 py-2 text-center">Status</th>
-                    <th className="px-4 py-2 text-center">Time</th>
-                    <th className="px-4 py-2 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {notificationDeliveries
-                    .filter(n => notifStatusFilter === "all" || n.status === notifStatusFilter)
-                    .map(notif => (
-                    <tr key={notif.id} className={`border-b border-border hover:bg-muted/30 transition ${notif.status === "failed" ? "bg-red-50 dark:bg-red-900/20" : ""}`}>
-                      <td className="px-4 py-3">{notif.recipient}</td>
-                      <td className="px-4 py-3 text-center">
-                        <Badge variant="outline">{notif.channel.toUpperCase()}</Badge>
-                      </td>
-                      <td className="px-4 py-3 text-center text-sm">{notif.messageType}</td>
-                      <td className="px-4 py-3 text-center">
-                        <Badge variant={notif.status === "sent" ? "secondary" : notif.status === "failed" ? "destructive" : "outline"}>
-                          {notif.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-center text-xs text-muted-foreground">{notif.sentAt}</td>
-                      <td className="px-4 py-3 text-center">
-                        {notif.status === "failed" && (
-                          <Button size="sm" variant="ghost" onClick={() => retryFailedNotificationHandler(notif.id)}>
-                            <RefreshCw className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-4">
-              <div className="rounded-lg border border-border bg-muted/30 p-3">
-                <p className="text-xs text-muted-foreground">Total Sent</p>
-                <p className="text-xl font-bold text-emerald-600">{notificationDeliveries.filter(n => n.status === "sent").length}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-muted/30 p-3">
-                <p className="text-xs text-muted-foreground">Failed</p>
-                <p className="text-xl font-bold text-destructive">{notificationDeliveries.filter(n => n.status === "failed").length}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-muted/30 p-3">
-                <p className="text-xs text-muted-foreground">Pending</p>
-                <p className="text-xl font-bold text-amber-600">{notificationDeliveries.filter(n => n.status === "pending").length}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-muted/30 p-3">
-                <p className="text-xs text-muted-foreground">Success Rate</p>
-                <p className="text-xl font-bold text-primary">
-                  {notificationDeliveries.length > 0 ? 
-                    Math.round((notificationDeliveries.filter(n => n.status === "sent").length / notificationDeliveries.length) * 100) : 0}%
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+  const renderNotifications = () => (
+    <div className="space-y-6">
     </div>
   )
 
@@ -4430,14 +3805,16 @@ export default function HqDashboardPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-muted-foreground">
-            Last successful backup completed <span className="font-medium text-foreground">2 hours ago</span>. Secure vault storage available for manual download.
+            Last successful backup completed <span className="font-medium text-foreground">{formatBackupTime(lastBackupAt)}</span>. Secure vault storage available for manual download.
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="gap-2" onClick={handleBackupDownload}>
-              <ArrowDownToLine className="h-4 w-4" /> Download latest backup
+            <Button variant="outline" className="gap-2" onClick={handleBackupDownload} disabled={isDownloadingBackup}>
+              {isDownloadingBackup ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowDownToLine className="h-4 w-4" />}
+              {isDownloadingBackup ? "Downloading..." : "Download latest backup"}
             </Button>
-            <Button className="gap-2" onClick={handleBackup}>
-              <ShieldCheck className="h-4 w-4" /> Trigger new backup
+            <Button className="gap-2" onClick={handleBackup} disabled={isBackingUp}>
+              {isBackingUp ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              {isBackingUp ? "Backing up..." : "Trigger new backup"}
             </Button>
           </div>
         </CardContent>

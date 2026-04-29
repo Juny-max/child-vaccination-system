@@ -94,6 +94,28 @@ export class BackupController {
   }
 
   /**
+   * Get status of the latest backup
+   * Restricted to HQ Admin only
+   */
+  @Get('status')
+  async getBackupStatus(@Res() res: Response) {
+    try {
+      const latest = this.backupService.getLatestBackup();
+      if (!latest) {
+        return res.json({ hasBackup: false, lastBackupAt: null, filename: null });
+      }
+      const stat = fs.statSync(latest.path);
+      return res.json({
+        hasBackup: true,
+        lastBackupAt: stat.mtime.toISOString(),
+        filename: latest.filename,
+      });
+    } catch (error: any) {
+      return res.status(500).json({ hasBackup: false, lastBackupAt: null, filename: null });
+    }
+  }
+
+  /**
    * Trigger a new backup operation
    * Restricted to HQ Admin only
    */

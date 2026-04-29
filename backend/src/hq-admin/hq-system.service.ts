@@ -225,6 +225,29 @@ export class HqSystemService {
   }
 
   /**
+   * Get current backup configuration
+   */
+  async getBackupConfig() {
+    try {
+      const { data: settings } = await this.db.supabase
+        .from('system_settings')
+        .select('id, value')
+        .eq('category', 'backup');
+
+      const map: Record<string, any> = Object.fromEntries(
+        (settings ?? []).map((s: any) => [s.id, s.value]),
+      );
+
+      return {
+        frequency: (map['backup_frequency'] as 'daily' | 'weekly' | 'monthly') || 'weekly',
+        retentionDays: map['backup_retention_days'] ? parseInt(map['backup_retention_days']) : 90,
+      };
+    } catch (error) {
+      return { frequency: 'weekly' as const, retentionDays: 90 };
+    }
+  }
+
+  /**
    * Configure backup schedule and retention
    */
   async configureBackup(
@@ -232,13 +255,12 @@ export class HqSystemService {
     user: any,
   ) {
     try {
-      // Save configuration to system settings
       await this.db.supabase.from('system_settings').upsert(
         [
-          { key: 'backup_frequency', value: config.frequency, category: 'backup', updated_by: user.id },
-          { key: 'backup_retention_days', value: config.retentionDays.toString(), category: 'backup', updated_by: user.id },
+          { id: 'backup_frequency', value: config.frequency, category: 'backup', updated_by_user_id: user.id },
+          { id: 'backup_retention_days', value: config.retentionDays.toString(), category: 'backup', updated_by_user_id: user.id },
         ],
-        { onConflict: 'key' },
+        { onConflict: 'id' },
       );
 
       // Log the configuration change

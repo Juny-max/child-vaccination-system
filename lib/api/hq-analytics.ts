@@ -77,3 +77,13 @@ export interface HqDeviceSyncStatus {
 export async function getHqDeviceSyncStatus(): Promise<HqDeviceSyncStatus[]> {
   return apiRequest<HqDeviceSyncStatus[]>('/hq-admin/analytics/device-sync-status');
 }
+
+export interface HqChwProductivity {
+  label: string;
+  registrations: number;
+  vaccinations: number;
+}
+
+export async function getHqChwProductivity(limit = 10): Promise<HqChwProductivity[]> {
+  return apiRequest<HqChwProductivity[]>(`/hq-admin/analytics/chw-productivity?limit=${limit}`);
+}
