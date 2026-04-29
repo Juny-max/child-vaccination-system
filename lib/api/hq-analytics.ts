@@ -74,8 +74,11 @@ export interface HqDeviceSyncStatus {
   status: 'active' | 'stale';
 }
 
-export async function getHqDeviceSyncStatus(): Promise<HqDeviceSyncStatus[]> {
-  return apiRequest<HqDeviceSyncStatus[]>('/hq-admin/analytics/device-sync-status');
+export async function getHqDeviceSyncStatus(limit?: number): Promise<HqDeviceSyncStatus[]> {
+  const query = new URLSearchParams();
+  if (limit) query.set('limit', limit.toString());
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return apiRequest<HqDeviceSyncStatus[]>(`/hq-admin/analytics/device-sync-status${suffix}`);
 }
 
 export interface HqChwProductivity {

@@ -1019,6 +1019,11 @@ export default function HqDashboardPage() {
     return "success"
   }, [systemMessage])
 
+  const aefiPreview = useMemo(() => aefiReports.slice(0, 5), [aefiReports])
+  const deviceSyncPreview = useMemo(() => deviceSyncStatus.slice(0, 5), [deviceSyncStatus])
+  const hasMoreAefi = aefiReports.length > 5
+  const hasMoreDeviceSync = deviceSyncStatus.length > 5
+
   const activeChwBranch = useMemo(() => {
     if (!activeChwBranchId) return null
     return branches.find((branch) => branch.id === activeChwBranchId) ?? null
@@ -2601,18 +2606,23 @@ export default function HqDashboardPage() {
                 <p>No adverse events reported</p>
               </div>
             ) : (
-              aefiReports.map((item) => (
-                <div key={item.id} className="rounded-lg border border-border bg-background p-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-semibold text-foreground">{item.child}</span>
-                    <Badge variant="destructive">{item.priority}</Badge>
+              <>
+                {aefiReports.slice(0, 5).map((item) => (
+                  <div key={item.id} className="rounded-lg border border-border bg-background p-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-semibold text-foreground">{item.child}</span>
+                      <Badge variant="destructive">{item.priority}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {item.vaccine} • {item.branch}
+                    </p>
+                    <p className="text-xs text-muted-foreground/80 mt-2">Reported {new Date(item.reportedAt).toLocaleDateString()}</p>
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {item.vaccine} • {item.branch}
-                  </p>
-                  <p className="text-xs text-muted-foreground/80 mt-2">Reported {item.reportedAt}</p>
-                </div>
-              ))
+                ))}
+                <Button variant="outline" className="w-full gap-2" onClick={() => window.location.href = "/hq/aefi"}>
+                  View all AEFI reports
+                </Button>
+              </>
             )}
           </CardContent>
         </Card>
@@ -2635,16 +2645,22 @@ export default function HqDashboardPage() {
                 <p>All devices synced</p>
               </div>
             ) : (
-              deviceSyncStatus.map((device) => (
-                <div key={device.id} className="rounded-lg border border-border bg-background p-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-semibold text-foreground">{device.name}</span>
-                    <Badge variant="secondary">{device.pending} forms</Badge>
+              <>
+                {deviceSyncStatus.slice(0, 5).map((device) => (
+                  <div key={device.id} className="rounded-lg border border-border bg-background p-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-semibold text-foreground">{device.name}</span>
+                      <Badge variant={device.status === "stale" ? "destructive" : "secondary"}>
+                        {device.lastSync}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{device.branch}</p>
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{device.branch}</p>
-                  <p className="text-xs text-muted-foreground/80 mt-2">Last sync {device.lastSync}</p>
-                </div>
-              ))
+                ))}
+                <Button variant="outline" className="w-full gap-2" onClick={() => window.location.href = "/hq/chw-sync"}>
+                  View all CHW devices
+                </Button>
+              </>
             )}
           </CardContent>
         </Card>

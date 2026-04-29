@@ -2149,6 +2149,7 @@ export class BranchManagerService {
 
     let childMap: Record<string, any> = {};
     let vaccineMap: Record<string, any> = {};
+    let branchMap: Record<string, any> = {};
 
     if (childIds.length > 0) {
       const { data: children } = await db
@@ -2165,7 +2166,7 @@ export class BranchManagerService {
     if (vaccEventIds.length > 0) {
       const { data: vaccEvents } = await db
         .from('vaccination_events')
-        .select('id, vaccine_id')
+        .select('id, vaccine_id, facility_id')
         .in('id', [...new Set(vaccEventIds)]);
       
       vaccEventMap = Object.fromEntries(
@@ -2186,6 +2187,20 @@ export class BranchManagerService {
           (vaccines ?? []).map((v: any) => [v.id, v])
         );
       }
+
+      const branchIds = (vaccEvents ?? [])
+        .map((ve: any) => ve.facility_id)
+        .filter((id: any) => id);
+
+      if (branchIds.length > 0) {
+        const { data: branches } = await db
+          .from('branches')
+          .select('id, name')
+          .in('id', [...new Set(branchIds)]);
+        branchMap = Object.fromEntries(
+          (branches ?? []).map((branch: any) => [branch.id, branch])
+        );
+      }
     }
 
     // Transform data for frontend
@@ -2193,11 +2208,15 @@ export class BranchManagerService {
       const vaccEventData = vaccEventMap[report.vaccination_event_id];
       const vaccineId = vaccEventData?.vaccine_id;
 
+      const branchName = vaccEventData?.facility_id
+        ? branchMap[vaccEventData.facility_id]?.name
+        : null;
+
       return {
         id: report.id,
         child: childMap[report.child_id]?.full_name || 'Unknown',
         vaccine: vaccineMap[vaccineId]?.name || 'Unknown vaccine',
-        branch: 'Field Report',
+        branch: branchName || 'Unknown branch',
         reportedAt: report.created_at,
         priority: report.severity === 'severe' ? 'High' : report.severity === 'moderate' ? 'Medium' : 'Low',
       };
@@ -2242,7 +2261,7 @@ export class BranchManagerService {
       .sort((a: any, b: any) => (b.registrations + b.vaccinations) - (a.registrations + a.vaccinations));
   }
 
-  async getHqDeviceSyncStatus() {
+  async getHqDeviceSyncStatus(limit = 10) {
     const db = this.databaseService.supabase;
 
     // Get all CHW users and their last sync/login times
@@ -2258,6 +2277,22 @@ export class BranchManagerService {
         message: `Failed to fetch CHW device status: ${chwError.message}`,
         code: 'HQ_DEVICE_SYNC_FETCH_FAILED',
       });
+    }
+
+    const branchIds = (chwUsers ?? [])
+      .map((chw: any) => chw.branch_id)
+      .filter((id: any) => id);
+
+    let branchMap: Record<string, any> = {};
+    if (branchIds.length > 0) {
+      const { data: branches } = await db
+        .from('branches')
+        .select('id, name')
+        .in('id', [...new Set(branchIds)]);
+
+      branchMap = Object.fromEntries(
+        (branches ?? []).map((branch: any) => [branch.id, branch])
+      );
     }
 
     // For each CHW, count pending vaccination forms
@@ -2289,10 +2324,12 @@ export class BranchManagerService {
           }
         }
 
+        const branchName = chw.branch_id ? branchMap[chw.branch_id]?.name : null;
+
         return {
           id: chw.id,
           name: chw.full_name,
-          branch: 'Field',
+          branch: branchName || 'Unassigned',
           lastSync: lastSyncText,
           lastSyncAt: chw.last_login_at,
           pending: pendingForms ?? 0,
@@ -2309,8 +2346,8 @@ export class BranchManagerService {
         if (a.pending !== b.pending) return b.pending - a.pending;
         return b.diffMs - a.diffMs;
       })
-      .map(({ diffMs, ...rest }) => rest) // Remove diffMs from result
-      .slice(0, 10); // Return top 10 devices needing attention
+        .map(({ diffMs, ...rest }) => rest) // Remove diffMs from result
+        .slice(0, Math.max(5, limit)); // Return top devices needing attention
   }
 
   async createHqBranch(dto: CreateHqBranchDto) {
