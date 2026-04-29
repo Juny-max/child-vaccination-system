@@ -2,21 +2,21 @@ import withPWAInit from "next-pwa"
 
 const skipAuthRedirectPlugin = {
   cacheWillUpdate: async ({ request, response }) => {
-    if (!response) return null
+    if (!response) return null;
 
     try {
-      if (response.redirected) return null
+      if (response.redirected) return null;
       const responsePath = new URL(response.url).pathname;
-      if (responsePath.startsWith("/auth")) return null
+      if (responsePath.startsWith("/auth")) return null;
       const requestPath = new URL(request.url).pathname;
       if (requestPath.startsWith("/chw") && !responsePath.startsWith("/chw")) {
-        return null
+        return null;
       }
     } catch {
-      return null
+      return null;
     }
 
-    return response
+    return response;
   },
 }
 
