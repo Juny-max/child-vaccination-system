@@ -65,10 +65,13 @@ export async function handleResponse<T>(response: Response, skipAuthRedirect = f
     const code = errorPayload?.code;
 
     if (response.status === 401 && !skipAuthRedirect) {
-      // Token expired or invalid - redirect to login
       if (typeof window !== 'undefined') {
-        // Clear all localStorage for security
-        localStorage.clear();
+        // Remove auth tokens only — stable encryption keys (chw_encryption_stable_key:*)
+        // must survive so the CHW can still decrypt their IndexedDB data after re-login
+        // on the same device.
+        ;["authToken", "accessToken", "userId", "userRole", "userRoleDetail",
+          "userName", "chw-last-background-sync", "chw_last_data_access",
+        ].forEach((k) => localStorage.removeItem(k))
         sessionStorage.clear();
         window.location.href = '/auth/login';
       }

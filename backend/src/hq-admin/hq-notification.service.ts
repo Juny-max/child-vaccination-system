@@ -15,7 +15,9 @@ export class HqNotificationService {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (status) {
+      if (status === 'sent') {
+        query = query.in('status', ['sent', 'delivered']);
+      } else if (status) {
         query = query.eq('status', status);
       }
 
@@ -23,12 +25,16 @@ export class HqNotificationService {
 
       return (notifications || []).map((notif) => ({
         id: notif.id,
-        recipient: notif.recipient_contact,
+        recipient:
+          notif.recipient_contact ||
+          notif.recipient_email ||
+          notif.recipient_phone ||
+          'Unknown recipient',
         channel: notif.channel || 'email',
-        status: notif.status,
+        status: notif.status === 'delivered' ? 'sent' : notif.status,
         sentAt: new Date(notif.created_at).toLocaleString(),
         failureReason: notif.error_message,
-        messageType: notif.template_id || 'unknown',
+        messageType: notif.template_id || 'general',
       }));
     } catch (error) {
       console.error('Failed to get notification delivery status:', error);

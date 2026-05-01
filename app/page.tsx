@@ -96,24 +96,18 @@ const topNavItems = [
   { label: "Contact", href: "#contact" },
 ]
 
+const topNavMobileItems = [
+  { label: "Verify Certificate", href: "/verify" },
+  ...topNavItems,
+]
+
 const withAuthRedirect = (path: string) => `/auth/login?redirect=${encodeURIComponent(path)}`
 
 export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [activeMoment, setActiveMoment] = useState(0)
-  const [contactForm, setContactForm] = useState({
-    name: "",
-    email: "",
-    facility: "",
-    message: "",
-    website: "",
-  })
-  const [contactState, setContactState] = useState<{ type: "idle" | "success" | "error"; message: string }>({
-    type: "idle",
-    message: "",
-  })
-  const [submittingContact, setSubmittingContact] = useState(false)
+  const [navCollapsed, setNavCollapsed] = useState(false)
   const { resolvedTheme } = useTheme()
 
   useEffect(() => {
@@ -215,6 +209,8 @@ export default function Home() {
     <div className="min-h-screen bg-background text-foreground">
       <MorphNavbar
         items={topNavItems}
+        mobileItems={topNavMobileItems}
+        onCollapsedChange={setNavCollapsed}
         brand={
           <div className="flex items-center gap-3">
             <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-primary/30 bg-primary/5">
@@ -225,10 +221,13 @@ export default function Home() {
         }
         cta={
           <div className="flex items-center gap-2">
+            <div className="hidden md:inline-flex">
+              <ThemeToggle />
+            </div>
             <Link href="/verify" className="hidden sm:inline-flex">
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className={navCollapsed ? "px-2.5" : "gap-2"} aria-label="Verify Certificate">
                 <QrCode className="h-4 w-4" />
-                Verify Certificate
+                {!navCollapsed && <span>Verify Certificate</span>}
               </Button>
             </Link>
             <Link href="/auth/login">

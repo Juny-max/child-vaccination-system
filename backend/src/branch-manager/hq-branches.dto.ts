@@ -16,9 +16,14 @@ export class CreateHqBranchDto {
   @MaxLength(255)
   manager?: string;
 
+  @IsString()
+  @IsOptional()
+  managerId?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  catchmentAreas: string[];
+  catchmentAreas?: string[];
 }
 
 export class UpdateHqBranchDto {
@@ -37,9 +42,14 @@ export class UpdateHqBranchDto {
   @MaxLength(255)
   manager?: string;
 
+  @IsString()
+  @IsOptional()
+  managerId?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  catchmentAreas: string[];
+  catchmentAreas?: string[];
 }
 
 export class UpdateHqBranchStatusDto {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { TimePicker } from "@/components/ui/time-picker"
@@ -154,9 +155,11 @@ export default function AppointmentsPage() {
     setExpandedAppointmentId((previous) => (previous === appointmentId ? null : appointmentId))
   }
 
-  const handleOpenBooking = () => {
+  const handleOpenBooking = (childId?: string) => {
     setConfirmation(null)
-    if (!selectedChildId && children.length > 0) {
+    if (childId && children.some((child) => child.id === childId)) {
+      setSelectedChildId(childId)
+    } else if (!selectedChildId && children.length > 0) {
       setSelectedChildId(children[0].id)
     }
     setSelectedDate(undefined)
@@ -311,111 +314,119 @@ export default function AppointmentsPage() {
         </Alert>
       )}
 
-      {isBookingOpen && (
-        <Card className="border-primary/40">
-          <CardHeader>
-            <CardTitle className="text-lg">Request a new appointment</CardTitle>
-            <CardDescription>Share your preferred schedule and we&apos;ll notify the clinic instantly.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-5" onSubmit={handleBookingSubmit}>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground" htmlFor="childId">
-                  Child
-                </label>
-                <select
-                  id="childId"
-                  name="childId"
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  value={selectedChildId}
-                  onChange={(event) => setSelectedChildId(event.target.value)}
-                  required
-                >
-                  {children.map((child) => (
-                    <option key={child.id} value={child.id}>
-                      {child.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+      <Dialog
+        open={isBookingOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setIsBookingOpen(true)
+            return
+          }
+          handleCancelBooking()
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Request a new appointment</DialogTitle>
+            <p className="text-sm text-muted-foreground">Share your preferred schedule and we&apos;ll notify the clinic instantly.</p>
+          </DialogHeader>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">
-                    Preferred date
-                  </label>
-                  <DatePicker
-                    date={selectedDate}
-                    onDateChange={setSelectedDate}
-                    placeholder="Pick a date"
-                    minDate={new Date()}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">
-                    Preferred time
-                  </label>
-                  <TimePicker
-                    time={selectedTime}
-                    onTimeChange={setSelectedTime}
-                    placeholder="Select time"
-                  />
-                </div>
-              </div>
+          <form className="space-y-5" onSubmit={handleBookingSubmit}>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground" htmlFor="childId">
+                Child
+              </label>
+              <select
+                id="childId"
+                name="childId"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={selectedChildId}
+                onChange={(event) => setSelectedChildId(event.target.value)}
+                required
+              >
+                {children.map((child) => (
+                  <option key={child.id} value={child.id}>
+                    {child.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground" htmlFor="facility">
-                  Preferred facility (optional)
+                <label className="text-sm font-semibold text-foreground">
+                  Preferred date
                 </label>
-                <select
-                  id="facility"
-                  name="facility"
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  defaultValue={facilityOptions[0]}
-                >
-                  {facilityOptions.map((facility, index) => (
-                    <option key={`facility-${index}-${facility}`} value={facility}>
-                      {facility}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-muted-foreground">
-                  This helps the nurse with planning. Your request is still routed to your child&apos;s assigned facility.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground" htmlFor="contactNumber">
-                  Reachable phone number
-                </label>
-                <Input id="contactNumber" name="contactNumber" type="tel" placeholder="e.g. +233 24 123 4567" required />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground" htmlFor="notes">
-                  Notes for the nurse (optional)
-                </label>
-                <textarea
-                  id="notes"
-                  name="notes"
-                  rows={3}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  placeholder="Share recent symptoms or preferred visit window"
+                <DatePicker
+                  date={selectedDate}
+                  onDateChange={setSelectedDate}
+                  placeholder="Pick a date"
+                  minDate={new Date()}
                 />
               </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button type="submit" className="gap-2" disabled={isSubmitting}>
-                  <CalendarDays className="size-4" /> {isSubmitting ? "Submitting..." : "Submit request"}
-                </Button>
-                <Button type="button" variant="ghost" onClick={handleCancelBooking}>
-                  Cancel
-                </Button>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">
+                  Preferred time
+                </label>
+                <TimePicker
+                  time={selectedTime}
+                  onTimeChange={setSelectedTime}
+                  placeholder="Select time"
+                />
               </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground" htmlFor="facility">
+                Preferred facility (optional)
+              </label>
+              <select
+                id="facility"
+                name="facility"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                defaultValue={facilityOptions[0]}
+              >
+                {facilityOptions.map((facility, index) => (
+                  <option key={`facility-${index}-${facility}`} value={facility}>
+                    {facility}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                This helps the nurse with planning. Your request is still routed to your child&apos;s assigned facility.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground" htmlFor="contactNumber">
+                Reachable phone number
+              </label>
+              <Input id="contactNumber" name="contactNumber" type="tel" placeholder="e.g. +233 24 123 4567" required />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground" htmlFor="notes">
+                Notes for the nurse (optional)
+              </label>
+              <textarea
+                id="notes"
+                name="notes"
+                rows={3}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                placeholder="Share recent symptoms or preferred visit window"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="submit" className="gap-2" disabled={isSubmitting}>
+                <CalendarDays className="size-4" /> {isSubmitting ? "Submitting..." : "Submit request"}
+              </Button>
+              <Button type="button" variant="ghost" onClick={handleCancelBooking} disabled={isSubmitting}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {isLoading ? (
         <Card className="flex items-center justify-center p-12">
@@ -537,6 +548,17 @@ export default function AppointmentsPage() {
                         <a href={`tel:${appointment.facilityPhone}`} aria-label="Call the facility">
                           <PhoneCall className="size-3.5" /> Call facility
                         </a>
+                      </Button>
+                    )}
+                    {appointment.status === "missed" && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="gap-1.5 text-xs"
+                        onClick={() => handleOpenBooking(appointment.childId)}
+                      >
+                        <PlusCircle className="size-3.5" />
+                        Rebook appointment
                       </Button>
                     )}
                     {/* Cancel button for scheduled or confirmed appointments */}

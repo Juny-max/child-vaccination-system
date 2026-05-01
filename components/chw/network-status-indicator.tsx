@@ -1,11 +1,19 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 import { Wifi, WifiOff } from "lucide-react"
 
 export function NetworkStatusIndicator() {
   const { isOnline } = useNetworkStatus()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) return null
 
   return (
     <Badge

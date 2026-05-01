@@ -30,6 +30,8 @@ export interface FacilityChildProfile {
   gender: string;
   weight: string | null;
   length: string | null;
+  placeOfBirth: string | null;
+  deliveryType: string | null;
   bloodType: string | null;
   profilePhoto: string | null;
 
@@ -125,6 +127,7 @@ export async function getScheduledVaccinations(
  */
 export interface AdministerVaccineRequest {
   vaccineName: string;
+  doseNumber?: number;
   administeredDate: string;
   batchNumber: string;
   expiryDate?: string;
@@ -169,6 +172,23 @@ export async function getVaccineStockInfo(
 /**
  * Growth monitoring measurement
  */
+export interface FacilityAefiReport {
+  id: string;
+  vaccineName: string;
+  doseNumber: number | null;
+  severity: 'mild' | 'moderate' | 'severe';
+  status: string;
+  symptoms: string[];
+  onsetDate: string;
+  notes: string | null;
+  reportedBy: string | null;
+  createdAt: string;
+}
+
+export async function getChildAefiReports(childId: string): Promise<FacilityAefiReport[]> {
+  return apiRequest<FacilityAefiReport[]>(`/facility/children/${childId}/aefi`);
+}
+
 export interface GrowthMeasurement {
   id: string;
   childId: string;
@@ -265,7 +285,12 @@ export interface Guardian {
   landmark: string | null;
   city: string;
   region: string;
-  preferredContact: 'sms' | 'email' | 'whatsapp';
+  preferredContact: 'sms' | 'email';
+  message?: string;
+  emailVerificationRequired?: boolean;
+  credentialsEmailSent?: boolean;
+  phoneOtpRequired?: boolean;
+  phoneOtpToken?: string;
 }
 
 export interface UpdateGuardianRequest {
@@ -277,7 +302,9 @@ export interface UpdateGuardianRequest {
   landmark?: string;
   city: string;
   region: string;
-  preferredContact?: 'sms' | 'email' | 'whatsapp';
+  preferredContact?: 'sms' | 'email';
+  phoneOtpCode?: string;
+  phoneOtpToken?: string;
 }
 
 /**
@@ -337,6 +364,23 @@ export interface UrgentFollowUp {
   emergencyContactPhone?: string;
 }
 
+export interface MissedAppointmentReminder {
+  id: string;
+  childId: string;
+  childName: string;
+  caregiver: string;
+  contact: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  vaccine: string;
+  daysSinceMissed: number;
+  status: string;
+  guardianId?: string;
+  phoneAlternate?: string;
+  email?: string;
+  relationship?: string;
+}
+
 /**
  * Get today's appointments for the facility
  */
@@ -355,6 +399,22 @@ export async function getUrgentFollowUps(facilityId?: string): Promise<UrgentFol
     ? `/facility/follow-ups/urgent?facilityId=${encodeURIComponent(facilityId)}`
     : '/facility/follow-ups/urgent';
   return apiRequest<UrgentFollowUp[]>(url);
+}
+
+/**
+ * Get missed appointment reminders for nurse follow-up
+ */
+export async function getMissedAppointments(
+  facilityId?: string,
+  days?: number,
+): Promise<MissedAppointmentReminder[]> {
+  const params = new URLSearchParams();
+  if (facilityId) params.set('facilityId', facilityId);
+  if (typeof days === 'number') params.set('days', String(days));
+
+  const query = params.toString();
+  const url = query ? `/facility/appointments/missed?${query}` : '/facility/appointments/missed';
+  return apiRequest<MissedAppointmentReminder[]>(url);
 }
 
 export interface GuardianOption {

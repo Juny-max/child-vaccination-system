@@ -58,6 +58,7 @@ export default function FacilityDashboardPage() {
   const [isSearching, setIsSearching] = useState(false)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [showErrorModal, setShowErrorModal] = useState(false)
+  const [showSearchFailedModal, setShowSearchFailedModal] = useState(false)
   const [cameraState, setCameraState] = useState<CameraState>("idle")
   const [cameraError, setCameraError] = useState<string | null>(null)
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -67,11 +68,13 @@ export default function FacilityDashboardPage() {
   // Today's appointments and urgent follow-ups
   const [appointments, setAppointments] = useState<facilityApi.TodayAppointment[]>([])
   const [followUps, setFollowUps] = useState<facilityApi.UrgentFollowUp[]>([])
+  const [missedAppointments, setMissedAppointments] = useState<facilityApi.MissedAppointmentReminder[]>([])
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true)
   const [isLoadingFollowUps, setIsLoadingFollowUps] = useState(true)
+  const [isLoadingMissedAppointments, setIsLoadingMissedAppointments] = useState(true)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [contactDetail, setContactDetail] = useState<facilityApi.UrgentFollowUp | null>(null)
-  const [showUrgentFollowUpsModal, setShowUrgentFollowUpsModal] = useState(false)
+  const [followUpsModalOpen, setFollowUpsModalOpen] = useState(false)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [pendingAppointmentRequestsCount, setPendingAppointmentRequestsCount] = useState(0)
 
@@ -111,22 +114,25 @@ export default function FacilityDashboardPage() {
         })
     }
     
-    // Fetch today's appointments and urgent follow-ups (filtered by facility)
+    // Fetch today's appointments, urgent follow-ups, and missed appointment reminders (filtered by facility)
     const fetchDashboardData = async () => {
       try {
-        const [appointmentsData, followUpsData, pendingRequests] = await Promise.all([
+        const [appointmentsData, followUpsData, missedAppointmentsData, pendingRequests] = await Promise.all([
           facilityApi.getTodaysAppointments(branchId || undefined),
           facilityApi.getUrgentFollowUps(branchId || undefined),
+          facilityApi.getMissedAppointments(branchId || undefined, 14),
           facilityApi.getAppointmentRequests(branchId || undefined, "scheduled"),
         ])
         setAppointments(appointmentsData)
         setFollowUps(followUpsData)
+        setMissedAppointments(missedAppointmentsData)
         setPendingAppointmentRequestsCount(pendingRequests.length)
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error)
       } finally {
         setIsLoadingAppointments(false)
         setIsLoadingFollowUps(false)
+        setIsLoadingMissedAppointments(false)
       }
     }
     
@@ -190,7 +196,8 @@ export default function FacilityDashboardPage() {
       }
     } catch (error) {
       console.error('Search failed:', error)
-      setSystemMessage("Search failed. Please try again.")
+      setSystemMessage(null)
+      setShowSearchFailedModal(true)
       setSearchResults([])
     } finally {
       setIsSearching(false)
@@ -289,29 +296,98 @@ export default function FacilityDashboardPage() {
     setCameraState("idle")
   }
 
+  const extractLookupIdentifier = (decodedText: string): string => {
+    let value = (decodedText || "").trim()
+    if (!value) return ""
+
+    // Support legacy JSON payloads and any structured QR wrappers.
+    try {
+      const parsed = JSON.parse(value)
+      const candidate =
+        parsed?.childId ||
+        parsed?.id ||
+        parsed?.cvccId ||
+        parsed?.qrPayload ||
+        parsed?.certificateId ||
+        parsed?.token
+
+      if (typeof candidate === "string" && candidate.trim()) {
+        value = candidate.trim()
+      }
+    } catch {
+      // Not JSON; continue with raw string.
+    }
+
+    // Support URL payloads by extracting common id query params.
+    if (/^https?:\/\//i.test(value)) {
+      try {
+        const url = new URL(value)
+        const fromParams =
+          url.searchParams.get("id") ||
+          url.searchParams.get("childId") ||
+          url.searchParams.get("certificateId") ||
+          url.searchParams.get("token")
+
+        if (fromParams && fromParams.trim()) {
+          value = fromParams.trim()
+        } else {
+          const segments = url.pathname.split("/").filter(Boolean)
+          const lastSegment = segments[segments.length - 1]
+          if (lastSegment) {
+            value = lastSegment
+          }
+        }
+      } catch {
+        // Keep existing value if URL parsing fails.
+      }
+    }
+
+    // Support old pipe-delimited payloads by using the first segment.
+    if (value.includes("|")) {
+      value = value.split("|")[0].trim()
+    }
+
+    value = value.trim().slice(0, 100)
+
+    // Normalize known uppercase identifiers.
+    if (/^(qrc-(ch|cert)-|cert-gh-|ch-|cvcc-)/i.test(value)) {
+      value = value.toUpperCase()
+    }
+
+    return value
+  }
+
   const handleQRCodeScan = async (decodedText: string) => {
     try {
-      // The QR code should contain the child's ID or CVCC ID
-      // Try to parse it as JSON first, otherwise use as direct ID
-      let childId = decodedText
-      
-      try {
-        const parsed = JSON.parse(decodedText)
-        childId = parsed.childId || parsed.id || parsed.cvccId || decodedText
-      } catch {
-        // Not JSON, use as is
+      const lookupId = extractLookupIdentifier(decodedText)
+      if (!lookupId) {
+        setSystemMessage("Invalid QR code format. Please scan a valid child or certificate QR code.")
+        toast.error("Invalid QR code")
+        return
       }
+
+      if (!/^[a-zA-Z0-9-_]+$/.test(lookupId)) {
+        setSystemMessage("Invalid QR code content. Please scan a valid system-generated QR code.")
+        toast.error("Invalid QR code")
+        return
+      }
+
+      const isCertificateToken = /^QRC-CERT-[A-Z0-9-]{10,64}$/i.test(lookupId)
 
       setSystemMessage("Looking up child record...")
       toast.loading("Scanning QR code...")
       
       // Search for the child
-      const results = await facilityApi.searchChildren(childId)
+      const results = await facilityApi.searchChildren(lookupId)
       
       toast.dismiss()
       
       if (results.length === 0) {
-        setSystemMessage("No child found with this QR code. Please verify and try again.")
+        setSystemMessage(
+          isCertificateToken
+            ? "Certificate QR scanned, but no linked child record was found for this facility lookup."
+            : "No child found with this QR code. Please verify and try again."
+        )
         toast.error("Child not found")
         return
       }
@@ -334,7 +410,17 @@ export default function FacilityDashboardPage() {
   }
 
   const todaysAppointments = useMemo(() => appointments, [appointments])
+  const todaysAppointmentsPreview = useMemo(() => todaysAppointments.slice(0, 4), [todaysAppointments])
   const todaysFollowUps = useMemo(() => followUps, [followUps])
+  const followUpsPreview = useMemo(() => todaysFollowUps.slice(0, 4), [todaysFollowUps])
+  const recentMissedAppointments = useMemo(
+    () => missedAppointments.filter((appointment) => appointment.daysSinceMissed <= 14),
+    [missedAppointments],
+  )
+  const missedAppointmentsPreview = useMemo(
+    () => recentMissedAppointments.slice(0, 4),
+    [recentMissedAppointments],
+  )
 
   const handleLogout = () => {
     setIsLoggingOut(true)
@@ -614,7 +700,7 @@ export default function FacilityDashboardPage() {
           </div>
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
+        <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-[3fr,2fr]">
           <Card>
             <CardHeader className="space-y-1">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -622,8 +708,8 @@ export default function FacilityDashboardPage() {
               </CardTitle>
               <CardDescription>
                 Prepare immunisation cards and vaccines before families arrive.{" "}
-                <Link href="/facility/dashboard/appointments" className="text-primary hover:underline">
-                  View all requests &rarr;
+                <Link href="/facility/dashboard/appointments/today" className="text-primary hover:underline">
+                  View all today&apos;s appointments &rarr;
                 </Link>
               </CardDescription>
             </CardHeader>
@@ -636,7 +722,7 @@ export default function FacilityDashboardPage() {
               ) : todaysAppointments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No booked visits yet. Walk-in clients will appear once registered.</p>
               ) : (
-                todaysAppointments.map((appointment, index) => (
+                todaysAppointmentsPreview.map((appointment, index) => (
                   <div key={`${appointment.id}-${index}`} className="flex flex-col gap-2 rounded-lg border border-border bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-semibold text-foreground">{appointment.childName}</p>
@@ -654,13 +740,91 @@ export default function FacilityDashboardPage() {
                   </div>
                 ))
               )}
+              {!isLoadingAppointments && todaysAppointments.length > 4 ? (
+                <Button variant="outline" size="sm" className="w-full gap-2" asChild>
+                  <Link href="/facility/dashboard/appointments/today">
+                    View all today&apos;s appointments ({todaysAppointments.length})
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : null}
             </CardContent>
           </Card>
 
-          <Card className="border-destructive/50 cursor-pointer hover:bg-destructive/5 transition-colors" onClick={() => setShowUrgentFollowUpsModal(true)}>
+          <Card className="border-amber-300/50">
+            <CardHeader className="space-y-1">
+              <CardTitle className="flex items-center gap-2 text-lg text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="h-5 w-5" /> Missed appointment follow-ups
+              </CardTitle>
+              <CardDescription>
+                Mothers who missed appointments in the last 14 days. Call and help them rebook quickly.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {isLoadingMissedAppointments ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading missed appointments...</span>
+                </div>
+              ) : recentMissedAppointments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No missed appointments in the recent follow-up window.</p>
+              ) : (
+                missedAppointmentsPreview.map((item, index) => (
+                  <div
+                    key={`${item.id}-${item.childId}-${item.scheduledDate}-${index}`}
+                    className="flex flex-col gap-3 rounded-lg border border-amber-200/70 bg-amber-50/40 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/40 dark:bg-amber-950/20"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{item.childName}</p>
+                      <p className="text-xs text-muted-foreground">Guardian: {item.caregiver}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Missed on {item.scheduledDate || "Unknown date"} at {item.scheduledTime} • {item.vaccine}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+                      <Badge variant="outline" className="border-amber-400/60 text-amber-700 dark:text-amber-300">
+                        {item.daysSinceMissed} day{item.daysSinceMissed === 1 ? "" : "s"} ago
+                      </Badge>
+                      {item.contact && item.contact !== "N/A" ? (
+                        <Button variant="outline" size="sm" className="gap-2" asChild>
+                          <Link href={`tel:${item.contact.replace(/\s+/g, "")}`}>
+                            <Phone className="h-4 w-4" /> Call guardian
+                          </Link>
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" className="gap-2" disabled>
+                          <Phone className="h-4 w-4" /> No phone
+                        </Button>
+                      )}
+                      <Button variant="secondary" size="sm" asChild>
+                        <Link href="/facility/dashboard/appointments">Manage requests</Link>
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+              {!isLoadingMissedAppointments && recentMissedAppointments.length > 4 ? (
+                <Button variant="outline" size="sm" className="w-full gap-2" asChild>
+                  <Link href="/facility/dashboard/appointments/missed">
+                    View all missed appointments ({recentMissedAppointments.length})
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+        </section>
+
+        <section>
+          <Card className="border-destructive/50">
             <CardHeader className="space-y-1">
               <CardTitle className="flex items-center gap-2 text-lg text-destructive">
                 <AlertTriangle className="h-5 w-5" /> Urgent follow-ups
+                {!isLoadingFollowUps && todaysFollowUps.length > 0 && (
+                  <Badge variant="destructive" className="ml-auto text-xs">
+                    {todaysFollowUps.length}
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription>Click to view {todaysFollowUps.length} flagged children. Prioritise if they attend clinic today.</CardDescription>
             </CardHeader>
@@ -723,7 +887,7 @@ export default function FacilityDashboardPage() {
               ) : todaysFollowUps.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">No flagged children for today.</p>
               ) : (
-                todaysFollowUps.map((followUp, index) => (
+                followUpsPreview.map((followUp, index) => (
                   <div key={`${followUp.id}-${index}`} className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -749,7 +913,20 @@ export default function FacilityDashboardPage() {
                   </div>
                 ))
               )}
-            </div>
+              {!isLoadingFollowUps && todaysFollowUps.length > 4 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setFollowUpsModalOpen(true)}
+                >
+                  View all urgent follow-ups ({todaysFollowUps.length})
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </section>
 
             {/* Footer */}
             <div className="border-t border-border px-5 py-3 flex justify-end">
@@ -906,6 +1083,90 @@ export default function FacilityDashboardPage() {
           <div className="flex justify-center pt-2">
             <Button onClick={() => setShowErrorModal(false)} className="w-full sm:w-auto px-8">
               OK, Got it
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* All Urgent Follow-ups Modal */}
+      <Dialog open={followUpsModalOpen} onOpenChange={setFollowUpsModalOpen}>
+        <DialogContent className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b border-border px-6 py-4">
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" /> Urgent follow-ups
+              <Badge variant="destructive" className="ml-1">{todaysFollowUps.length}</Badge>
+            </DialogTitle>
+            <DialogDescription>
+              All children with overdue vaccinations. Prioritise these if they attend clinic today.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
+            {todaysFollowUps.map((followUp, index) => (
+              <div key={`modal-${followUp.id}-${index}`} className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{followUp.childName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Guardian: {followUp.caregiver}{followUp.relationship ? ` (${followUp.relationship})` : ""}
+                    </p>
+                  </div>
+                  <Badge variant="destructive" className="shrink-0 text-[10px]">
+                    {followUp.daysOverdue} days overdue
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs text-destructive">{followUp.reason}</p>
+                <div className="mt-3 flex items-center gap-3">
+                  <Link
+                    href={`tel:${followUp.contact.replace(/\s+/g, "")}`}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-destructive/15 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/25"
+                  >
+                    <Phone className="h-3 w-3" /> {followUp.contact !== "N/A" ? followUp.contact : "No phone"}
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setFollowUpsModalOpen(false)
+                      setContactDetail(followUp)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Info className="h-3 w-3" /> Contact info
+                  </button>
+                  <Button variant="outline" size="sm" className="ml-auto h-7 text-xs" asChild>
+                    <Link href={`/facility/child/${followUp.childId}`}>
+                      Open chart <ChevronRight className="ml-1 h-3 w-3" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-border px-6 py-3 flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setFollowUpsModalOpen(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Error Modal - Search Failure */}
+      <Dialog open={showSearchFailedModal} onOpenChange={setShowSearchFailedModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <div className="w-32 h-32">
+                <DotLottieReact
+                  src="/Sign for error _ Flat style.lottie"
+                  loop
+                  autoplay
+                />
+              </div>
+              <DialogTitle className="text-center text-xl">Search Failed</DialogTitle>
+            </div>
+          </DialogHeader>
+          <DialogDescription className="text-center text-base py-4">
+            Search failed. Please try again.
+          </DialogDescription>
+          <div className="flex justify-center pt-2">
+            <Button onClick={() => setShowSearchFailedModal(false)} className="w-full sm:w-auto px-8">
+              Try again
             </Button>
           </div>
         </DialogContent>

@@ -93,9 +93,12 @@ export default function OfflineSyncPage() {
       return
     }
 
-    const pendingOnly = pendingVaccinations.filter(v => v.status === "pending")
-    if (pendingOnly.length === 0) {
-      toast.info("No pending vaccinations to sync")
+    const unsyncedVaccinations = pendingVaccinations.filter(
+      (vaccination) => vaccination.status === "pending" || vaccination.status === "failed",
+    )
+
+    if (unsyncedVaccinations.length === 0) {
+      toast.info("No offline vaccinations need syncing")
       return
     }
 
@@ -139,6 +142,7 @@ export default function OfflineSyncPage() {
       
       const requestData = {
         vaccineName: vaccination.vaccineName,
+        doseNumber: vaccination.doseNumber,
         administeredDate: vaccination.administeredDate,
         batchNumber: vaccination.batchNumber,
         expiryDate: vaccination.expiryDate,
@@ -248,6 +252,7 @@ export default function OfflineSyncPage() {
 
   const pendingCount = pendingVaccinations.filter(v => v.status === "pending").length
   const failedCount = pendingVaccinations.filter(v => v.status === "failed").length
+  const unsyncedCount = pendingCount + failedCount
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -318,14 +323,14 @@ export default function OfflineSyncPage() {
           </div>
 
           {/* Sync All Button */}
-          {pendingCount > 0 && (
+          {unsyncedCount > 0 && (
             <Card>
               <CardContent className="pt-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="font-medium">Ready to sync {pendingCount} vaccination{pendingCount > 1 ? "s" : ""}</p>
+                    <p className="font-medium">Ready to sync {unsyncedCount} record{unsyncedCount > 1 ? "s" : ""}</p>
                     <p className="text-sm text-muted-foreground">
-                      Upload all pending records to the server
+                      Upload pending and retry failed records to the server
                     </p>
                   </div>
                   <Button
@@ -450,7 +455,7 @@ export default function OfflineSyncPage() {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              <strong>Tip:</strong> Offline records are stored safely in your browser and will automatically sync when internet connection is restored. 
+              <strong>Tip:</strong> Offline records are encrypted before they are saved in IndexedDB and will automatically sync when internet connection is restored.
               You can also manually sync records using the buttons above.
             </AlertDescription>
           </Alert>

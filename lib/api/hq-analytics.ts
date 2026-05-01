@@ -74,6 +74,19 @@ export interface HqDeviceSyncStatus {
   status: 'active' | 'stale';
 }
 
-export async function getHqDeviceSyncStatus(): Promise<HqDeviceSyncStatus[]> {
-  return apiRequest<HqDeviceSyncStatus[]>('/hq-admin/analytics/device-sync-status');
+export async function getHqDeviceSyncStatus(limit?: number): Promise<HqDeviceSyncStatus[]> {
+  const query = new URLSearchParams();
+  if (limit) query.set('limit', limit.toString());
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return apiRequest<HqDeviceSyncStatus[]>(`/hq-admin/analytics/device-sync-status${suffix}`);
+}
+
+export interface HqChwProductivity {
+  label: string;
+  registrations: number;
+  vaccinations: number;
+}
+
+export async function getHqChwProductivity(limit = 10): Promise<HqChwProductivity[]> {
+  return apiRequest<HqChwProductivity[]>(`/hq-admin/analytics/chw-productivity?limit=${limit}`);
 }

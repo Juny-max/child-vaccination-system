@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
-    "dev": "next dev",
+    "build": "next build --webpack",
+    "dev": "next dev --webpack",
     "dev:all": "zsh ./scripts/start-local-dev.zsh",
     "start:dev": "zsh ./scripts/start-backend-dev.zsh",
     "lint": "eslint .",
-    "start": "next start"
+    "start": "next start",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@google/genai": "^1.39.0",
@@ -62,6 +64,7 @@
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.454.0",
     "next": "16.0.10",
+    "next-pwa": "^5.6.0",
     "next-themes": "latest",
     "qrcode.react": "^4.2.0",
     "react": "19.2.0",
@@ -79,14 +82,22 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@babel/core": "^7.29.0",
     "@tailwindcss/postcss": "^4.1.9",
     "@types/leaflet": "^1.9.21",
+    "@types/jest": "^30.0.0",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "babel-loader": "^10.1.1",
     "baseline-browser-mapping": "^2.10.7",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.0.3",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",

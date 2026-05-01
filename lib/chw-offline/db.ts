@@ -56,10 +56,31 @@ export type OfflineMapStatus = {
   lastSyncedAt?: string
 }
 
+export type OfflineChildChart = {
+  childId: string
+  age: string
+  village: string
+  outstandingVaccines: Array<{
+    id: string
+    name: string
+    status: "overdue" | "due"
+    scheduledDate: string
+  }>
+  history: Array<{
+    id: string
+    name: string
+    status: "completed"
+    scheduledDate: string
+    administeredDate: string
+  }>
+  cachedAt: string
+}
+
 class ChwOfflineDatabase extends Dexie {
   children!: Table<OfflineChild, string>
   vaccinationQueue!: Table<VaccinationQueueItem, string>
   offlineMapStatus!: Table<OfflineMapStatus, string>
+  childCharts!: Table<OfflineChildChart, string>
 
   constructor() {
     super("cvcc_chw_offline_v2")
@@ -69,6 +90,14 @@ class ChwOfflineDatabase extends Dexie {
       vaccinationQueue:
         "queueId, status, actionType, childId, catchmentAreaId, createdAt, updatedAt, idempotencyKey",
       offlineMapStatus: "id, catchmentAreaId, lastPreparedAt, lastSyncedAt",
+    })
+
+    this.version(2).stores({
+      children: "id, cvccId, fullName, catchmentAreaId, updatedAt, syncedAt",
+      vaccinationQueue:
+        "queueId, status, actionType, childId, catchmentAreaId, createdAt, updatedAt, idempotencyKey",
+      offlineMapStatus: "id, catchmentAreaId, lastPreparedAt, lastSyncedAt",
+      childCharts: "childId, cachedAt",
     })
   }
 }
@@ -153,6 +182,25 @@ export async function getChildById(id: string): Promise<OfflineChild | undefined
   }
 }
 
+/**
+ * Get a single child by CVCC ID and decrypt
+ */
+export async function getChildByCvccId(cvccId: string): Promise<OfflineChild | undefined> {
+  try {
+    const encrypted = await chwOfflineDb.children.where("cvccId").equals(cvccId).first()
+    if (!encrypted) return undefined
+
+    const decrypted = await decryptObject(encrypted, CHILD_SENSITIVE_FIELDS)
+
+    logDataAccess("read", "child_by_cvcc", 1, { cvccId })
+
+    return decrypted
+  } catch (error) {
+    console.error("Failed to decrypt child by cvccId:", error)
+    return undefined
+  }
+}
+
 export async function getPendingQueueCount(): Promise<number> {
   return chwOfflineDb.vaccinationQueue.where("status").equals("pending").count()
 }
@@ -212,6 +260,36 @@ export async function removeChildFromLocalRegister(childId: string): Promise<voi
   await chwOfflineDb.children.delete(childId)
   
   logDataAccess("delete", "child", 1, { childId })
+}
+
+/**
+ * Cache the full child chart (outstanding vaccines + history) for offline use.
+ * Called every time the chart is successfully fetched from the backend.
+ */
+export async function saveChildChart(chart: OfflineChildChart): Promise<void> {
+  try {
+    await chwOfflineDb.childCharts.put(chart)
+    logDataAccess("write", "child_chart", 1, { childId: chart.childId })
+  } catch (error) {
+    console.error("Failed to cache child chart:", error)
+  }
+}
+
+/**
+ * Retrieve a cached child chart from IndexedDB.
+ * Returns undefined if the chart was never fetched online for this child.
+ */
+export async function getChildChart(childId: string): Promise<OfflineChildChart | undefined> {
+  try {
+    const chart = await chwOfflineDb.childCharts.get(childId)
+    if (chart) {
+      logDataAccess("read", "child_chart", 1, { childId })
+    }
+    return chart
+  } catch (error) {
+    console.error("Failed to read cached child chart:", error)
+    return undefined
+  }
 }
 
 /**

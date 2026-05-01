@@ -1,7 +1,7 @@
 "use client"
 
-import { chwOfflineDb, upsertChildren } from "@/lib/chw-offline/db"
-import { searchAllChwChildren, syncChwVaccinations } from "@/lib/api/chw"
+import { chwOfflineDb, upsertChildren, removeChildFromLocalRegister, getChildren } from "@/lib/chw-offline/db"
+import { getChwLocalRegister, syncChwVaccinations } from "@/lib/api/chw"
 import { isBackendAvailable } from "@/lib/network/connectivity"
 import {
   getPendingCHWVaccinations,
@@ -11,9 +11,14 @@ import {
 
 /**
  * Background Sync Service for CHW Offline-First Architecture
- * 
+ *
  * Automatically syncs data from backend to IndexedDB when online
  * Updates happen in the background without user intervention
+ *
+ * Key features:
+ * - Syncs CHW's local register (children in their catchment)
+ * - Removes children that were transferred OUT (pulled by another CHW)
+ * - Uploads pending offline vaccinations
  */
 
 const SYNC_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
@@ -74,7 +79,11 @@ export class ChwBackgroundSyncService {
 
   /**
    * Sync catchment data from backend to IndexedDB
-   * Updates IndexedDB with fresh data for offline use
+   *
+   * This method:
+   * 1. Fetches the CHW's current local register from backend
+   * 2. Updates IndexedDB with the current children
+   * 3. REMOVES children that are no longer in the register (transferred out / pulled away)
    */
   private async syncCatchmentData() {
     const online = await isBackendAvailable()
@@ -86,28 +95,53 @@ export class ChwBackgroundSyncService {
     try {
       console.log("[CHW Background Sync] Starting background sync...")
 
-      // Get all children from backend (this will be filtered by catchment on backend)
-      // We use a wildcard search to get recent data
-      const recentChildren = await searchAllChwChildren("")
+      // Fetch the CHW's LOCAL REGISTER (only children in their catchment)
+      // This is the authoritative list from the backend
+      const serverChildren = await getChwLocalRegister()
 
-      if (recentChildren.length === 0) {
-        console.log("[CHW Background Sync] No children to sync")
-      } else {
-        // Update IndexedDB with latest data
+      // Get current local children from IndexedDB
+      const localChildren = await getChildren()
+
+      // Create a Set of IDs that should be in the local register
+      const serverChildIds = new Set(serverChildren.map((c) => c.id))
+
+      // Find children that are in local IndexedDB but NOT on server anymore
+      // These children were transferred OUT (pulled by another CHW)
+      const childrenToRemove = localChildren.filter((local) => !serverChildIds.has(local.id))
+
+      if (childrenToRemove.length > 0) {
+        console.log(
+          `[CHW Background Sync] 🔄 Removing ${childrenToRemove.length} children that were transferred out:`,
+          childrenToRemove.map((c) => c.fullName),
+        )
+
+        // Remove each transferred-out child from local IndexedDB
+        for (const child of childrenToRemove) {
+          await removeChildFromLocalRegister(child.id)
+        }
+
+        console.log(`[CHW Background Sync] ✅ Removed ${childrenToRemove.length} transferred-out children`)
+      }
+
+      // Update IndexedDB with current server data
+      if (serverChildren.length > 0) {
         await upsertChildren(
-          recentChildren.map((child) => ({
+          serverChildren.map((child) => ({
             id: child.id,
-            cvccId: child.childId,
-            fullName: child.childName,
+            cvccId: child.cvccId,
+            fullName: child.fullName,
             dateOfBirth: child.dateOfBirth,
             gender: (child.gender || "unknown") as "male" | "female" | "intersex" | "undisclosed" | "unknown",
-            guardianName: child.motherName,
-            guardianPhone: child.motherPhone,
+            guardianName: child.guardianName,
+            guardianPhone: child.guardianPhone,
+            catchmentAreaId: child.catchmentAreaId,
             updatedAt: new Date().toISOString(),
           })),
         )
 
-        console.log(`[CHW Background Sync] ✅ Synced ${recentChildren.length} children to IndexedDB`)
+        console.log(`[CHW Background Sync] ✅ Synced ${serverChildren.length} children to IndexedDB`)
+      } else {
+        console.log("[CHW Background Sync] No children in catchment to sync")
       }
 
       // Sync pending vaccinations to backend

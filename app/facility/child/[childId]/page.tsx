@@ -8,6 +8,7 @@ import { jsPDF } from "jspdf"
 import {
   AlertCircle,
   ArrowLeft,
+  Baby,
   BadgeCheck,
   CalendarDays,
   Camera,
@@ -23,15 +24,22 @@ import {
   ShieldAlert,
   Syringe,
   Thermometer,
-  User,
   X,
 } from "lucide-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -47,6 +55,7 @@ type VaccineStatus = "overdue" | "dueToday" | "upcoming" | "completed"
 type VaccineEntry = {
   id: string
   vaccine: string
+  doseNumber?: number
   scheduledDate: string
   status: VaccineStatus
   notes?: string
@@ -66,7 +75,7 @@ type ChildRecord = {
     name: string
     phone: string
     address: string
-    preferredContact: "sms" | "email" | "whatsapp"
+    preferredContact: "sms" | "email"
   }
   birthDetails: {
     weight: string
@@ -341,30 +350,34 @@ export default function ChildPatientChartPage() {
     landmark: "",
     city: "",
     region: "",
-    preferredContact: "sms" as "sms" | "email" | "whatsapp",
+    preferredContact: "sms" as "sms" | "email",
   })
   const [isSavingGuardian, setIsSavingGuardian] = useState(false)
   const [isLoadingGuardian, setIsLoadingGuardian] = useState(false)
+  const [showGuardianOtpModal, setShowGuardianOtpModal] = useState(false)
+  const [guardianOtpCode, setGuardianOtpCode] = useState("")
+  const [guardianOtpToken, setGuardianOtpToken] = useState("")
+  const [guardianOtpNotice, setGuardianOtpNotice] = useState<string | null>(null)
+  const [guardianOtpError, setGuardianOtpError] = useState<string | null>(null)
+  const [isVerifyingGuardianOtp, setIsVerifyingGuardianOtp] = useState(false)
+  const [pendingGuardianUpdate, setPendingGuardianUpdate] =
+    useState<facilityApi.UpdateGuardianRequest | null>(null)
+
+  const [showChildDetailsModal, setShowChildDetailsModal] = useState(false)
+  const [vaccineModalGroup, setVaccineModalGroup] = useState<{
+    title: string
+    entries: VaccineEntry[]
+    colorScheme: "red" | "amber" | "sky" | "emerald"
+  } | null>(null)
 
   // State for photo upload
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
-  // State for completed vaccines modal
-  const [showCompletedModal, setShowCompletedModal] = useState(false)
-
-  // State for child details modal
-  const [showChildDetailsModal, setShowChildDetailsModal] = useState(false)
-
-  // State for vaccine group modals
-  const [showOverdueModal, setShowOverdueModal] = useState(false)
-  const [showDueTodayModal, setShowDueTodayModal] = useState(false)
-  const [showUpcomingModal, setShowUpcomingModal] = useState(false)
-  const [showGrowthMonitoringModal, setShowGrowthMonitoringModal] = useState(false)
-  const [showRecordGrowthForm, setShowRecordGrowthForm] = useState(false)
-  const [showCertificateModal, setShowCertificateModal] = useState(false)
-  const [certificateCreated, setCertificateCreated] = useState(false)
-  const [isCreatingCertificate, setIsCreatingCertificate] = useState(false)
+  // AEFI watchlist state
+  const [aefiReports, setAefiReports] = useState<facilityApi.FacilityAefiReport[]>([])
+  const [isLoadingAefi, setIsLoadingAefi] = useState(false)
+  const [aefiModalOpen, setAefiModalOpen] = useState(false)
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -435,6 +448,23 @@ export default function ChildPatientChartPage() {
     fetchVaccinationData()
   }, [childId, childProfile?.dateOfBirth, isValidChildId])
   
+  // Fetch AEFI watchlist (last 30 days)
+  useEffect(() => {
+    const fetchAefi = async () => {
+      if (!childId || childId === "new-child" || !isValidChildId) return
+      setIsLoadingAefi(true)
+      try {
+        const reports = await facilityApi.getChildAefiReports(childId)
+        setAefiReports(reports)
+      } catch (error) {
+        console.error("Failed to load AEFI reports:", error)
+      } finally {
+        setIsLoadingAefi(false)
+      }
+    }
+    fetchAefi()
+  }, [childId, isValidChildId])
+
   // Fetch growth monitoring data
   useEffect(() => {
     const fetchMeasurements = async () => {
@@ -501,18 +531,6 @@ export default function ChildPatientChartPage() {
       return { ...previous, recordedBy: userName }
     })
   }, [userName])
-
-  useEffect(() => {
-    if (!systemMessage) return
-    const timeout = window.setTimeout(() => setSystemMessage(null), 5000)
-    return () => window.clearTimeout(timeout)
-  }, [systemMessage])
-
-  useEffect(() => {
-    if (!measurementStatus) return
-    const timeout = window.setTimeout(() => setMeasurementStatus(null), 5000)
-    return () => window.clearTimeout(timeout)
-  }, [measurementStatus])
 
   // Background sync for offline vaccinations
   useEffect(() => {
@@ -587,8 +605,8 @@ export default function ChildPatientChartPage() {
         birthDetails: {
           weight: childProfile.weight ? `${childProfile.weight} kg` : "Not recorded",
           length: childProfile.length ? `${childProfile.length} cm` : "Not recorded",
-          place: "Not recorded",
-          deliveryType: "Not recorded",
+          place: childProfile.placeOfBirth || "Not recorded",
+          deliveryType: childProfile.deliveryType || "Not recorded",
         },
         allergies: [],
         lastVisit: childProfile.lastVisit || "Not yet",
@@ -632,6 +650,7 @@ export default function ChildPatientChartPage() {
       entries.push({
         id: `completed-${vax.id}`,
         vaccine: vax.vaccineName,
+        doseNumber: vax.doseNumber,
         scheduledDate: vax.administeredDate, // Use administered date for completed vaccines
         status: "completed",
         administeredDate: vax.administeredDate,
@@ -663,8 +682,9 @@ export default function ChildPatientChartPage() {
       }
 
       entries.push({
-        id: `scheduled-${vax.vaccineName}-${vax.dueDate}`,
+        id: `scheduled-${vax.vaccineName}-${vax.doseNumber}-${vax.dueDate}`,
         vaccine: vax.vaccineName,
+        doseNumber: vax.doseNumber,
         scheduledDate: vax.dueDate,
         status,
         notes: vax.isOverdue ? "Overdue - administer as soon as possible" : undefined,
@@ -984,6 +1004,7 @@ export default function ChildPatientChartPage() {
   }
 
   const openAdministerModal = async (entry: VaccineEntry) => {
+    setVaccineModalGroup(null)
     setSelectedDose(entry)
     setStockFromInventory(false)
 
@@ -1053,6 +1074,7 @@ export default function ChildPatientChartPage() {
       // Prepare the data for the API
       const requestData: facilityApi.AdministerVaccineRequest = {
         vaccineName: selectedDose.vaccine,
+        doseNumber: selectedDose.doseNumber,
         administeredDate: administerForm.dateAdministered,
         batchNumber: administerForm.batchNumber,
         expiryDate: administerForm.expiryDate || undefined,
@@ -1067,15 +1089,16 @@ export default function ChildPatientChartPage() {
         await facilityApi.administerVaccine(childId, requestData)
 
         // Refetch vaccination data to update the timeline
+        const refreshPromises: Promise<any>[] = [
+          facilityApi.getChildAefiReports(childId).then(setAefiReports),
+        ]
         if (childProfile?.dateOfBirth) {
-          const [history, scheduled] = await Promise.all([
-            facilityApi.getVaccinationHistory(childId),
-            facilityApi.getScheduledVaccinations(childId, childProfile.dateOfBirth),
-          ])
-          
-          setVaccinationHistory(history)
-          setScheduledVaccines(scheduled)
+          refreshPromises.push(
+            facilityApi.getVaccinationHistory(childId).then(setVaccinationHistory),
+            facilityApi.getScheduledVaccinations(childId, childProfile.dateOfBirth).then(setScheduledVaccines),
+          )
         }
+        await Promise.all(refreshPromises)
 
         closeAdministerModal()
         toast.success(
@@ -1160,7 +1183,7 @@ export default function ChildPatientChartPage() {
         landmark: guardian.landmark || "",
         city: guardian.city,
         region: guardian.region,
-        preferredContact: guardian.preferredContact || "sms",
+        preferredContact: guardian.preferredContact === "email" ? "email" : "sms",
       })
       setShowGuardianModal(true)
     } catch (error) {
@@ -1174,6 +1197,22 @@ export default function ChildPatientChartPage() {
   const closeGuardianModal = () => {
     setShowGuardianModal(false)
     setGuardianData(null)
+    setShowGuardianOtpModal(false)
+    setGuardianOtpCode("")
+    setGuardianOtpToken("")
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
+    setPendingGuardianUpdate(null)
+  }
+
+  const closeGuardianOtpModal = () => {
+    if (isVerifyingGuardianOtp) return
+    setShowGuardianOtpModal(false)
+    setGuardianOtpCode("")
+    setGuardianOtpToken("")
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
+    setPendingGuardianUpdate(null)
   }
 
   const handleGuardianFormChange = (field: keyof typeof guardianForm, value: string) => {
@@ -1185,6 +1224,8 @@ export default function ChildPatientChartPage() {
     if (!guardianData || isSavingGuardian) return
 
     setIsSavingGuardian(true)
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
 
     try {
       const updateData: facilityApi.UpdateGuardianRequest = {
@@ -1199,14 +1240,33 @@ export default function ChildPatientChartPage() {
         preferredContact: guardianForm.preferredContact,
       }
 
-      await facilityApi.updateGuardian(guardianData.id, updateData)
+      const updatedGuardian = await facilityApi.updateGuardian(guardianData.id, updateData)
+
+      if (updatedGuardian.phoneOtpRequired) {
+        if (!updatedGuardian.phoneOtpToken) {
+          setSystemMessage("Could not initialize phone verification. Please try again.")
+          return
+        }
+
+        setPendingGuardianUpdate(updateData)
+        setGuardianOtpToken(updatedGuardian.phoneOtpToken)
+        setGuardianOtpCode("")
+        setGuardianOtpNotice(
+          updatedGuardian.message ||
+            `OTP sent to ${guardianForm.phonePrimary}. Enter the code to continue.`,
+        )
+        setGuardianOtpError(null)
+        setShowGuardianOtpModal(true)
+        setSystemMessage(null)
+        return
+      }
 
       // Refetch child profile to update displayed guardian info
       const profile = await facilityApi.getChildProfile(childId)
       setChildProfile(profile)
 
       closeGuardianModal()
-      setSystemMessage("Guardian details updated successfully.")
+      setSystemMessage(updatedGuardian.message || "Guardian details updated successfully.")
     } catch (error) {
       console.error("Failed to update guardian:", error)
       setSystemMessage("Failed to update guardian details. Please try again.")
@@ -1215,46 +1275,176 @@ export default function ChildPatientChartPage() {
     }
   }
 
-  const renderScheduleGroup = (title: string, entries: VaccineEntry[], accent: string, empty: string) => (
-    <Card className={accent}>
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription>{entries.length} item{entries.length === 1 ? "" : "s"}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {entries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{empty}</p>
-        ) : (
-          entries.map((entry) => (
-            <div key={entry.id} className="rounded-lg border border-border bg-background/80 p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
-                  <p className="text-xs text-muted-foreground">Scheduled: {entry.scheduledDate}</p>
-                  {entry.administeredDate ? (
-                    <p className="text-xs text-muted-foreground">Administered: {entry.administeredDate}</p>
-                  ) : null}
-                  {entry.notes ? <p className="mt-2 text-xs text-muted-foreground">{entry.notes}</p> : null}
-                </div>
-                {entry.status === "completed" ? (
-                  <Badge variant="secondary" className="w-fit">Completed</Badge>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant={entry.status === "overdue" ? "destructive" : "default"}
-                    className="gap-2"
-                    onClick={() => openAdministerModal(entry)}
-                  >
-                    <Syringe className="h-4 w-4" /> Administer
-                  </Button>
-                )}
+  const handleVerifyGuardianOtp = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!guardianData || !pendingGuardianUpdate || isVerifyingGuardianOtp) {
+      return
+    }
+
+    const enteredOtp = guardianOtpCode.trim()
+    if (!/^\d{6}$/.test(enteredOtp)) {
+      setGuardianOtpError("Enter the 6-digit OTP sent to the guardian's new phone number.")
+      return
+    }
+
+    setIsVerifyingGuardianOtp(true)
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
+
+    try {
+      const updatedGuardian = await facilityApi.updateGuardian(guardianData.id, {
+        ...pendingGuardianUpdate,
+        phoneOtpCode: enteredOtp,
+        phoneOtpToken: guardianOtpToken,
+      })
+
+      if (updatedGuardian.phoneOtpRequired) {
+        if (updatedGuardian.phoneOtpToken) {
+          setGuardianOtpToken(updatedGuardian.phoneOtpToken)
+        }
+        setGuardianOtpCode("")
+        setGuardianOtpNotice(
+          updatedGuardian.message ||
+            "A new OTP has been sent. Enter the latest code to continue.",
+        )
+        setGuardianOtpError(null)
+        return
+      }
+
+      // Refetch child profile to update displayed guardian info
+      const profile = await facilityApi.getChildProfile(childId)
+      setChildProfile(profile)
+
+      closeGuardianModal()
+      setSystemMessage(updatedGuardian.message || "Guardian details updated successfully.")
+    } catch (error) {
+      console.error("Failed to verify guardian OTP:", error)
+      const errorMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to verify OTP. Please try again."
+      setGuardianOtpError(errorMessage)
+    } finally {
+      setIsVerifyingGuardianOtp(false)
+    }
+  }
+
+  const handleResendGuardianOtp = async () => {
+    if (!guardianData || !pendingGuardianUpdate || isVerifyingGuardianOtp) {
+      return
+    }
+
+    setIsVerifyingGuardianOtp(true)
+    setGuardianOtpNotice(null)
+    setGuardianOtpError(null)
+
+    try {
+      const response = await facilityApi.updateGuardian(guardianData.id, pendingGuardianUpdate)
+
+      if (!response.phoneOtpRequired || !response.phoneOtpToken) {
+        setGuardianOtpError("Could not resend OTP right now. Please close and try again.")
+        return
+      }
+
+      setGuardianOtpToken(response.phoneOtpToken)
+      setGuardianOtpCode("")
+      setGuardianOtpNotice(
+        response.message ||
+          `A new OTP has been sent to ${guardianForm.phonePrimary}.`,
+      )
+    } catch (error) {
+      console.error("Failed to resend guardian OTP:", error)
+      const errorMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to resend OTP. Please try again."
+      setGuardianOtpError(errorMessage)
+    } finally {
+      setIsVerifyingGuardianOtp(false)
+    }
+  }
+
+  const renderVaccineEntry = (entry: VaccineEntry) => {
+    const daysUntil = entry.status === "upcoming"
+      ? Math.max(1, Math.ceil((new Date(entry.scheduledDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+      : 0
+
+    return (
+      <div key={entry.id} className="rounded-lg border border-border bg-background/80 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
+            <p className="text-xs text-muted-foreground">
+              {entry.status === "completed" ? `Administered: ${entry.administeredDate}` : `Due: ${formatDate(entry.scheduledDate)}`}
+            </p>
+            {entry.notes ? <p className="mt-1.5 text-xs text-muted-foreground">{entry.notes}</p> : null}
+          </div>
+
+          {entry.status === "completed" ? (
+            <Badge variant="secondary" className="w-fit shrink-0">Completed</Badge>
+          ) : entry.status === "upcoming" ? (
+            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+              <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
+              <div className="leading-tight">
+                <p className="text-xs font-semibold text-primary">
+                  In {daysUntil} day{daysUntil !== 1 ? "s" : ""}
+                </p>
+                <p className="text-[10px] text-primary/60">{formatDate(entry.scheduledDate)}</p>
               </div>
             </div>
-          ))
-        )}
-      </CardContent>
-    </Card>
-  )
+          ) : (
+            <Button
+              size="sm"
+              variant={entry.status === "overdue" ? "destructive" : "default"}
+              className="shrink-0 gap-2"
+              onClick={() => openAdministerModal(entry)}
+            >
+              <Syringe className="h-4 w-4" /> Administer
+            </Button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const renderScheduleGroup = (
+    title: string,
+    entries: VaccineEntry[],
+    accent: string,
+    empty: string,
+    colorScheme: "red" | "amber" | "sky" | "emerald",
+  ) => {
+    const PREVIEW_COUNT = 4
+    const visible = entries.slice(0, PREVIEW_COUNT)
+    const remaining = entries.length - PREVIEW_COUNT
+    return (
+      <Card className={accent}>
+        <CardHeader>
+          <CardTitle className="text-base">{title}</CardTitle>
+          <CardDescription>{entries.length} item{entries.length === 1 ? "" : "s"}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {entries.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{empty}</p>
+          ) : (
+            <>
+              {visible.map(renderVaccineEntry)}
+              {remaining > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setVaccineModalGroup({ title, entries, colorScheme })}
+                  className="w-full rounded-lg border border-dashed border-border py-2.5 text-center text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
+                >
+                  View {remaining} more {title.toLowerCase()} {remaining === 1 ? "vaccine" : "vaccines"}
+                </button>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -1293,21 +1483,7 @@ export default function ChildPatientChartPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
-        {loadError ? (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{loadError}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        {systemMessage ? (
-          <Alert className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{systemMessage}</AlertDescription>
-          </Alert>
-        ) : null}
-
+      <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
         {isLoadingChild ? (
           <Card>
             <CardContent className="py-8 text-center">
@@ -1316,12 +1492,29 @@ export default function ChildPatientChartPage() {
           </Card>
         ) : (
           <>
-        <section className="mt-6 grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
+        <section className="mt-6">
           <Card className="border-primary/40">
             <CardHeader className="space-y-2">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <BadgeCheck className="h-5 w-5 text-primary" /> Child overview
-              </CardTitle>
+              <div className="flex items-start justify-between gap-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <BadgeCheck className="h-5 w-5 text-primary" /> Child overview
+                </CardTitle>
+                <div className="relative shrink-0">
+                  <span className="absolute inset-0 animate-ping rounded-full bg-primary/20 opacity-75" />
+                  <button
+                    type="button"
+                    onClick={() => setShowChildDetailsModal(true)}
+                    className="group relative flex items-center gap-0 overflow-hidden rounded-full border border-primary/30 bg-primary/10 p-2 text-primary transition-all duration-500 ease-in-out hover:gap-2 hover:border-primary hover:bg-primary hover:px-4 hover:text-white"
+                    aria-label="View child's details"
+                    title="View child's details"
+                  >
+                    <Baby className="h-5 w-5 shrink-0" />
+                    <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm font-medium transition-all duration-500 group-hover:max-w-[180px]">
+                      View Child&apos;s Details
+                    </span>
+                  </button>
+                </div>
+              </div>
               <CardDescription>ID: {childRecord.id}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1390,6 +1583,8 @@ export default function ChildPatientChartPage() {
                 </div>
                 <div className="flex-1 space-y-2">
                   <p className="text-base font-semibold text-foreground">{childRecord.name}</p>
+                  <p className="text-sm text-muted-foreground">Date of Birth: {childRecord.dateOfBirth ? formatDOB(childRecord.dateOfBirth) : "Pending"}</p>
+                  <p className="text-sm text-muted-foreground">Age: {childRecord.age}</p>
                   {childRecord.criticalNotes ? (
                     <div className="inline-flex items-center gap-2 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive">
                       <ShieldAlert className="h-3 w-3" /> {childRecord.criticalNotes}
@@ -1406,6 +1601,24 @@ export default function ChildPatientChartPage() {
                 </div>
               </div>
 
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-border bg-background/70 p-4">
+                  <p className="text-sm font-semibold text-foreground">Birth details</p>
+                  <p className="mt-2 text-xs text-muted-foreground">Weight: {childRecord.birthDetails.weight || "Pending"}</p>
+                  <p className="text-xs text-muted-foreground">Length: {childRecord.birthDetails.length || "Pending"}</p>
+                  <p className="text-xs text-muted-foreground">Place: {childRecord.birthDetails.place || "Pending"}</p>
+                  <p className="text-xs text-muted-foreground">Delivery: {childRecord.birthDetails.deliveryType || "Pending"}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-background/70 p-4">
+                  <p className="text-sm font-semibold text-foreground">Clinic notes</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Last visit: {childRecord.lastVisit}. Record anthropometry and Vitamin A once the child is 6 months.
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Allergies: {childRecord.allergies.length > 0 ? childRecord.allergies.join(", ") : "None recorded"}
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </section>
@@ -1425,119 +1638,269 @@ export default function ChildPatientChartPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-6">
-              {/* Vaccine Status Buttons Row */}
-              <div className="grid gap-3 md:grid-cols-4">
-                {/* Overdue Button */}
-                <div className="rounded-lg border-2 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-4 text-left flex flex-col justify-between h-full">
-                  <div>
-                    <p className="text-sm font-semibold text-red-700 dark:text-red-200">Overdue</p>
-                    <p className="text-2xl font-bold text-red-700 dark:text-red-200 mt-1">{groupedSchedule.overdue.length}</p>
-                    <p className="text-xs text-red-600/70 dark:text-red-300/70 mt-1">vaccine{groupedSchedule.overdue.length !== 1 ? "s" : ""}</p>
-                  </div>
-                  <button
-                    onClick={() => setShowOverdueModal(true)}
-                    className="text-xs font-medium text-red-700 dark:text-red-200 bg-red-100 dark:bg-red-900/50 px-3 py-1.5 rounded hover:bg-red-200 dark:hover:bg-red-900/70 transition self-end mt-3"
-                  >
-                    View
-                  </button>
-                </div>
-
-                {/* Due Today Button */}
-                <div className="rounded-lg border-2 border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 p-4 text-left flex flex-col justify-between h-full">
-                  <div>
-                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-200">Due Today</p>
-                    <p className="text-2xl font-bold text-amber-700 dark:text-amber-200 mt-1">{groupedSchedule.dueToday.length}</p>
-                    <p className="text-xs text-amber-600/70 dark:text-amber-300/70 mt-1">vaccine{groupedSchedule.dueToday.length !== 1 ? "s" : ""}</p>
-                  </div>
-                  <button
-                    onClick={() => setShowDueTodayModal(true)}
-                    className="text-xs font-medium text-amber-700 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/50 px-3 py-1.5 rounded hover:bg-amber-200 dark:hover:bg-amber-900/70 transition self-end mt-3"
-                  >
-                    View
-                  </button>
-                </div>
-
-                {/* Upcoming Button */}
-                <div className="rounded-lg border-2 border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 p-4 text-left flex flex-col justify-between h-full">
-                  <div>
-                    <p className="text-sm font-semibold text-blue-700 dark:text-blue-200">Upcoming</p>
-                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-200 mt-1">{groupedSchedule.upcoming.length}</p>
-                    <p className="text-xs text-blue-600/70 dark:text-blue-300/70 mt-1">vaccine{groupedSchedule.upcoming.length !== 1 ? "s" : ""}</p>
-                  </div>
-                  <button
-                    onClick={() => setShowUpcomingModal(true)}
-                    className="text-xs font-medium text-blue-700 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/50 px-3 py-1.5 rounded hover:bg-blue-200 dark:hover:bg-blue-900/70 transition self-end mt-3"
-                  >
-                    View
-                  </button>
-                </div>
-
-                {/* Growth Monitoring Button */}
-                <div className="rounded-lg border-2 border-purple-200 dark:border-purple-900 bg-purple-50 dark:bg-purple-950/30 p-4 text-left flex flex-col justify-between h-full">
-                  <div>
-                    <p className="text-sm font-semibold text-purple-700 dark:text-purple-200">Growth Monitoring</p>
-                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-200 mt-1">{measurements.length}</p>
-                    <p className="text-xs text-purple-600/70 dark:text-purple-300/70 mt-1">record{measurements.length !== 1 ? "s" : ""}</p>
-                  </div>
-                  <button
-                    onClick={() => setShowGrowthMonitoringModal(true)}
-                    className="text-xs font-medium text-purple-700 dark:text-purple-200 bg-purple-100 dark:bg-purple-900/50 px-3 py-1.5 rounded hover:bg-purple-200 dark:hover:bg-purple-900/70 transition self-end mt-3"
-                  >
-                    View
-                  </button>
-                </div>
-              </div>
-
-              {/* Completed Button */}
-              {groupedSchedule.completed.length > 0 && (
-                <div className="w-full rounded-lg border-2 border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/30 p-4 text-left flex flex-col justify-between h-full">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-green-700 dark:text-green-200">Completed</p>
-                      <p className="text-2xl font-bold text-green-700 dark:text-green-200 mt-1">{groupedSchedule.completed.length}</p>
-                      <p className="text-xs text-green-600/70 dark:text-green-300/70 mt-1">vaccine{groupedSchedule.completed.length !== 1 ? "s" : ""}</p>
-                    </div>
-                    <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
-                  </div>
-                  <button
-                    onClick={() => setShowCompletedModal(true)}
-                    className="text-xs font-medium text-green-700 dark:text-green-200 bg-green-100 dark:bg-green-900/50 px-3 py-1.5 rounded hover:bg-green-200 dark:hover:bg-green-900/70 transition self-end mt-3"
-                  >
-                    View
-                  </button>
-                </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+              {renderScheduleGroup(
+                "Overdue",
+                groupedSchedule.overdue,
+                "border-destructive/40",
+                "No overdue vaccines. Maintain adherence to the EPI schedule.",
+                "red"
+              )}
+              {renderScheduleGroup(
+                "Due today",
+                groupedSchedule.dueToday,
+                "border-amber-300/50",
+                "No vaccines scheduled for today.",
+                "amber"
+              )}
+              {renderScheduleGroup(
+                "Upcoming",
+                groupedSchedule.upcoming,
+                "border-sky-300/60",
+                "Upcoming vaccines will appear here.",
+                "sky"
+              )}
+              {renderScheduleGroup(
+                "Completed",
+                groupedSchedule.completed,
+                "border-emerald-300/60",
+                "Completed vaccinations will display once recorded.",
+                "emerald"
               )}
             </div>
           )}
         </section>
 
-        {/* Certificate Section - Shows when all vaccinations complete */}
-        {groupedSchedule.overdue.length === 0 &&
-         groupedSchedule.dueToday.length === 0 &&
-         groupedSchedule.upcoming.length === 0 &&
-         groupedSchedule.completed.length > 0 && (
-          <section className="mt-8">
-            <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <BadgeCheck className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-                  <div>
-                    <h3 className="text-lg font-semibold text-emerald-900 dark:text-emerald-200">Vaccination Complete! 🎉</h3>
-                    <p className="text-sm text-emerald-700/80 dark:text-emerald-300/80 mt-1">
-                      All required vaccinations have been administered. Certificate is ready to download.
-                    </p>
+        <section className="mt-8">
+          <Card className="border-primary/30">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Scale className="h-5 w-5 text-primary" /> Growth monitoring
+              </CardTitle>
+              <CardDescription>Capture anthropometry before today&apos;s vaccines to keep the growth chart accurate.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Latest measurement</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {latestMeasurement ? formatDate(latestMeasurement.date) : "No record yet"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {latestMeasurement ? `Recorded by ${latestMeasurement.recordedBy}` : "Weigh and measure the child before administering vaccines."}
+                  </p>
+                </div>
+                {latestMeasurement ? (
+                  <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground sm:grid-cols-3">
+                    <span className="inline-flex items-center gap-1 text-foreground">
+                      <Scale className="h-4 w-4 text-primary" /> {formatMeasurement(latestMeasurement.weightKg, 2)} kg
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Ruler className="h-4 w-4 text-primary" /> {formatMeasurement(latestMeasurement.lengthCm)} cm
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Ruler className="h-4 w-4 text-primary" /> HC {formatMeasurement(latestMeasurement.headCircumferenceCm)} cm
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Ruler className="h-4 w-4 text-primary" /> MUAC {formatMeasurement(latestMeasurement.muacCm)} cm
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Thermometer className="h-4 w-4 text-primary" /> {formatTemperature(latestMeasurement.temperatureC)}
+                    </span>
                   </div>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  onClick={() => setShowCertificateModal(true)}
-                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-600"
-                >
-                  <FileText className="h-4 w-4" />
-                  View & Print Certificate
-                </Button>
+
+              <form className="grid gap-4 md:grid-cols-3" onSubmit={handleMeasurementSubmit}>
+                <div className="space-y-2">
+                  <Label htmlFor="measurement-date">Measurement date</Label>
+                  <DatePicker
+                    date={measurementForm.date ? new Date(`${measurementForm.date}T00:00:00`) : undefined}
+                    onDateChange={(selectedDate) =>
+                      handleMeasurementChange("date", selectedDate ? formatDateForInput(selectedDate) : "")
+                    }
+                    maxDate={new Date()}
+                    toYear={new Date().getFullYear()}
+                  />
+                  {measurementErrors.date ? (
+                    <p className="text-xs text-destructive">{measurementErrors.date}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Use the clinic date the child was weighed.</p>
+                  )}
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="measurement-recorded-by">Recorded by</Label>
+                  <Input
+                    id="measurement-recorded-by"
+                    placeholder="Enter your full name"
+                    value={measurementForm.recordedBy}
+                    onChange={(event) => handleMeasurementChange("recordedBy", event.target.value)}
+                    aria-invalid={measurementErrors.recordedBy ? "true" : undefined}
+                    required
+                  />
+                  {measurementErrors.recordedBy ? (
+                    <p className="text-xs text-destructive">{measurementErrors.recordedBy}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">The name will appear in the measurement history.</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="measurement-weight">Weight (kg)</Label>
+                  <Input
+                    id="measurement-weight"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={measurementForm.weightKg}
+                    onChange={(event) => handleMeasurementChange("weightKg", event.target.value)}
+                    aria-invalid={measurementErrors.weightKg ? "true" : undefined}
+                    required
+                  />
+                  {measurementErrors.weightKg ? (
+                    <p className="text-xs text-destructive">{measurementErrors.weightKg}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Record from the calibrated infant scale.</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="measurement-length">Length / height (cm)</Label>
+                  <Input
+                    id="measurement-length"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={measurementForm.lengthCm}
+                    onChange={(event) => handleMeasurementChange("lengthCm", event.target.value)}
+                    aria-invalid={measurementErrors.lengthCm ? "true" : undefined}
+                  />
+                  {measurementErrors.lengthCm ? (
+                    <p className="text-xs text-destructive">{measurementErrors.lengthCm}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Measure length under 2 years, height thereafter.</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="measurement-hc">Head circumference (cm)</Label>
+                  <Input
+                    id="measurement-hc"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={measurementForm.headCircumferenceCm}
+                    onChange={(event) => handleMeasurementChange("headCircumferenceCm", event.target.value)}
+                    aria-invalid={measurementErrors.headCircumferenceCm ? "true" : undefined}
+                  />
+                  {measurementErrors.headCircumferenceCm ? (
+                    <p className="text-xs text-destructive">{measurementErrors.headCircumferenceCm}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Optional but recommended for infants under 1 year.</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="measurement-muac">MUAC (cm)</Label>
+                  <Input
+                    id="measurement-muac"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={measurementForm.muacCm}
+                    onChange={(event) => handleMeasurementChange("muacCm", event.target.value)}
+                    aria-invalid={measurementErrors.muacCm ? "true" : undefined}
+                  />
+                  {measurementErrors.muacCm ? (
+                    <p className="text-xs text-destructive">{measurementErrors.muacCm}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Use MUAC tape for children 6 months and older.</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="measurement-temp">Temperature (°C)</Label>
+                  <Input
+                    id="measurement-temp"
+                    type="number"
+                    step="0.1"
+                    value={measurementForm.temperatureC}
+                    onChange={(event) => handleMeasurementChange("temperatureC", event.target.value)}
+                    aria-invalid={measurementErrors.temperatureC ? "true" : undefined}
+                  />
+                  {measurementErrors.temperatureC ? (
+                    <p className="text-xs text-destructive">{measurementErrors.temperatureC}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Capture axillary temperature if fever is suspected.</p>
+                  )}
+                </div>
+                <div className="space-y-2 md:col-span-3">
+                  <Label htmlFor="measurement-notes">Measurement notes</Label>
+                  <textarea
+                    id="measurement-notes"
+                    placeholder="E.g. Child restless during measurement, counselled mother on nutrition."
+                    className="min-h-[96px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={measurementForm.notes}
+                    onChange={(event) => handleMeasurementChange("notes", event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2 md:col-span-3 md:flex-row">
+                  <Button type="submit" className="gap-2" disabled={isSavingMeasurement}>
+                    {isSavingMeasurement ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        Recording...
+                      </>
+                    ) : (
+                      <>
+                        <Scale className="h-4 w-4" /> Record measurements
+                      </>
+                    )}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={resetMeasurementForm} disabled={isSavingMeasurement}>
+                    Clear
+                  </Button>
+                </div>
+              </form>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-foreground">Measurement history</h3>
+                  <Badge variant="outline" className="text-xs">
+                    {measurements.length} record{measurements.length === 1 ? "" : "s"}
+                  </Badge>
+                </div>
+                {measurements.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No measurements captured yet. Record today&apos;s weight to start trend tracking.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs sm:text-sm">
+                      <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="py-2 pr-4">Date</th>
+                          <th className="py-2 pr-4">Weight (kg)</th>
+                          <th className="py-2 pr-4">Length / height (cm)</th>
+                          <th className="py-2 pr-4">Head circ. (cm)</th>
+                          <th className="py-2 pr-4">MUAC (cm)</th>
+                          <th className="py-2 pr-4">Temp (°C)</th>
+                          <th className="py-2 pr-4">Recorded by</th>
+                          <th className="py-2 pr-4">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border text-foreground">
+                        {measurements.map((measurement) => (
+                          <tr key={measurement.id}>
+                            <td className="py-2 pr-4">{formatDate(measurement.date)}</td>
+                            <td className="py-2 pr-4">{formatMeasurement(measurement.weightKg, 2)}</td>
+                            <td className="py-2 pr-4">{formatMeasurement(measurement.lengthCm)}</td>
+                            <td className="py-2 pr-4">{formatMeasurement(measurement.headCircumferenceCm)}</td>
+                            <td className="py-2 pr-4">{formatMeasurement(measurement.muacCm)}</td>
+                            <td className="py-2 pr-4">{formatTemperature(measurement.temperatureC)}</td>
+                            <td className="py-2 pr-4 text-xs text-muted-foreground">{measurement.recordedBy}</td>
+                            <td className="py-2 pr-4 text-xs text-muted-foreground">
+                              {measurement.notes ? measurement.notes : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -1600,23 +1963,110 @@ export default function ChildPatientChartPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Flame className="h-5 w-5 text-primary" /> AEFI watchlist
-              </CardTitle>
-              <CardDescription>Flag adverse events immediately for rapid escalation.</CardDescription>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Flame className="h-5 w-5 text-primary" /> AEFI watchlist
+                  </CardTitle>
+                  <CardDescription>Adverse events flagged in the last 30 days.</CardDescription>
+                </div>
+                {aefiReports.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={() => setAefiModalOpen(true)}>
+                    View all
+                  </Button>
+                )}
+              </div>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>No AEFI recorded for this child.</p>
-              <p>
-                If you suspect an adverse event, tick the AEFI checkbox in the administer modal. An SMS and email alert will
-                automatically notify the Branch Manager and district focal person.
-              </p>
+            <CardContent className="space-y-3">
+              {isLoadingAefi ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading watchlist...
+                </div>
+              ) : aefiReports.length === 0 ? (
+                <div className="space-y-1.5 text-sm text-muted-foreground">
+                  <p>No AEFI recorded in the last 30 days.</p>
+                  <p>
+                    If you suspect an adverse event, tick the AEFI checkbox in the administer modal. An alert will notify the Branch Manager.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {aefiReports.slice(0, 2).map((report) => (
+                    <div key={report.id} className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold text-foreground">
+                          {report.vaccineName}{report.doseNumber ? ` (Dose ${report.doseNumber})` : ""}
+                        </p>
+                        <div className="flex shrink-0 gap-1.5">
+                          <Badge
+                            variant={report.severity === "severe" ? "destructive" : report.severity === "moderate" ? "secondary" : "outline"}
+                            className="text-xs capitalize"
+                          >
+                            {report.severity}
+                          </Badge>
+                          <Badge
+                            variant={report.status === "reported" || report.status === "escalated" ? "destructive" : report.status === "resolved" ? "default" : "secondary"}
+                            className="text-xs"
+                          >
+                            {report.status === "under-review" ? "Under review" : report.status.charAt(0).toUpperCase() + report.status.slice(1)}
+                          </Badge>
+                        </div>
+                      </div>
+                      {report.symptoms.length > 0 && (
+                        <p className="text-xs text-muted-foreground">{report.symptoms.join(", ")}</p>
+                      )}
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">{formatDate(report.onsetDate)}</p>
+                    </div>
+                  ))}
+                  {aefiReports.length > 2 && (
+                    <p className="text-xs text-muted-foreground">
+                      Showing 2 of {aefiReports.length}.{" "}
+                      <button type="button" className="underline hover:text-foreground" onClick={() => setAefiModalOpen(true)}>
+                        View all
+                      </button>
+                    </p>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
         </section>
         </>
         )}
       </main>
+
+      <NotificationModal
+        open={Boolean(loadError)}
+        title="Unable to load child record"
+        message={loadError || ""}
+        onOpenChange={(open) => {
+          if (!open) {
+            setLoadError(null)
+          }
+        }}
+      />
+
+      <NotificationModal
+        open={Boolean(systemMessage)}
+        title="Notification"
+        message={systemMessage || ""}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSystemMessage(null)
+          }
+        }}
+      />
+
+      <NotificationModal
+        open={Boolean(measurementStatus)}
+        title="Growth monitoring update"
+        message={measurementStatus || ""}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMeasurementStatus(null)
+          }
+        }}
+      />
 
       {selectedDose ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
@@ -1773,7 +2223,7 @@ export default function ChildPatientChartPage() {
       ) : null}
 
       {/* Guardian Edit Modal */}
-      {showGuardianModal ? (
+      {showGuardianModal && !showGuardianOtpModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg rounded-lg bg-background p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="mb-4 flex items-center justify-between">
@@ -1925,11 +2375,10 @@ export default function ChildPatientChartPage() {
                 <select
                   id="guardian-preferredContact"
                   value={guardianForm.preferredContact}
-                  onChange={(e) => handleGuardianFormChange("preferredContact", e.target.value)}
+                  onChange={(e) => handleGuardianFormChange("preferredContact", e.target.value as "sms" | "email")}
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="sms">SMS</option>
-                  <option value="whatsapp">WhatsApp</option>
                   <option value="email">Email</option>
                 </select>
               </div>
@@ -1956,653 +2405,350 @@ export default function ChildPatientChartPage() {
         </div>
       ) : null}
 
+      {showGuardianOtpModal ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Verify New Phone Number</h3>
+              <button
+                type="button"
+                onClick={closeGuardianOtpModal}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Close"
+                disabled={isVerifyingGuardianOtp}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mb-3 text-sm text-muted-foreground">
+              We sent a 6-digit OTP to {guardianForm.phonePrimary || "the new phone number"}. Ask the parent for the code,
+              enter it below, and save.
+            </p>
+
+            {guardianOtpNotice ? (
+              <div className="mb-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
+                {guardianOtpNotice}
+              </div>
+            ) : null}
+
+            {guardianOtpError ? (
+              <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {guardianOtpError}
+              </div>
+            ) : null}
+
+            <form onSubmit={handleVerifyGuardianOtp} className="space-y-4">
+              <div>
+                <label htmlFor="guardian-phone-otp" className="block text-sm font-medium">
+                  OTP Code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="guardian-phone-otp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={guardianOtpCode}
+                  onChange={(event) => {
+                    const digitsOnly = event.target.value.replace(/\D/g, "").slice(0, 6)
+                    setGuardianOtpCode(digitsOnly)
+                    if (guardianOtpError) {
+                      setGuardianOtpError(null)
+                    }
+                  }}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-center text-base tracking-[0.35em] focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="000000"
+                  maxLength={6}
+                  required
+                  disabled={isVerifyingGuardianOtp}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">Code expires in 10 minutes.</p>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closeGuardianOtpModal}
+                  disabled={isVerifyingGuardianOtp}
+                >
+                  Cancel
+                </Button>
+                <Button type="button" variant="ghost" onClick={handleResendGuardianOtp} disabled={isVerifyingGuardianOtp}>
+                  {isVerifyingGuardianOtp ? "Please wait..." : "Resend OTP"}
+                </Button>
+                <Button type="submit" className="gap-2" disabled={isVerifyingGuardianOtp}>
+                  {isVerifyingGuardianOtp ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      Verifying...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4" /> Verify & Save
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
       {/* Child Details Modal */}
-      {showChildDetailsModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
-            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Child Information</h3>
+      {showChildDetailsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+          <div className="flex w-full max-w-xl flex-col rounded-xl border border-border bg-background shadow-2xl" style={{ maxHeight: "90vh" }}>
+            <div className="flex items-center justify-between border-b border-border px-6 py-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Baby className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">{childRecord.name}</h2>
+                  <p className="text-xs text-muted-foreground">CVCC ID: {childRecord.id}</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowChildDetailsModal(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
-              {/* Birth Details */}
-              <div className="rounded-lg border border-border bg-background/70 p-4">
-                <p className="text-sm font-semibold text-foreground mb-3">Birth Details</p>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Date of Birth:</span>
-                    <span className="text-foreground font-medium">{childRecord.dateOfBirth || "Pending"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Age:</span>
-                    <span className="text-foreground font-medium">{childRecord.age}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Birth Weight:</span>
-                    <span className="text-foreground font-medium">{childRecord.birthDetails.weight}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Birth Length:</span>
-                    <span className="text-foreground font-medium">{childRecord.birthDetails.length}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Place of Birth:</span>
-                    <span className="text-foreground font-medium">{childRecord.birthDetails.place}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Delivery Type:</span>
-                    <span className="text-foreground font-medium">{childRecord.birthDetails.deliveryType}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Guardian Details */}
-              <div className="rounded-lg border border-border bg-background/70 p-4">
-                <p className="text-sm font-semibold text-foreground mb-3">Guardian Details</p>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Name:</span>
-                    <span className="text-foreground font-medium">{childRecord.guardian.name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Phone:</span>
-                    <span className="text-foreground font-medium">{childRecord.guardian.phone}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Address:</span>
-                    <span className="text-foreground font-medium text-right">{childRecord.guardian.address}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Preferred Contact:</span>
-                    <span className="text-foreground font-medium uppercase">{childRecord.guardian.preferredContact}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Allergies */}
-              {childRecord.allergies.length > 0 && (
-                <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
-                  <p className="text-sm font-semibold text-destructive mb-2">⚠️ Allergies</p>
-                  <p className="text-sm text-destructive">{childRecord.allergies.join(", ")}</p>
-                </div>
-              )}
-
-              {/* Last Visit */}
-              <div className="rounded-lg border border-border bg-background/70 p-4">
-                <p className="text-sm font-semibold text-foreground mb-1">Last Visit</p>
-                <p className="text-sm text-muted-foreground">{childRecord.lastVisit}</p>
-              </div>
-            </div>
-
-            <div className="border-t border-border p-6 flex justify-end">
-              <Button
-                variant="outline"
-                onClick={() => setShowChildDetailsModal(false)}
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Overdue Vaccines Modal */}
-      {showOverdueModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
-            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
+            <div className="overflow-y-auto px-6 py-5 space-y-6">
               <div>
-                <h3 className="text-lg font-semibold">Overdue Vaccines</h3>
-                <p className="text-sm text-muted-foreground">{groupedSchedule.overdue.length} vaccine{groupedSchedule.overdue.length === 1 ? "" : "s"}</p>
-              </div>
-              <button onClick={() => setShowOverdueModal(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-3">
-              {groupedSchedule.overdue.map((entry) => (
-                <div key={entry.id} className="rounded-lg border border-destructive/40 bg-background/80 p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
-                      <p className="text-xs text-muted-foreground">Due: {entry.scheduledDate}</p>
-                      {entry.notes && <p className="mt-2 text-xs text-destructive">{entry.notes}</p>}
-                    </div>
-                    <Button size="sm" variant="destructive" className="gap-2" onClick={() => { setShowOverdueModal(false); openAdministerModal(entry); }}>
-                      <Syringe className="h-4 w-4" /> Administer
-                    </Button>
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Personal Information</p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="col-span-2 rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Full Name</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.name}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Date of Birth</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.dateOfBirth ? formatDOB(childRecord.dateOfBirth) : "Pending"}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Age</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.age}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Gender</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.gender}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Last Clinic Visit</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.lastVisit}</p>
                   </div>
                 </div>
-              ))}
-            </div>
-            <div className="border-t border-border p-6 flex justify-end">
-              <Button variant="outline" onClick={() => setShowOverdueModal(false)}>Close</Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Due Today Vaccines Modal */}
-      {showDueTodayModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
-            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">Due Today</h3>
-                <p className="text-sm text-muted-foreground">{groupedSchedule.dueToday.length} vaccine{groupedSchedule.dueToday.length === 1 ? "" : "s"}</p>
               </div>
-              <button onClick={() => setShowDueTodayModal(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-3">
-              {groupedSchedule.dueToday.map((entry) => (
-                <div key={entry.id} className="rounded-lg border border-amber-300/50 bg-background/80 p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
-                      <p className="text-xs text-muted-foreground">Scheduled: {entry.scheduledDate}</p>
-                      {entry.notes && <p className="mt-2 text-xs text-muted-foreground">{entry.notes}</p>}
-                    </div>
-                    <Button size="sm" variant="default" className="gap-2" onClick={() => { setShowDueTodayModal(false); openAdministerModal(entry); }}>
-                      <Syringe className="h-4 w-4" /> Administer
-                    </Button>
+
+              <div>
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Birth Details</p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Birth Weight</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.birthDetails.weight || "Not recorded"}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Birth Length</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.birthDetails.length || "Not recorded"}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Place of Birth</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.birthDetails.place || "Not recorded"}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Delivery Type</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.birthDetails.deliveryType || "Not recorded"}</p>
                   </div>
                 </div>
-              ))}
-            </div>
-            <div className="border-t border-border p-6 flex justify-end">
-              <Button variant="outline" onClick={() => setShowDueTodayModal(false)}>Close</Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Upcoming Vaccines Modal */}
-      {showUpcomingModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
-            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">Upcoming Vaccines</h3>
-                <p className="text-sm text-muted-foreground">{groupedSchedule.upcoming.length} vaccine{groupedSchedule.upcoming.length === 1 ? "" : "s"}</p>
               </div>
-              <button onClick={() => setShowUpcomingModal(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-3">
-              {groupedSchedule.upcoming.map((entry) => (
-                <div key={entry.id} className="rounded-lg border border-sky-300/60 bg-background/80 p-4">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
-                    <p className="text-xs text-muted-foreground">Scheduled: {entry.scheduledDate}</p>
+
+              <div>
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Guardian &amp; Contact</p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="col-span-2 rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Guardian Name</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.guardian.name}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Phone</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.guardian.phone || "Not captured"}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Preferred Contact</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.guardian.preferredContact.toUpperCase()}</p>
+                  </div>
+                  <div className="col-span-2 rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Address</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.guardian.address}</p>
                   </div>
                 </div>
-              ))}
-            </div>
-            <div className="border-t border-border p-6 flex justify-end">
-              <Button variant="outline" onClick={() => setShowUpcomingModal(false)}>Close</Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Completed Vaccines Modal */}
-      {showCompletedModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
-            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">Vaccination History</h3>
-                <p className="text-sm text-muted-foreground">{groupedSchedule.completed.length} vaccine{groupedSchedule.completed.length === 1 ? "" : "s"} completed</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowCompletedModal(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
 
-            <div className="p-6 space-y-3">
-              {groupedSchedule.completed.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-8 text-center">No completed vaccinations yet.</p>
-              ) : (
-                groupedSchedule.completed.map((entry) => (
-                  <div key={entry.id} className="rounded-lg border border-border bg-background/80 p-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{entry.vaccine}</p>
-                        <p className="text-xs text-muted-foreground">Scheduled: {entry.scheduledDate}</p>
-                        {entry.administeredDate ? (
-                          <p className="text-xs text-muted-foreground">Administered: {entry.administeredDate}</p>
-                        ) : null}
-                        {entry.batchNumber ? (
-                          <p className="text-xs text-muted-foreground">Batch: {entry.batchNumber}</p>
-                        ) : null}
-                        {entry.notes ? <p className="mt-2 text-xs text-muted-foreground">{entry.notes}</p> : null}
+              {(childRecord.criticalNotes || childRecord.allergies.length > 0) && (
+                <div>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Alerts &amp; Allergies</p>
+                  <div className="space-y-2">
+                    {childRecord.criticalNotes && (
+                      <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                        <ShieldAlert className="h-4 w-4 shrink-0" />
+                        <span>{childRecord.criticalNotes}</span>
                       </div>
-                      <Badge variant="secondary" className="w-fit">✓ Completed</Badge>
-                    </div>
+                    )}
+                    {childRecord.allergies.length > 0 && (
+                      <div className="rounded-lg border border-amber-300/40 bg-amber-50/50 p-3 dark:bg-amber-950/20">
+                        <p className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">Known Allergies</p>
+                        <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.allergies.join(", ")}</p>
+                      </div>
+                    )}
                   </div>
-                ))
-              )}
-            </div>
-
-            <div className="border-t border-border p-6 flex justify-end">
-              <Button variant="outline" onClick={() => setShowCompletedModal(false)}>
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Growth Monitoring Modal */}
-      {showGrowthMonitoringModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-4xl rounded-lg bg-background shadow-xl max-h-[90vh] overflow-y-auto border border-border">
-            <div className="sticky top-0 bg-background border-b border-border p-6 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">Growth Monitoring</h3>
-                <p className="text-sm text-muted-foreground">{measurements.length} record{measurements.length !== 1 ? "s" : ""}</p>
-              </div>
-              <button onClick={() => setShowGrowthMonitoringModal(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {measurements.length > 0 ? (
-                <div className="flex flex-col gap-3 rounded-lg border border-dashed border-violet-300/40 bg-violet-50/30 dark:bg-violet-950/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Latest measurement</p>
-                    <p className="text-sm font-semibold text-foreground">
-                      {latestMeasurement ? formatDate(latestMeasurement.date) : "No record yet"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {latestMeasurement ? `Recorded by ${latestMeasurement.recordedBy}` : ""}
-                    </p>
-                  </div>
-                  {latestMeasurement ? (
-                    <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground sm:grid-cols-3">
-                      <span className="inline-flex items-center gap-1 text-foreground">
-                        <Scale className="h-4 w-4 text-violet-600 dark:text-violet-400" /> {formatMeasurement(latestMeasurement.weightKg, 2)} kg
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Ruler className="h-4 w-4 text-violet-600 dark:text-violet-400" /> {formatMeasurement(latestMeasurement.lengthCm)} cm
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Ruler className="h-4 w-4 text-violet-600 dark:text-violet-400" /> HC {formatMeasurement(latestMeasurement.headCircumferenceCm)} cm
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Ruler className="h-4 w-4 text-violet-600 dark:text-violet-400" /> MUAC {formatMeasurement(latestMeasurement.muacCm)} cm
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Thermometer className="h-4 w-4 text-violet-600 dark:text-violet-400" /> {formatTemperature(latestMeasurement.temperatureC)}
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {showRecordGrowthForm && (
-                <div className="rounded-lg border border-violet-300/40 bg-violet-50/30 dark:bg-violet-950/10 p-4 space-y-4">
-                  <h4 className="font-semibold text-foreground">Record New Measurement</h4>
-                  <form className="grid gap-4 md:grid-cols-3" onSubmit={handleMeasurementSubmit}>
-                    <div className="space-y-2">
-                      <Label htmlFor="measurement-date">Measurement date</Label>
-                      <DatePicker
-                        date={measurementForm.date ? new Date(`${measurementForm.date}T00:00:00`) : undefined}
-                        onDateChange={(selectedDate) =>
-                          handleMeasurementChange("date", selectedDate ? formatDateForInput(selectedDate) : "")
-                        }
-                        toYear={new Date().getFullYear() + 5}
-                      />
-                      {measurementErrors.date ? (
-                        <p className="text-xs text-destructive">{measurementErrors.date}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">Use the clinic date the child was weighed.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="measurement-recorded-by">Recorded by</Label>
-                      <Input
-                        id="measurement-recorded-by"
-                        placeholder="Enter your full name"
-                        value={measurementForm.recordedBy}
-                        onChange={(event) => handleMeasurementChange("recordedBy", event.target.value)}
-                        aria-invalid={measurementErrors.recordedBy ? "true" : undefined}
-                        required
-                      />
-                      {measurementErrors.recordedBy ? (
-                        <p className="text-xs text-destructive">{measurementErrors.recordedBy}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">The name will appear in the measurement history.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="measurement-weight">Weight (kg)</Label>
-                      <Input
-                        id="measurement-weight"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={measurementForm.weightKg}
-                        onChange={(event) => handleMeasurementChange("weightKg", event.target.value)}
-                        aria-invalid={measurementErrors.weightKg ? "true" : undefined}
-                        required
-                      />
-                      {measurementErrors.weightKg ? (
-                        <p className="text-xs text-destructive">{measurementErrors.weightKg}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">Record from the calibrated infant scale.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="measurement-length">Length / height (cm)</Label>
-                      <Input
-                        id="measurement-length"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={measurementForm.lengthCm}
-                        onChange={(event) => handleMeasurementChange("lengthCm", event.target.value)}
-                        aria-invalid={measurementErrors.lengthCm ? "true" : undefined}
-                      />
-                      {measurementErrors.lengthCm ? (
-                        <p className="text-xs text-destructive">{measurementErrors.lengthCm}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">Measure length under 2 years, height thereafter.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="measurement-hc">Head circumference (cm)</Label>
-                      <Input
-                        id="measurement-hc"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={measurementForm.headCircumferenceCm}
-                        onChange={(event) => handleMeasurementChange("headCircumferenceCm", event.target.value)}
-                        aria-invalid={measurementErrors.headCircumferenceCm ? "true" : undefined}
-                      />
-                      {measurementErrors.headCircumferenceCm ? (
-                        <p className="text-xs text-destructive">{measurementErrors.headCircumferenceCm}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">Measure with soft tape above eyebrows.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="measurement-muac">MUAC (cm)</Label>
-                      <Input
-                        id="measurement-muac"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={measurementForm.muacCm}
-                        onChange={(event) => handleMeasurementChange("muacCm", event.target.value)}
-                        aria-invalid={measurementErrors.muacCm ? "true" : undefined}
-                      />
-                      {measurementErrors.muacCm ? (
-                        <p className="text-xs text-destructive">{measurementErrors.muacCm}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">Use MUAC tape for children 6 months and older.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="measurement-temp">Temperature (°C)</Label>
-                      <Input
-                        id="measurement-temp"
-                        type="number"
-                        step="0.1"
-                        value={measurementForm.temperatureC}
-                        onChange={(event) => handleMeasurementChange("temperatureC", event.target.value)}
-                        aria-invalid={measurementErrors.temperatureC ? "true" : undefined}
-                      />
-                      {measurementErrors.temperatureC ? (
-                        <p className="text-xs text-destructive">{measurementErrors.temperatureC}</p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">Capture axillary temperature if fever is suspected.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2 md:col-span-3">
-                      <Label htmlFor="measurement-notes">Measurement notes</Label>
-                      <textarea
-                        id="measurement-notes"
-                        placeholder="E.g. Child restless during measurement, counselled mother on nutrition."
-                        className="min-h-[96px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                        value={measurementForm.notes}
-                        onChange={(event) => handleMeasurementChange("notes", event.target.value)}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2 md:col-span-3 md:flex-row">
-                      <Button type="submit" className="gap-2" disabled={isSavingMeasurement}>
-                        {isSavingMeasurement ? (
-                          <>
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                            Recording...
-                          </>
-                        ) : (
-                          <>
-                            <Scale className="h-4 w-4" /> Record measurements
-                          </>
-                        )}
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={() => {
-                        resetMeasurementForm()
-                        setShowRecordGrowthForm(false)
-                      }} disabled={isSavingMeasurement}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </form>
                 </div>
               )}
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-foreground">Measurement history</h3>
-                  <Badge variant="outline" className="text-xs">
-                    {measurements.length} record{measurements.length === 1 ? "" : "s"}
-                  </Badge>
-                </div>
-                {measurements.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No measurements captured yet. Record measurements in the form below.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-xs sm:text-sm">
-                      <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                        <tr>
-                          <th className="py-2 pr-4">Date</th>
-                          <th className="py-2 pr-4">Weight (kg)</th>
-                          <th className="py-2 pr-4">Length / height (cm)</th>
-                          <th className="py-2 pr-4">Head circ. (cm)</th>
-                          <th className="py-2 pr-4">MUAC (cm)</th>
-                          <th className="py-2 pr-4">Temp (°C)</th>
-                          <th className="py-2 pr-4">Recorded by</th>
-                          <th className="py-2 pr-4">Notes</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border text-foreground">
-                        {measurements.map((measurement) => (
-                          <tr key={measurement.id}>
-                            <td className="py-2 pr-4">{formatDate(measurement.date)}</td>
-                            <td className="py-2 pr-4">{formatMeasurement(measurement.weightKg, 2)}</td>
-                            <td className="py-2 pr-4">{formatMeasurement(measurement.lengthCm)}</td>
-                            <td className="py-2 pr-4">{formatMeasurement(measurement.headCircumferenceCm)}</td>
-                            <td className="py-2 pr-4">{formatMeasurement(measurement.muacCm)}</td>
-                            <td className="py-2 pr-4">{formatTemperature(measurement.temperatureC)}</td>
-                            <td className="py-2 pr-4 text-xs text-muted-foreground">{measurement.recordedBy}</td>
-                            <td className="py-2 pr-4 text-xs text-muted-foreground">
-                              {measurement.notes ? measurement.notes : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
             </div>
 
-            <div className="border-t border-border p-6 flex justify-end gap-3">
+            <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
+              <Button variant="outline" onClick={() => setShowChildDetailsModal(false)}>Close</Button>
               <Button
-                variant="default"
-                onClick={() => setShowRecordGrowthForm(!showRecordGrowthForm)}
+                onClick={async () => {
+                  if (isLoadingGuardian) return
+                  await openGuardianModal()
+                  setShowChildDetailsModal(false)
+                }}
+                disabled={isLoadingGuardian}
                 className="gap-2"
               >
-                <Scale className="h-4 w-4" /> Record Growth
+                {isLoadingGuardian ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <ClipboardList className="h-4 w-4" /> Update Guardian
+                  </>
+                )}
               </Button>
-              <Button variant="outline" onClick={() => setShowGrowthMonitoringModal(false)}>Close</Button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
 
-      {/* Certificate Modal - Single Page Design */}
-      {showCertificateModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2">
-          <div className="w-full max-w-4xl rounded-2xl bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
-            {/* Header with gradient */}
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <BadgeCheck className="h-5 w-5 text-white" />
-                <h3 className="text-lg font-bold text-white">Vaccination Certificate</h3>
+      {/* Vaccine Group Modal */}
+      {vaccineModalGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+          <div className="flex w-full max-w-2xl flex-col rounded-xl border border-border bg-background shadow-2xl" style={{ maxHeight: "90vh" }}>
+            <div className={`flex items-center justify-between border-b border-border px-6 py-5 ${
+              vaccineModalGroup.colorScheme === "red" ? "bg-destructive/5" :
+              vaccineModalGroup.colorScheme === "amber" ? "bg-amber-50/80 dark:bg-amber-950/20" :
+              vaccineModalGroup.colorScheme === "sky" ? "bg-sky-50/80 dark:bg-sky-950/20" :
+              "bg-emerald-50/80 dark:bg-emerald-950/20"
+            }`}>
+              <div className="flex items-center gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">{vaccineModalGroup.title}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {vaccineModalGroup.entries.length} vaccine{vaccineModalGroup.entries.length === 1 ? "" : "s"} — {childRecord.name}
+                  </p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  vaccineModalGroup.colorScheme === "red" ? "bg-destructive/15 text-destructive" :
+                  vaccineModalGroup.colorScheme === "amber" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" :
+                  vaccineModalGroup.colorScheme === "sky" ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300" :
+                  "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                }`}>
+                  {vaccineModalGroup.entries.length} total
+                </span>
               </div>
-              <button onClick={() => setShowCertificateModal(false)} className="text-white/80 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setVaccineModalGroup(null)}
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Close"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Single Page Content - No Scroll */}
-            <div className="p-6 bg-gradient-to-b from-slate-50 to-white dark:from-slate-800 dark:to-slate-900 overflow-hidden flex-1 flex flex-col" id="certificate-content">
-              {/* Certificate Header */}
-              <div className="text-center space-y-1 pb-4 border-b-2 border-emerald-200">
-                <div className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                  ✓ CERTIFICATE OF COMPLETION
-                </div>
-                <p className="text-xs text-emerald-700 dark:text-emerald-300 font-semibold">Child Vaccination Certificate - Ghana EPI</p>
-              </div>
-
-              {/* Main Content Grid */}
-              <div className="grid grid-cols-3 gap-4 mt-4 flex-1">
-                {/* Left Column - Child Info & Vaccines */}
-                <div className="col-span-2 space-y-3 overflow-y-auto pr-2">
-                  {/* Child Info - Compact */}
-                  <div className="grid grid-cols-2 gap-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg p-3 border border-emerald-200/50">
-                    <div>
-                      <p className="text-xs font-semibold text-emerald-700">NAME</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{childRecord.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-emerald-700">CVCC ID</p>
-                      <p className="text-sm font-mono font-bold text-slate-900 dark:text-white">
-                        {childProfile?.childId || childRecord.id || childId}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-emerald-700">DOB</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{new Date(childRecord.dateOfBirth).toLocaleDateString('en-GB')}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-emerald-700">GENDER</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{childRecord.gender}</p>
-                    </div>
-                  </div>
-
-                  {/* Vaccines - Compact List */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                      Vaccinations ({groupedSchedule.completed.length})
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {groupedSchedule.completed.map((vaccine) => (
-                        <div key={vaccine.id} className="flex items-start gap-2 p-2 rounded bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-200/50">
-                          <div className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-600 mt-1"></div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-slate-900 dark:text-white">{vaccine.vaccine}</p>
-                            <p className="text-xs text-slate-600 dark:text-slate-400">{vaccine.administeredDate || vaccine.scheduledDate}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Security Info - Compact */}
-                  <div className="bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200/50 space-y-2">
-                    <p className="text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1">
-                      <ShieldAlert className="h-3 w-3" />
-                      Security
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-blue-600">Serial</p>
-                        <p className="text-xs font-mono font-bold text-slate-900 dark:text-white truncate">{certificateContent.serialNumber}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-purple-600">Valid Until</p>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white">{certificateContent.expiryDate.toLocaleDateString('en-GB')}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Column - QR Code */}
-                <div className="flex flex-col items-center justify-start space-y-2">
-                  <div className="p-2 border-3 border-emerald-200 rounded-lg bg-white shadow-md">
-                    <QRCodeCanvas
-                      ref={certificateQRRef}
-                      value={`${typeof window !== 'undefined' ? window.location.origin : 'https://cvcc.example.com'}/verify?cert=${certificateContent.serialNumber}`}
-                      size={140}
-                      level="H"
-                      includeMargin={false}
-                    />
-                  </div>
-                  <div className="text-center space-y-0.5">
-                    <p className="text-xs font-bold text-emerald-700">SCAN TO</p>
-                    <p className="text-xs font-bold text-emerald-700">VERIFY</p>
-                    <p className="text-xs text-slate-600">CVCC Site</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="bg-gradient-to-r from-slate-900 to-slate-800 dark:from-slate-800 dark:to-slate-900 rounded-lg p-3 text-white text-center text-xs space-y-1 border border-slate-700 mt-4 flex-shrink-0">
-                <p className="font-semibold">OFFICIAL VACCINATION CERTIFICATE</p>
-                <p className="text-slate-300">Generated: {new Date().toLocaleDateString('en-GB')} | Valid for 1 Year</p>
-                <p className="text-emerald-300 font-semibold">🔒 Cryptographically Verified</p>
-              </div>
+            <div className="overflow-y-auto px-6 py-5 space-y-3">
+              {vaccineModalGroup.entries.map(renderVaccineEntry)}
             </div>
 
-            {/* Actions */}
-            <div className="border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-6 flex justify-end gap-3">
-              <Button variant="outline" onClick={handleDownloadCertificatePdf}>
-                <FileText className="h-4 w-4" />
-                Download PDF
-              </Button>
-              <Button variant="outline" onClick={() => {
-                setShowCertificateModal(false)
-                setCertificateCreated(false)
-              }}>
-                Close
-              </Button>
+            <div className="flex justify-end border-t border-border px-6 py-4">
+              <Button variant="outline" onClick={() => setVaccineModalGroup(null)}>Close</Button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
+
+      {/* ── AEFI Watchlist Modal ───────────────────────────────────────── */}
+      <Dialog open={aefiModalOpen} onOpenChange={setAefiModalOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Flame className="h-5 w-5 text-primary" /> AEFI watchlist — last 30 days
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {aefiReports.length} report{aefiReports.length !== 1 ? "s" : ""} on record for this child
+            </p>
+          </DialogHeader>
+
+          <div className="max-h-[480px] space-y-3 overflow-y-auto pr-1">
+            {aefiReports.map((report) => (
+              <div key={report.id} className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-foreground">
+                      {report.vaccineName}{report.doseNumber ? ` — Dose ${report.doseNumber}` : ""}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Onset: {formatDate(report.onsetDate)}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <Badge
+                      variant={report.severity === "severe" ? "destructive" : report.severity === "moderate" ? "secondary" : "outline"}
+                      className="capitalize"
+                    >
+                      {report.severity}
+                    </Badge>
+                    <Badge
+                      variant={report.status === "reported" || report.status === "escalated" ? "destructive" : report.status === "resolved" ? "default" : "secondary"}
+                    >
+                      {report.status === "under-review" ? "Under review" : report.status.charAt(0).toUpperCase() + report.status.slice(1)}
+                    </Badge>
+                  </div>
+                </div>
+
+                {report.symptoms.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Symptoms</p>
+                    <p className="mt-0.5 text-sm text-foreground">{report.symptoms.join(", ")}</p>
+                  </div>
+                )}
+
+                {report.notes ? (
+                  <div className="rounded-lg border border-border bg-background p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Nurse note</p>
+                    <p className="mt-1 text-sm leading-relaxed text-foreground">{report.notes}</p>
+                  </div>
+                ) : null}
+
+                {report.reportedBy ? (
+                  <p className="text-xs text-muted-foreground">Reported by: {report.reportedBy}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end border-t border-border pt-3">
+            <Button variant="outline" onClick={() => setAefiModalOpen(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }
@@ -2639,4 +2785,44 @@ function formatDate(dateString: string) {
     month: "short",
     year: "numeric",
   })
+}
+
+function formatDOB(dateString: string) {
+  if (!dateString) return "Pending"
+  const date = new Date(dateString + "T00:00:00")
+  if (Number.isNaN(date.getTime())) return "Pending"
+  const dd = String(date.getDate()).padStart(2, "0")
+  const mm = String(date.getMonth() + 1).padStart(2, "0")
+  const yy = String(date.getFullYear()).slice(-2)
+  return `${dd}-${mm}-${yy}`
+}
+
+function NotificationModal({
+  open,
+  title,
+  message,
+  onOpenChange,
+}: {
+  open: boolean
+  title: string
+  message: string
+  onOpenChange: (open: boolean) => void
+}) {
+  if (!message) {
+    return null
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{message}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="flex justify-end">
+          <AlertDialogAction>OK</AlertDialogAction>
+        </div>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
 }

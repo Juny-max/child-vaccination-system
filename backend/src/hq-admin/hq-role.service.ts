@@ -1,97 +1,104 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../common/database/database.service';
+import { v4 as uuidv4 } from 'uuid';
 
-/**
- * Roles in this system are fixed enums defined in the database schema.
- * Custom role creation/deletion is not supported.
- * This service exposes the role catalog and their associated permissions.
- */
 @Injectable()
 export class HqRoleService {
   constructor(private readonly db: DatabaseService) {}
 
   /**
-   * Get all system roles with their descriptions and permissions.
-   * Roles are enum-based in the schema — this returns the static catalog.
+   * Get all custom roles
    */
   async getRoles() {
-    return [
-      {
-        id: 'hq-admin',
-        name: 'HQ Admin',
-        description: 'National headquarters administrator with full system access',
-        permissions: [
-          'create_user', 'edit_user', 'delete_user',
-          'manage_branches', 'view_analytics', 'trigger_backup',
-          'manage_vaccines', 'export_data', 'view_audit_logs', 'manage_roles',
-        ],
-        isSystem: true,
-        createdAt: null,
-      },
-      {
-        id: 'branch-manager',
-        name: 'Branch Manager',
-        description: 'Manages branch-level operations, staff assignments, and reporting',
-        permissions: ['view_analytics', 'manage_branches', 'export_data'],
-        isSystem: true,
-        createdAt: null,
-      },
-      {
-        id: 'facility-nurse',
-        name: 'Facility Nurse',
-        description: 'Records vaccinations and manages child registrations at the facility',
-        permissions: ['manage_vaccines'],
-        isSystem: true,
-        createdAt: null,
-      },
-      {
-        id: 'chw',
-        name: 'Community Health Worker',
-        description: 'Door-to-door outreach and offline vaccination recording',
-        permissions: ['manage_vaccines'],
-        isSystem: true,
-        createdAt: null,
-      },
-      {
-        id: 'parent',
-        name: 'Parent / Guardian',
-        description: 'Views child vaccination records, certificates, and appointments',
-        permissions: [],
-        isSystem: true,
-        createdAt: null,
-      },
-    ];
+    try {
+      const { data: roles } = await this.db.supabase
+        .from('roles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      return (roles || []).map((role) => ({
+        id: role.id,
+        name: role.name,
+        description: role.description,
+        permissions: role.permissions || [],
+        createdAt: role.created_at,
+        isSystem: role.is_system || false,
+      }));
+    } catch (error) {
+      console.error('Failed to get roles:', error);
+      return [];
+    }
   }
 
   /**
-   * Custom role creation is not supported — roles are enum-based in the schema.
+   * Create a new custom role
    */
-  async createRole(_roleData: { name: string; description: string; permissions: string[] }, _user: any) {
-    throw new BadRequestException(
-      'Custom roles are not supported. This system uses predefined system roles.',
-    );
+  async createRole(roleData: { name: string; description: string; permissions: string[] }, user: any) {
+    try {
+      const roleId = uuidv4();
+
+      await this.db.supabase.from('roles').insert({
+        id: roleId,
+        name: roleData.name,
+        description: roleData.description,
+        permissions: roleData.permissions,
+        is_system: false,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+      });
+
+      // Log the action
+      await this.db.createAuditLog(user.id, 'insert', 'role', roleId, { after: { name: roleData.name } });
+
+      return { success: true, roleId, message: `Role "${roleData.name}" created` };
+    } catch (error) {
+      console.error('Failed to create role:', error);
+      throw error;
+    }
   }
 
   /**
-   * System roles cannot be modified.
+   * Update an existing role
    */
-  async updateRole(_id: string, _roleData: { name?: string; description?: string; permissions?: string[] }, _user: any) {
-    throw new BadRequestException(
-      'System roles cannot be modified.',
-    );
+  async updateRole(id: string, roleData: { name?: string; description?: string; permissions?: string[] }, user: any) {
+    try {
+      const updatePayload: any = {};
+      if (roleData.name) updatePayload.name = roleData.name;
+      if (roleData.description) updatePayload.description = roleData.description;
+      if (roleData.permissions) updatePayload.permissions = roleData.permissions;
+      updatePayload.updated_at = new Date().toISOString();
+
+      await this.db.supabase.from('roles').update(updatePayload).eq('id', id);
+
+      // Log the action
+      await this.db.createAuditLog(user.id, 'update', 'role', id, { after: updatePayload });
+
+      return { success: true, message: 'Role updated' };
+    } catch (error) {
+      console.error('Failed to update role:', error);
+      throw error;
+    }
   }
 
   /**
-   * System roles cannot be deleted.
+   * Delete a custom role
    */
-  async deleteRole(_id: string, _user: any) {
-    throw new BadRequestException(
-      'System roles cannot be deleted.',
-    );
+  async deleteRole(id: string, user: any) {
+    try {
+      await this.db.supabase.from('roles').delete().eq('id', id).eq('is_system', false);
+
+      // Log the action
+      await this.db.createAuditLog(user.id, 'delete', 'role', id);
+
+      return { success: true, message: 'Role deleted' };
+    } catch (error) {
+      console.error('Failed to delete role:', error);
+      throw error;
+    }
   }
 
   /**
-   * Get list of all available permissions
+   * Get all available permissions
    */
   async getAvailablePermissions() {
     return [
@@ -104,7 +111,7 @@ export class HqRoleService {
       { id: 'p7', permission: 'manage_vaccines', category: 'vaccines', description: 'Manage vaccine inventory' },
       { id: 'p8', permission: 'export_data', category: 'system', description: 'Export system data' },
       { id: 'p9', permission: 'view_audit_logs', category: 'system', description: 'View audit logs' },
-      { id: 'p10', permission: 'manage_roles', category: 'system', description: 'View role catalog' },
+      { id: 'p10', permission: 'manage_roles', category: 'system', description: 'Manage roles and permissions' },
     ];
   }
 }

@@ -2,7 +2,7 @@
 // Facility Nurse Module DTOs - Data Transfer Objects
 // ============================================================================
 
-import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsIn, IsInt, Min } from 'class-validator';
 
 // ============================================================================
 // ENUMS
@@ -34,6 +34,11 @@ export class AdministerVaccineDto {
   @IsString()
   @IsNotEmpty()
   vaccineName: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  doseNumber?: number;
 
   @IsString()
   @IsNotEmpty()
@@ -279,6 +284,8 @@ export class FacilityChildProfileDto {
   gender: string;
   weight: string | null;
   length: string | null;
+  placeOfBirth: string | null;
+  deliveryType: string | null;
   bloodType: string | null;
   profilePhoto: string | null;
 
@@ -402,7 +409,16 @@ export class UpdateGuardianDto {
 
   @IsString()
   @IsOptional()
-  preferredContact?: 'sms' | 'email' | 'whatsapp';
+  @IsIn(['sms', 'email'])
+  preferredContact?: 'sms' | 'email';
+
+  @IsString()
+  @IsOptional()
+  phoneOtpCode?: string;
+
+  @IsString()
+  @IsOptional()
+  phoneOtpToken?: string;
 }
 
 /**
@@ -418,7 +434,12 @@ export class GuardianDto {
   landmark: string | null;
   city: string;
   region: string;
-  preferredContact: 'sms' | 'email' | 'whatsapp';
+  preferredContact: 'sms' | 'email';
+  message?: string;
+  emailVerificationRequired?: boolean;
+  credentialsEmailSent?: boolean;
+  phoneOtpRequired?: boolean;
+  phoneOtpToken?: string;
 }
 
 /**
@@ -458,6 +479,28 @@ export class UrgentFollowUpDto {
   nhisNumber?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+}
+
+/**
+ * Missed appointment reminder response (for nurse follow-up)
+ */
+export class MissedAppointmentReminderDto {
+  id: string;
+  childId: string;
+  childName: string;
+  caregiver: string;
+  contact: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  vaccine: string;
+  daysSinceMissed: number;
+  status: string;
+
+  // Extended guardian contact info
+  guardianId?: string;
+  phoneAlternate?: string;
+  email?: string;
+  relationship?: string;
 }
 
 /**

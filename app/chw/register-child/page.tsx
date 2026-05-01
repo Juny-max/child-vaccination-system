@@ -10,6 +10,15 @@ import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { NetworkStatusIndicator } from "@/components/chw/network-status-indicator"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +29,7 @@ import { Label } from "@/components/ui/label"
 type RegistrationStep = 1 | 2
 
 type RegistrationForm = {
+  motherId?: string
   motherName: string
   motherPhone: string
   childName: string
@@ -30,6 +40,7 @@ type RegistrationForm = {
 }
 
 type MotherSuggestion = {
+  id: string
   name: string
   phone: string
 }
@@ -58,6 +69,8 @@ export default function ChwRegisterChildPage() {
   const [loadingMotherSuggestions, setLoadingMotherSuggestions] = useState(false)
   const [gpsStatus, setGpsStatus] = useState<"idle" | "locating" | "captured" | "error">("idle")
   const [gpsError, setGpsError] = useState<string | null>(null)
+  const [showErrorModal, setShowErrorModal] = useState(false)
+  const [errorModalMessage, setErrorModalMessage] = useState("")
 
   useEffect(() => {
     const legacyToken = localStorage.getItem("authToken")
@@ -107,6 +120,7 @@ export default function ChwRegisterChildPage() {
           results
             .filter((entry: ChwMotherSearchResult) => !!entry.name && !!entry.phone)
             .map((entry: ChwMotherSearchResult) => ({
+              id: entry.id,
               name: entry.name,
               phone: entry.phone,
             }))
@@ -202,7 +216,8 @@ export default function ChwRegisterChildPage() {
     setSaving(true)
 
     try {
-      await queueChwOfflineRegistration({
+      const result = await queueChwOfflineRegistration({
+        guardianId: form.motherId,
         motherName: form.motherName,
         motherPhone: form.motherPhone,
         childName: form.childName,
@@ -214,6 +229,10 @@ export default function ChwRegisterChildPage() {
         submittedAt: new Date().toISOString(),
       })
 
+      if (result.status !== "synced") {
+        throw new Error(result.errorMessage || "Registration could not be completed. Please review the mother phone number and try again.")
+      }
+
       setSystemMessage("Registration saved and queued to backend successfully.")
       setRegisteredChildName(form.childName)
       setForm(initialForm)
@@ -222,18 +241,17 @@ export default function ChwRegisterChildPage() {
       setRegistrationState("success")
     } catch (error) {
       console.error("Failed to queue registration", error)
-      setSystemMessage("Offline registration saved locally and will retry when connection improves.")
-      setRegisteredChildName(form.childName)
-      setForm(initialForm)
-      setStep(1)
-      setGpsStatus("idle")
-      setRegistrationState("success")
+      const errorMessage = error instanceof Error ? error.message : "Registration failed. Please try again."
+      setSystemMessage(null)
+      setErrorModalMessage(errorMessage)
+      setShowErrorModal(true)
     } finally {
       setSaving(false)
     }
   }
 
   const selectMotherSuggestion = (suggestion: MotherSuggestion) => {
+    updateForm("motherId", suggestion.id)
     updateForm("motherName", suggestion.name)
     updateForm("motherPhone", suggestion.phone)
     setMotherSuggestions([])
@@ -344,6 +362,7 @@ export default function ChwRegisterChildPage() {
                       id="mother-name"
                       value={form.motherName}
                       onChange={(event) => {
+                        updateForm("motherId", undefined)
                         updateForm("motherName", event.target.value)
                         setShowMotherSuggestions(true)
                       }}
@@ -387,7 +406,10 @@ export default function ChwRegisterChildPage() {
                     <Input
                       id="mother-phone"
                       value={form.motherPhone}
-                      onChange={(event) => updateForm("motherPhone", event.target.value)}
+                      onChange={(event) => {
+                        updateForm("motherId", undefined)
+                        updateForm("motherPhone", event.target.value)
+                      }}
                       placeholder="e.g. +23324 123 4567"
                       aria-invalid={errors.motherPhone ? "true" : undefined}
                     />
@@ -504,7 +526,7 @@ export default function ChwRegisterChildPage() {
                     </Button>
                     <Button type="submit" className="gap-2" disabled={saving}>
                       {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      Save locally
+                      {isOnline ? "Save" : "Save locally"}
                     </Button>
                   </div>
                 </div>
@@ -520,6 +542,18 @@ export default function ChwRegisterChildPage() {
           </AlertDescription>
         </Alert>
       </main>
+
+      <AlertDialog open={showErrorModal} onOpenChange={setShowErrorModal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Registration not saved</AlertDialogTitle>
+            <AlertDialogDescription>{errorModalMessage}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>OK</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

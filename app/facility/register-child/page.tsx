@@ -58,7 +58,12 @@ const initialState: ChildFormState = {
   notes: "",
 }
 
-function RegisterChildContent() {
+const MAX_CHILD_REGISTRATION_AGE_YEARS = 5
+
+const toDateOnly = (value: Date) =>
+  new Date(value.getFullYear(), value.getMonth(), value.getDate())
+
+export default function RegisterChildPage() {
   const GUARDIANS_PAGE_SIZE = 20
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -79,7 +84,12 @@ function RegisterChildContent() {
   const childDetailsRef = useRef<HTMLDivElement>(null)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [registeredChildId, setRegisteredChildId] = useState<string | null>(null)
-  const [isLoadingPrefilledMother, setIsLoadingPrefilledMother] = useState(false)
+  const maxDateOfBirth = useMemo(() => toDateOnly(new Date()), [])
+  const minDateOfBirth = useMemo(() => {
+    const minDate = new Date(maxDateOfBirth)
+    minDate.setFullYear(minDate.getFullYear() - MAX_CHILD_REGISTRATION_AGE_YEARS)
+    return minDate
+  }, [maxDateOfBirth])
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -238,6 +248,28 @@ function RegisterChildContent() {
     if (!formData.childName || !formData.dateOfBirth) {
       setSystemMessage("Child name and date of birth are required.")
       toast.error("Please fill in all required fields")
+      return
+    }
+
+    const parsedDateOfBirth = new Date(`${formData.dateOfBirth}T00:00:00`)
+    if (Number.isNaN(parsedDateOfBirth.getTime())) {
+      setSystemMessage("Invalid date of birth. Please pick a valid date.")
+      toast.error("Please choose a valid date of birth")
+      return
+    }
+
+    const normalizedDob = toDateOnly(parsedDateOfBirth)
+    if (normalizedDob > maxDateOfBirth) {
+      setSystemMessage("Date of birth cannot be in the future.")
+      toast.error("Date of birth cannot be in the future")
+      return
+    }
+
+    if (normalizedDob < minDateOfBirth) {
+      setSystemMessage(
+        `Only children aged ${MAX_CHILD_REGISTRATION_AGE_YEARS} years or below can be registered here.`,
+      )
+      toast.error(`Child age must be ${MAX_CHILD_REGISTRATION_AGE_YEARS} years or below`)
       return
     }
 
@@ -482,8 +514,14 @@ function RegisterChildContent() {
                       handleChange("dateOfBirth", `${year}-${month}-${day}`)
                     }}
                     placeholder="Select date of birth"
+                    minDate={minDateOfBirth}
+                    maxDate={maxDateOfBirth}
+                    fromYear={minDateOfBirth.getFullYear()}
                     toYear={new Date().getFullYear()}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Register children from birth to {MAX_CHILD_REGISTRATION_AGE_YEARS} years old.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="gender">Gender</Label>

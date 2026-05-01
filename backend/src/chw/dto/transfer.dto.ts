@@ -31,6 +31,21 @@ export class TransferInDto {
 }
 
 /**
+ * Transfer Pull DTO
+ * Used for the "Pull Mechanism" - forcefully pulling a child from another
+ * CHW's catchment area without waiting for them to transfer out
+ */
+export class TransferPullDto {
+  @IsUUID()
+  @IsNotEmpty()
+  childId: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string; // e.g., "Family moved to my area, pulling from old registration"
+}
+
+/**
  * Response for transfer operations
  */
 export class TransferResultDto {
@@ -41,4 +56,12 @@ export class TransferResultDto {
   previousCatchment?: string;
   newCatchment?: string;
   timestamp: string;
+}
+
+/**
+ * Response for pull transfer operations (includes wasPulled flag)
+ */
+export class TransferPullResultDto extends TransferResultDto {
+  wasPulled: boolean;
+  newCatchmentId?: string;
 }

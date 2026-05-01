@@ -43,6 +43,15 @@ export class HqSystemController {
   }
 
   /**
+   * GET /hq-admin/system/backup-config
+   * Get current backup schedule and retention settings
+   */
+  @Get('backup-config')
+  async getBackupConfig(@CurrentUser() user: any) {
+    return this.systemService.getBackupConfig();
+  }
+
+  /**
    * POST /hq-admin/system/backup-config
    * Configure backup schedule and retention policy
    */

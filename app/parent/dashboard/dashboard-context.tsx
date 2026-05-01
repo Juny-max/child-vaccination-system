@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import * as parentApi from "@/lib/api/parent"
 import * as authApi from "@/lib/api/auth"
 
@@ -36,6 +36,8 @@ export type ParentDashboardContextValue = {
   createAppointment: (data: parentApi.CreateAppointmentRequest) => Promise<parentApi.Appointment>
   cancelAppointment: (appointmentId: string, reason?: string) => Promise<void>
   updateMotherDetails: (data: parentApi.UpdateMotherDetailsRequest) => Promise<void>
+  requestEmailChangeVerification: (newEmail: string) => Promise<parentApi.RequestEmailChangeResponse>
+  verifyEmailChangeToken: (token: string) => Promise<parentApi.MotherDetails>
   retryFetch: () => Promise<void>
   logout: () => Promise<void>
 }
@@ -62,6 +64,8 @@ const defaultContext: ParentDashboardContextValue = {
   createAppointment: async () => ({} as parentApi.Appointment),
   cancelAppointment: async () => {},
   updateMotherDetails: async () => {},
+  requestEmailChangeVerification: async () => ({ success: false, message: '' }),
+  verifyEmailChangeToken: async () => ({} as parentApi.MotherDetails),
   retryFetch: async () => {},
   logout: async () => {},
 }
@@ -90,6 +94,9 @@ function getErrorMessage(err: unknown): string {
 
 export function ParentDashboardProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const emailChangeToken = searchParams.get('emailChangeToken')
   const [userName, setUserName] = useState("User")
   const [greeting, setGreeting] = useState("Welcome")
   const [isLoading, setIsLoading] = useState(true)
@@ -178,6 +185,16 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     setMotherDetails(updated)
   }, [])
 
+  const requestEmailChangeVerificationHandler = useCallback(async (newEmail: string) => {
+    return parentApi.requestEmailChangeVerification({ newEmail })
+  }, [])
+
+  const verifyEmailChangeTokenHandler = useCallback(async (token: string) => {
+    const updated = await parentApi.verifyEmailChangeToken(token)
+    setMotherDetails(updated)
+    return updated
+  }, [])
+
   // Logout
   const logoutHandler = useCallback(async () => {
     await authApi.logout()
@@ -235,8 +252,14 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const role = localStorage.getItem('userRole')
     const name = sessionStorage.getItem('userName') || localStorage.getItem('userName')
+    const allowEmailVerificationFlow =
+      pathname === '/parent/dashboard/mother-details' && Boolean(emailChangeToken)
 
     if (role !== 'parent') {
+      if (allowEmailVerificationFlow && emailChangeToken) {
+        router.replace(`/auth/login?emailChangeToken=${encodeURIComponent(emailChangeToken)}`)
+        return
+      }
       router.push('/dashboard')
       return
     }
@@ -247,7 +270,7 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     }
 
     fetchAllData()
-  }, [router, fetchAllData])
+  }, [router, fetchAllData, pathname, emailChangeToken])
 
   const value: ParentDashboardContextValue = {
     userName,
@@ -271,6 +294,8 @@ export function ParentDashboardProvider({ children }: { children: ReactNode }) {
     createAppointment: createAppointmentHandler,
     cancelAppointment: cancelAppointmentHandler,
     updateMotherDetails: updateMotherDetailsHandler,
+    requestEmailChangeVerification: requestEmailChangeVerificationHandler,
+    verifyEmailChangeToken: verifyEmailChangeTokenHandler,
     retryFetch,
     logout: logoutHandler,
   }

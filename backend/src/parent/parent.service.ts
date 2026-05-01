@@ -1,5 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { DatabaseService } from '../common/database/database.service';
+import { SmsService } from '../common/sms.service';
+import { EmailService } from '../common/email.service';
 import {
   ChildProfileDto,
   VaccinationRecordDto,
@@ -12,6 +20,8 @@ import {
   ParentDashboardDto,
   ChildSummaryDto,
   UpdateMotherDetailsDto,
+  RequestEmailChangeDto,
+  VerifyEmailChangeDto,
   CreateAppointmentDto,
   VaccinationStatus,
   CertificateCompletionStatus,
@@ -19,7 +29,19 @@ import {
 
 @Injectable()
 export class ParentService {
-  constructor(private readonly db: DatabaseService) {}
+  private readonly appointmentRetentionDays = 30;
+  private readonly appointmentNoShowGraceMinutes = 120;
+  private readonly emailChangeTokenSecret =
+    process.env.EMAIL_CHANGE_TOKEN_SECRET ||
+    process.env.JWT_SECRET ||
+    'cvcc-email-change-secret';
+  private readonly emailChangeTokenTtlMs = 30 * 60 * 1000;
+
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly smsService: SmsService,
+    private readonly emailService: EmailService,
+  ) {}
 
   // =========================================================================
   // HELPER FUNCTIONS
@@ -127,6 +149,276 @@ export class ParentService {
     return contacts;
   }
 
+  private encodeBase64Url(input: string): string {
+    return Buffer.from(input, 'utf8').toString('base64url');
+  }
+
+  private decodeBase64Url(input: string): string {
+    return Buffer.from(input, 'base64url').toString('utf8');
+  }
+
+  private signEmailChangePayload(encodedPayload: string): string {
+    return createHmac('sha256', this.emailChangeTokenSecret)
+      .update(encodedPayload)
+      .digest('base64url');
+  }
+
+  private createEmailChangeToken(payload: {
+    userId: string;
+    guardianId: string;
+    newEmail: string;
+    currentEmail: string | null;
+    exp: number;
+    nonce: string;
+  }): string {
+    const encodedPayload = this.encodeBase64Url(JSON.stringify(payload));
+    const signature = this.signEmailChangePayload(encodedPayload);
+    return `${encodedPayload}.${signature}`;
+  }
+
+  private verifyEmailChangeToken(token: string): {
+    userId: string;
+    guardianId: string;
+    newEmail: string;
+    currentEmail: string | null;
+    exp: number;
+    nonce: string;
+  } {
+    const [encodedPayload, providedSignature] = token.split('.');
+
+    if (!encodedPayload || !providedSignature) {
+      throw new BadRequestException('Invalid verification token format.');
+    }
+
+    const expectedSignature = this.signEmailChangePayload(encodedPayload);
+    const providedSignatureBuffer = Buffer.from(providedSignature, 'utf8');
+    const expectedSignatureBuffer = Buffer.from(expectedSignature, 'utf8');
+
+    if (
+      providedSignatureBuffer.length !== expectedSignatureBuffer.length ||
+      !timingSafeEqual(providedSignatureBuffer, expectedSignatureBuffer)
+    ) {
+      throw new BadRequestException('Invalid verification token signature.');
+    }
+
+    let payload: {
+      userId: string;
+      guardianId: string;
+      newEmail: string;
+      currentEmail: string | null;
+      exp: number;
+      nonce: string;
+    };
+
+    try {
+      payload = JSON.parse(this.decodeBase64Url(encodedPayload));
+    } catch {
+      throw new BadRequestException('Invalid verification token payload.');
+    }
+
+    if (
+      !payload?.userId ||
+      !payload?.guardianId ||
+      !payload?.newEmail ||
+      typeof payload?.exp !== 'number'
+    ) {
+      throw new BadRequestException('Malformed verification token.');
+    }
+
+    if (Date.now() > payload.exp) {
+      throw new BadRequestException('Verification link has expired. Please request a new one.');
+    }
+
+    return payload;
+  }
+
+  /**
+   * Remove cancelled/completed appointments older than retention window.
+   */
+  private async cleanupExpiredAppointments(guardianId: string): Promise<void> {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - this.appointmentRetentionDays);
+
+    const year = cutoff.getFullYear();
+    const month = String(cutoff.getMonth() + 1).padStart(2, '0');
+    const day = String(cutoff.getDate()).padStart(2, '0');
+    const cutoffDate = `${year}-${month}-${day}`;
+
+    const { error } = await this.db.supabase
+      .from('appointments')
+      .delete()
+      .eq('guardian_id', guardianId)
+      .in('status', ['cancelled', 'completed'])
+      .lte('scheduled_date', cutoffDate);
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  private parseAppointmentContactPhone(notes: string | null | undefined): string | null {
+    if (!notes) return null;
+    const match = notes.match(/\[CONTACT_PHONE:([^\]]+)\]/i);
+    return match?.[1]?.trim() || null;
+  }
+
+  private async getGuardianPhoneById(guardianId: string | null | undefined): Promise<string | null> {
+    if (!guardianId) return null;
+
+    const { data, error } = await this.db.supabase
+      .from('guardians')
+      .select('phone_primary')
+      .eq('id', guardianId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`Failed to fetch guardian phone for ${guardianId}:`, error);
+      return null;
+    }
+
+    return data?.phone_primary || null;
+  }
+
+  private async getChildNameById(childId: string | null | undefined): Promise<string> {
+    if (!childId) return 'your child';
+
+    const { data, error } = await this.db.supabase
+      .from('children')
+      .select('full_name')
+      .eq('id', childId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`Failed to fetch child name for ${childId}:`, error);
+      return 'your child';
+    }
+
+    return data?.full_name || 'your child';
+  }
+
+  private getAppointmentMissDeadline(
+    scheduledDate: string,
+    scheduledTime?: string | null,
+  ): Date | null {
+    if (!scheduledDate) return null;
+
+    const [yearRaw, monthRaw, dayRaw] = scheduledDate.split('-');
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+
+    if ([year, month, day].some((value) => Number.isNaN(value))) {
+      return null;
+    }
+
+    let hour = 23;
+    let minute = 59;
+
+    if (scheduledTime && scheduledTime !== 'TBD') {
+      const [hourRaw, minuteRaw] = scheduledTime.split(':');
+      const parsedHour = Number(hourRaw);
+      const parsedMinute = Number(minuteRaw);
+
+      if (!Number.isNaN(parsedHour) && !Number.isNaN(parsedMinute)) {
+        hour = parsedHour;
+        minute = parsedMinute;
+      }
+    }
+
+    const deadlineUtcMs =
+      Date.UTC(year, month - 1, day, hour, minute, 0) +
+      this.appointmentNoShowGraceMinutes * 60 * 1000;
+
+    return new Date(deadlineUtcMs);
+  }
+
+  private async markOverdueAppointmentsAsMissed(guardianId: string): Promise<void> {
+    const todayUtc = new Date().toISOString().slice(0, 10);
+
+    const { data: candidates, error } = await this.db.supabase
+      .from('appointments')
+      .select(`
+        id,
+        child_id,
+        guardian_id,
+        scheduled_date,
+        scheduled_time,
+        status,
+        notes
+      `)
+      .eq('guardian_id', guardianId)
+      .in('status', ['scheduled', 'confirmed'])
+      .lte('scheduled_date', todayUtc);
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    const now = new Date();
+    for (const appointment of (candidates || []) as any[]) {
+      const deadline = this.getAppointmentMissDeadline(
+        appointment.scheduled_date,
+        appointment.scheduled_time,
+      );
+
+      if (!deadline || now <= deadline) {
+        continue;
+      }
+
+      const autoMissedTag = `[AUTO_MISSED:${new Date().toISOString()}]`;
+      const updatedNotes = appointment.notes
+        ? `${appointment.notes}\n${autoMissedTag}`
+        : autoMissedTag;
+
+      const { data: updatedAppointment, error: updateError } = await this.db.supabase
+        .from('appointments')
+        .update({
+          status: 'missed',
+          notes: updatedNotes,
+        })
+        .eq('id', appointment.id)
+        .in('status', ['scheduled', 'confirmed'])
+        .select('id')
+        .maybeSingle();
+
+      if (updateError) {
+        console.error(
+          `Failed to auto-mark appointment ${appointment.id} as missed:`,
+          updateError,
+        );
+        continue;
+      }
+
+      if (!updatedAppointment) {
+        continue;
+      }
+
+      const contactPhone = this.parseAppointmentContactPhone(appointment.notes);
+      const guardianPhone = await this.getGuardianPhoneById(appointment.guardian_id);
+      const smsTargetPhone = contactPhone || guardianPhone;
+
+      if (!smsTargetPhone) {
+        continue;
+      }
+
+      const childName = await this.getChildNameById(appointment.child_id);
+      const timeLabel = appointment.scheduled_time
+        ? ` at ${String(appointment.scheduled_time).slice(0, 5)}`
+        : '';
+      const smsMessage = `CVCC: Your appointment for ${childName} on ${appointment.scheduled_date}${timeLabel} was marked as MISSED because attendance was not recorded. Please rebook from your dashboard or contact your facility.`;
+
+      try {
+        await this.smsService.sendSms(smsTargetPhone, smsMessage);
+      } catch (smsError) {
+        console.error(
+          `Failed to send missed appointment SMS for appointment ${appointment.id}:`,
+          smsError,
+        );
+      }
+    }
+  }
+
   // =========================================================================
   // GUARDIAN (MOTHER) METHODS
   // =========================================================================
@@ -193,7 +485,8 @@ export class ParentService {
         full_name: updates.name || guardian.full_name,
         phone_primary: updates.primaryPhone || guardian.phone_primary,
         phone_alternate: updates.secondaryPhone,
-        email: updates.email,
+        // Email updates are applied only through the verified email-change flow.
+        email: guardian.email,
         address_line1: updates.addressLine1 || guardian.address_line1,
         landmark: updates.landmark,
         city: updates.city || guardian.city,
@@ -214,6 +507,172 @@ export class ParentService {
       guardian.id,
       { before: guardian, after: updates },
     );
+
+    return this.getGuardianProfile(userId);
+  }
+
+  async requestGuardianEmailChange(
+    userId: string,
+    request: RequestEmailChangeDto,
+    baseUrl?: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const guardian = await this.db.getGuardianByUserId(userId);
+
+    if (!guardian) {
+      throw new NotFoundException('Guardian profile not found');
+    }
+
+    const newEmail = request.newEmail.trim().toLowerCase();
+    const currentEmail = guardian.email ? String(guardian.email).trim().toLowerCase() : null;
+
+    if (currentEmail && newEmail === currentEmail) {
+      throw new BadRequestException('This is already your current email address.');
+    }
+
+    const existingUser = await this.db.getUserByEmail(newEmail);
+    if (existingUser && existingUser.id !== guardian.user_id) {
+      throw new ConflictException('This email is already in use by another account.');
+    }
+
+    const verificationToken = this.createEmailChangeToken({
+      userId,
+      guardianId: guardian.id,
+      newEmail,
+      currentEmail,
+      exp: Date.now() + this.emailChangeTokenTtlMs,
+      nonce: randomBytes(12).toString('hex'),
+    });
+
+    const frontendUrl = baseUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const verificationLink = `${frontendUrl}/parent/dashboard/mother-details?emailChangeToken=${encodeURIComponent(verificationToken)}`;
+    const recipientName = guardian.full_name || 'Parent';
+
+    const emailSent = await this.emailService.sendEmailChangeVerificationEmail(
+      { email: newEmail, name: recipientName },
+      verificationLink,
+    );
+
+    if (!emailSent) {
+      throw new BadRequestException(
+        'Unable to send verification email right now. Please try again shortly.',
+      );
+    }
+
+    await this.db.createAuditLog(userId, 'update', 'guardians', guardian.id, {
+      after: {
+        event: 'email_change_requested',
+        previousEmail: currentEmail,
+        requestedEmail: newEmail,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Verification link sent to ${newEmail}. Please verify before the email is updated.`,
+    };
+  }
+
+  async verifyGuardianEmailChange(
+    userId: string,
+    request: VerifyEmailChangeDto,
+  ): Promise<MotherDetailsDto> {
+    const guardian = await this.db.getGuardianByUserId(userId);
+
+    if (!guardian) {
+      throw new NotFoundException('Guardian profile not found');
+    }
+
+    const payload = this.verifyEmailChangeToken(request.token.trim());
+
+    if (payload.userId !== userId || payload.guardianId !== guardian.id) {
+      throw new BadRequestException('This verification link does not match your account.');
+    }
+
+    return this.applyVerifiedEmailChange(guardian, userId, payload);
+  }
+
+  async verifyGuardianEmailChangeByToken(
+    request: VerifyEmailChangeDto,
+  ): Promise<MotherDetailsDto> {
+    const payload = this.verifyEmailChangeToken(request.token.trim());
+    const guardian = await this.db.getGuardianByUserId(payload.userId);
+
+    if (!guardian || guardian.id !== payload.guardianId) {
+      throw new BadRequestException('This verification link is invalid or no longer available.');
+    }
+
+    return this.applyVerifiedEmailChange(guardian, payload.userId, payload);
+  }
+
+  private async applyVerifiedEmailChange(
+    guardian: any,
+    userId: string,
+    payload: {
+      userId: string;
+      guardianId: string;
+      newEmail: string;
+      currentEmail: string | null;
+      exp: number;
+      nonce: string;
+    },
+  ): Promise<MotherDetailsDto> {
+
+    const normalizedCurrentEmail = guardian.email
+      ? String(guardian.email).trim().toLowerCase()
+      : null;
+
+    if (payload.currentEmail !== normalizedCurrentEmail) {
+      throw new BadRequestException(
+        'This verification link is no longer valid. Please request a new email change.',
+      );
+    }
+
+    const newEmail = payload.newEmail.trim().toLowerCase();
+    const existingUser = await this.db.getUserByEmail(newEmail);
+
+    if (existingUser && existingUser.id !== guardian.user_id) {
+      throw new ConflictException('This email is already in use by another account.');
+    }
+
+    const client = this.db.supabase;
+
+    const { error: guardianUpdateError } = await client
+      .from('guardians')
+      .update({ email: newEmail })
+      .eq('id', guardian.id);
+
+    if (guardianUpdateError) {
+      throw new BadRequestException(
+        `Failed to update guardian email: ${guardianUpdateError.message}`,
+      );
+    }
+
+    if (guardian.user_id) {
+      const { error: userUpdateError } = await client
+        .from('users')
+        .update({
+          email: newEmail,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', guardian.user_id);
+
+      if (userUpdateError) {
+        if (userUpdateError.code === '23505') {
+          throw new ConflictException('This email is already in use by another account.');
+        }
+        throw new BadRequestException(
+          `Failed to update account email: ${userUpdateError.message}`,
+        );
+      }
+    }
+
+    await this.db.createAuditLog(userId, 'update', 'guardians', guardian.id, {
+      before: { email: normalizedCurrentEmail },
+      after: {
+        event: 'email_change_verified',
+        email: newEmail,
+      },
+    });
 
     return this.getGuardianProfile(userId);
   }
@@ -239,6 +698,7 @@ export class ParentService {
       return {
         id: child.id,
         childId: child.cvcc_id,  // CVCC ID for display (e.g., CHILD-001)
+        qrPayload: child.qr_code_payload,
         name: child.full_name,
         dateOfBirth: child.date_of_birth,
         age: this.calculateAge(child.date_of_birth),
@@ -403,7 +863,7 @@ export class ParentService {
           completionStatus: vaccinationStatus.isComplete
             ? CertificateCompletionStatus.COMPLETE
             : CertificateCompletionStatus.PARTIAL,
-          qrPayload: `${child.childId}|${child.name}`,
+          qrPayload: child.qrPayload || `TEMP-${child.childId}`,
           vaccinesCompleted: vaccinationStatus.completedVaccines,
           lastVerified: null,
           pdfUrl: null,
@@ -468,6 +928,21 @@ export class ParentService {
 
     if (!guardian) {
       throw new NotFoundException('Guardian profile not found');
+    }
+
+    try {
+      await this.markOverdueAppointmentsAsMissed(guardian.id);
+    } catch (missedMarkError) {
+      console.error(
+        'Failed to auto-mark overdue parent appointments as missed:',
+        missedMarkError,
+      );
+    }
+
+    try {
+      await this.cleanupExpiredAppointments(guardian.id);
+    } catch (cleanupError) {
+      console.error('Failed to cleanup expired parent appointments:', cleanupError);
     }
 
     const appointments = await this.db.getAppointments(guardian.id);

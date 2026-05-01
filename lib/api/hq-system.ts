@@ -65,6 +65,13 @@ export async function getBackupHistory(): Promise<BackupRecord[]> {
 }
 
 /**
+ * Get current backup configuration
+ */
+export async function getBackupConfig(): Promise<{ frequency: 'daily' | 'weekly' | 'monthly'; retentionDays: number }> {
+  return apiRequest('/hq-admin/system/backup-config');
+}
+
+/**
  * Configure backup schedule and retention policy
  */
 export async function configureBackup(config: BackupConfig) {

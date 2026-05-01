@@ -25,12 +25,34 @@ export class BackupController {
     const user = req['user'] as { id: string; email: string };
 
     try {
-      const latest = this.backupService.getLatestBackup();
+      let latest = this.backupService.getLatestBackup();
+
+      if (!latest) {
+        try {
+          const filepath = await this.backupService.createBackup();
+          await this.databaseService.createAuditLog(
+            user.id,
+            'export',
+            'backup',
+            null,
+            { after: { action: 'backup_created_on_download', filepath } },
+          );
+          latest = this.backupService.getLatestBackup();
+        } catch (error: any) {
+          const message = error?.message || 'Failed to create backup';
+          const statusCode = message.includes('Invalid encryption key') ? 400 : 500;
+
+          return res.status(statusCode).json({
+            success: false,
+            message,
+          });
+        }
+      }
 
       if (!latest) {
         return res.status(404).json({
           success: false,
-          message: 'No encrypted backups found',
+          message: 'No encrypted backups found after creation',
         });
       }
 
@@ -68,6 +90,28 @@ export class BackupController {
         message: 'Failed to retrieve backup',
         error: error.message,
       });
+    }
+  }
+
+  /**
+   * Get status of the latest backup
+   * Restricted to HQ Admin only
+   */
+  @Get('status')
+  async getBackupStatus(@Res() res: Response) {
+    try {
+      const latest = this.backupService.getLatestBackup();
+      if (!latest) {
+        return res.json({ hasBackup: false, lastBackupAt: null, filename: null });
+      }
+      const stat = fs.statSync(latest.path);
+      return res.json({
+        hasBackup: true,
+        lastBackupAt: stat.mtime.toISOString(),
+        filename: latest.filename,
+      });
+    } catch (error: any) {
+      return res.status(500).json({ hasBackup: false, lastBackupAt: null, filename: null });
     }
   }
 

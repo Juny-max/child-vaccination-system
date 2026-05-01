@@ -2,19 +2,23 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
-import Link from "next/link"
-import { Baby, CalendarDays, ClipboardList, Loader2, QrCode, Stethoscope, Users, X } from "lucide-react"
+import { Baby, CalendarDays, ClipboardList, Loader2, QrCode, Stethoscope, Users, X, ArrowDownToLine } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useParentDashboard } from "../dashboard-context"
+import type { VaccinationRecord } from "@/lib/api/parent"
 
 export default function ChildDetailsPage() {
   const { children, isLoading, getChildVaccinations } = useParentDashboard()
   const [activeChildId, setActiveChildId] = useState<string>("")
-  const [vaccinations, setVaccinations] = useState<any[]>([])
+  const [vaccinations, setVaccinations] = useState<VaccinationRecord[]>([])
+  const [allVaccinations, setAllVaccinations] = useState<VaccinationRecord[]>([])
   const [isLoadingVaccinations, setIsLoadingVaccinations] = useState(false)
+  const [historyModalOpen, setHistoryModalOpen] = useState(false)
+  const [isExportingHistoryPdf, setIsExportingHistoryPdf] = useState(false)
   
   // Set active child when data loads
   useEffect(() => {
@@ -35,9 +39,12 @@ export default function ChildDetailsPage() {
       setIsLoadingVaccinations(true)
       try {
         const data = await getChildVaccinations(activeChild.id)
+        setAllVaccinations(data)
         setVaccinations(data.slice(0, 5)) // Get latest 5 vaccinations for journal
       } catch (error) {
         console.error('Failed to load vaccinations:', error)
+        setAllVaccinations([])
+        setVaccinations([])
       } finally {
         setIsLoadingVaccinations(false)
       }
@@ -52,13 +59,92 @@ export default function ChildDetailsPage() {
 
   const qrPayload = useMemo(() => {
     if (!activeChild) return ""
-    return JSON.stringify({
-      type: "cvcc-child",
-      id: activeChild.childId || activeChild.id,
-      name: activeChild.name,
-      dob: activeChild.dateOfBirth,
-    })
+    return activeChild.qrPayload || ""
   }, [activeChild])
+
+  const fullHistory = useMemo(() => {
+    return [...allVaccinations].sort((a, b) => {
+      const da = new Date(a.administeredDate).getTime()
+      const db = new Date(b.administeredDate).getTime()
+      return db - da
+    })
+  }, [allVaccinations])
+
+  const handleOpenHistoryModal = () => {
+    setHistoryModalOpen(true)
+  }
+
+  const handleExportHistoryPdf = async () => {
+    if (!activeChild || fullHistory.length === 0) return
+
+    setIsExportingHistoryPdf(true)
+    try {
+      const { jsPDF } = await import("jspdf")
+      const doc = new jsPDF({ unit: "pt", format: "a4" })
+
+      const marginX = 48
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      let cursorY = 56
+
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(18)
+      doc.text("Child Vaccination History", marginX, cursorY)
+      cursorY += 22
+
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(11)
+      doc.text(`Child: ${activeChild.name}`, marginX, cursorY)
+      cursorY += 16
+      doc.text(`Child ID: ${activeChild.childId || activeChild.id}`, marginX, cursorY)
+      cursorY += 16
+      doc.text(`Exported: ${new Date().toLocaleString()}`, marginX, cursorY)
+      cursorY += 22
+
+      doc.setDrawColor(220)
+      doc.line(marginX, cursorY, pageWidth - marginX, cursorY)
+      cursorY += 16
+
+      for (const record of fullHistory) {
+        const entryLines = [
+          `${record.vaccine} (Dose ${record.doseNumber})`,
+          `Date: ${formatDate(record.administeredDate)}   Status: ${record.status}`,
+          `Facility: ${record.facilityName}`,
+          record.batchNumber ? `Batch: ${record.batchNumber}` : "",
+          record.administeredBy ? `Administered by: ${record.administeredBy}` : "",
+          record.nextDoseDate ? `Next dose date: ${formatDate(record.nextDoseDate)}` : "",
+          record.sideEffects ? `Side effects: ${record.sideEffects}` : "",
+        ].filter(Boolean)
+
+        const wrapped = entryLines.flatMap((line) => doc.splitTextToSize(line, pageWidth - marginX * 2)) as string[]
+        const blockHeight = wrapped.length * 14 + 8
+
+        if (cursorY + blockHeight > pageHeight - 48) {
+          doc.addPage()
+          cursorY = 56
+        }
+
+        doc.setFont("helvetica", "bold")
+        doc.text(wrapped[0], marginX, cursorY)
+        cursorY += 14
+        doc.setFont("helvetica", "normal")
+
+        for (const line of wrapped.slice(1)) {
+          doc.text(line, marginX, cursorY)
+          cursorY += 14
+        }
+
+        cursorY += 8
+      }
+
+      const fileSafeName = activeChild.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "child"
+      doc.save(`${fileSafeName}-vaccination-history.pdf`)
+    } catch (error) {
+      console.error("Failed to export vaccination history PDF", error)
+    } finally {
+      setIsExportingHistoryPdf(false)
+    }
+  }
 
   const openQrOverlay = () => {
     if (!activeChild) return
@@ -224,11 +310,9 @@ export default function ChildDetailsPage() {
             ) : (
               <p className="py-4 text-muted-foreground">No vaccination records yet.</p>
             )}
-            <Button asChild variant="outline" className="gap-2">
-              <Link href="/parent/dashboard/vaccination-status">
-                View full vaccination history
-                <CalendarDays className="size-4" />
-              </Link>
+            <Button variant="outline" className="gap-2" onClick={handleOpenHistoryModal}>
+              View full vaccination history
+              <CalendarDays className="size-4" />
             </Button>
           </CardContent>
         </Card>
@@ -280,6 +364,55 @@ export default function ChildDetailsPage() {
           </div>
         </div>
       ) : null}
+
+      <Dialog open={historyModalOpen} onOpenChange={setHistoryModalOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <ClipboardList className="size-5" /> Full vaccination history
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {activeChild?.name || "Selected child"} · Child ID: {activeChild?.childId || activeChild?.id || "N/A"}
+            </p>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-1">
+            {isLoadingVaccinations ? (
+              <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Loading full history...
+              </div>
+            ) : fullHistory.length > 0 ? (
+              fullHistory.map((record) => (
+                <div key={record.id} className="rounded-lg border border-border bg-background p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">{record.vaccine} · Dose {record.doseNumber}</p>
+                    <Badge variant={record.status === "Completed" ? "secondary" : record.status === "Missed" ? "destructive" : "outline"}>
+                      {record.status}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatDate(record.administeredDate)} · {record.facilityName}</p>
+                  {record.administeredBy ? <p className="mt-1 text-xs text-muted-foreground">By: {record.administeredBy}</p> : null}
+                  {record.nextDoseDate ? <p className="mt-1 text-xs text-muted-foreground">Next dose: {formatDate(record.nextDoseDate)}</p> : null}
+                  {record.batchNumber ? <p className="mt-1 text-xs text-muted-foreground">Batch: {record.batchNumber}</p> : null}
+                  {record.sideEffects ? <p className="mt-1 text-xs text-muted-foreground">Side effects: {record.sideEffects}</p> : null}
+                </div>
+              ))
+            ) : (
+              <p className="py-4 text-sm text-muted-foreground">No vaccination records available for this child yet.</p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setHistoryModalOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={handleExportHistoryPdf} disabled={isLoadingVaccinations || fullHistory.length === 0 || isExportingHistoryPdf} className="gap-2">
+              {isExportingHistoryPdf ? <Loader2 className="size-4 animate-spin" /> : <ArrowDownToLine className="size-4" />}
+              {isExportingHistoryPdf ? "Exporting PDF..." : "Export as PDF"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

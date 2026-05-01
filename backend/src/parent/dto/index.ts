@@ -58,6 +58,7 @@ export enum AppointmentStatus {
 export class ChildProfileDto {
   id: string;
   childId: string;  // CVCC ID for display (e.g., CHILD-001)
+  qrPayload?: string;
   name: string;
   dateOfBirth: string;
   age: string;
@@ -287,6 +288,24 @@ export class UpdateMotherDetailsDto {
   @ValidateNested({ each: true })
   @Type(() => EmergencyContactRequestDto)
   emergencyContacts?: EmergencyContactRequestDto[];
+}
+
+/**
+ * Request verification link for changing guardian email
+ */
+export class RequestEmailChangeDto {
+  @IsEmail()
+  newEmail: string;
+}
+
+/**
+ * Verify guardian email change token
+ */
+export class VerifyEmailChangeDto {
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(32)
+  token: string;
 }
 
 /**

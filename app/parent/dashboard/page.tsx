@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useParentDashboard } from "./dashboard-context"
 import type { Certificate } from "@/lib/api/parent"
-import { AlertTriangle, Award, CalendarDays, ChevronRight, Clock3, FileDown, QrCode, MessageCircle, Sparkles, Syringe } from "lucide-react"
+import { AlertTriangle, Award, CalendarDays, ChevronRight, Clock3, FileDown, QrCode, Syringe } from "lucide-react"
 import { generateCertificatePdf } from "@/lib/certificate-pdf"
 
 function toAppointmentDateTime(date: string, time?: string): Date {
@@ -39,16 +39,19 @@ function formatAppointmentTime(time?: string): string {
   return `${displayHour}:${minutesRaw} ${ampm}`
 }
 
+function getIssuedDateTimestamp(issuedDate?: string): number | null {
+  if (!issuedDate) return null
+  const normalized = issuedDate.trim().toLowerCase()
+  if (!normalized || normalized === "not issued yet" || normalized === "n/a") return null
+  const timestamp = new Date(issuedDate).getTime()
+  return Number.isNaN(timestamp) ? null : timestamp
+}
+
 export default function ParentDashboardOverview() {
   const { userName, dashboard, appointments, certificates, missedVaccinations } = useParentDashboard()
 
-  // Calculate stats from dashboard data
+  // Core dashboard data for overview cards
   const childrenData = dashboard?.children || []
-  const totalCompleted = childrenData.reduce((sum, child) => sum + child.vaccinationProgress.completed, 0)
-  const totalVaccines = childrenData.reduce((sum, child) => sum + child.vaccinationProgress.total, 0)
-  const upcomingCount = childrenData.filter((child) => child.nextVaccination).length
-  const onTrackCount = childrenData.filter((child) => !child.hasMissedVaccinations && child.vaccinationProgress.percentage > 0).length
-  const completionPercentage = totalVaccines ? Math.round((totalCompleted / totalVaccines) * 100) : 0
 
   const nextAppointment = useMemo(() => {
     const activeAppointments = appointments.filter((appointment) =>
@@ -62,10 +65,25 @@ export default function ParentDashboardOverview() {
     })[0]
   }, [appointments])
 
+  const latestMissedAppointment = useMemo(() => {
+    const missedAppointments = appointments.filter((appointment) => appointment.status === "missed")
+
+    return missedAppointments.sort((first, second) => {
+      const firstDate = toAppointmentDateTime(first.scheduledDate, first.scheduledTime).getTime()
+      const secondDate = toAppointmentDateTime(second.scheduledDate, second.scheduledTime).getTime()
+      return secondDate - firstDate
+    })[0]
+  }, [appointments])
+
   const nextAppointmentChild = useMemo(() => {
     if (!nextAppointment) return null
     return childrenData.find((child) => child.id === nextAppointment.childId) ?? null
   }, [childrenData, nextAppointment])
+
+  const latestMissedAppointmentChild = useMemo(() => {
+    if (!latestMissedAppointment) return null
+    return childrenData.find((child) => child.id === latestMissedAppointment.childId) ?? null
+  }, [childrenData, latestMissedAppointment])
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -74,7 +92,20 @@ export default function ParentDashboardOverview() {
   const completedCertificates = useMemo(() => {
     return [...certificates]
       .filter((record) => record.completionStatus === "Complete")
-      .sort((a, b) => new Date(b.issuedDate || 0).getTime() - new Date(a.issuedDate || 0).getTime())
+      .sort((a, b) => {
+        const aIssuedAt = getIssuedDateTimestamp(a.issuedDate)
+        const bIssuedAt = getIssuedDateTimestamp(b.issuedDate)
+
+        // Always prioritize certificates with real issued dates over placeholders.
+        if (aIssuedAt === null && bIssuedAt !== null) return 1
+        if (aIssuedAt !== null && bIssuedAt === null) return -1
+
+        if (aIssuedAt !== null && bIssuedAt !== null) {
+          return bIssuedAt - aIssuedAt
+        }
+
+        return b.certificateId.localeCompare(a.certificateId)
+      })
   }, [certificates])
 
   const latestCertificate = completedCertificates[0]
@@ -140,30 +171,151 @@ export default function ParentDashboardOverview() {
   return (
     <div className="space-y-6 lg:space-y-8">
       <section>
-        <Card className="border-primary/20 bg-gradient-to-r from-primary/10 via-secondary/10 to-muted">
-          <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <Badge variant="secondary" className="mb-3 inline-flex items-center gap-1">
-                <Sparkles className="size-3" /> Personalized overview
-              </Badge>
-              <CardTitle className="text-2xl lg:text-3xl">Hello {userName}, here&apos;s your child&apos;s progress</CardTitle>
-              <CardDescription className="mt-2 text-base">
-                Keep track of completed vaccinations, upcoming appointments, and areas that need your attention.
-              </CardDescription>
-            </div>
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <OverviewStat label="Completed" value={totalCompleted} />
-              <OverviewStat label="On track" value={onTrackCount} />
-              <OverviewStat label="Upcoming" value={upcomingCount} />
-            </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <CalendarDays className="size-5" /> Next appointment
+            </CardTitle>
+            <CardDescription>Stay prepared for the next visit and track missed visits.</CardDescription>
           </CardHeader>
-          <CardContent className="pt-0">
-            <div className="rounded-md bg-background/80 p-4 text-sm text-muted-foreground">
-              <p>
-                Your child has completed <span className="font-semibold text-foreground">{completionPercentage}%</span> of the
-                recommended vaccine schedule. Review the full timeline or schedule make-up visits any time.
-              </p>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-foreground">Next</p>
+                {nextAppointment ? (
+                  <Badge variant={nextAppointment.status === "confirmed" ? "default" : "secondary"}>
+                    {nextAppointment.status === "confirmed" ? "Confirmed" : "Pending review"}
+                  </Badge>
+                ) : null}
+              </div>
+              {nextAppointment ? (
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Scheduled for</p>
+                  <h3 className="text-lg font-semibold">{formatAppointmentDate(nextAppointment.scheduledDate)}</h3>
+                  <p className="text-sm text-muted-foreground">{formatAppointmentTime(nextAppointment.scheduledTime)}</p>
+                  <p className="text-sm text-muted-foreground">{nextAppointment.facilityName || "Facility pending assignment"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {nextAppointment.childName || nextAppointmentChild?.name || "Not specified"} • {nextAppointment.childCvccId || nextAppointment.childId}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{nextAppointment.vaccineName || nextAppointment.purpose || "General health visit"}</p>
+                  {nextAppointment.facilityPhone ? (
+                    <p className="text-xs text-muted-foreground">Facility contact: {nextAppointment.facilityPhone}</p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No upcoming appointments scheduled.</p>
+              )}
             </div>
+
+            <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-foreground">Missed</p>
+                {latestMissedAppointment ? (
+                  <Badge variant="outline" className="border-orange-500/40 bg-orange-500/10 text-orange-500">
+                    Missed
+                  </Badge>
+                ) : null}
+              </div>
+              {latestMissedAppointment ? (
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Was scheduled for</p>
+                  <h3 className="text-lg font-semibold">{formatAppointmentDate(latestMissedAppointment.scheduledDate)}</h3>
+                  <p className="text-sm text-muted-foreground">{formatAppointmentTime(latestMissedAppointment.scheduledTime)}</p>
+                  <p className="text-sm text-muted-foreground">{latestMissedAppointment.facilityName || "Facility pending assignment"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {latestMissedAppointment.childName || latestMissedAppointmentChild?.name || "Not specified"} • {latestMissedAppointment.childCvccId || latestMissedAppointment.childId}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {latestMissedAppointment.vaccineName || latestMissedAppointment.purpose || "General health visit"}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No missed appointments.</p>
+              )}
+            </div>
+            <Button asChild variant="outline" className="gap-2">
+              <Link href="/parent/dashboard/appointments">
+                Manage appointments
+                <Clock3 className="size-4" />
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-2 xl:grid-cols-[3fr,2fr]">
+        <Card>
+          <CardHeader className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Syringe className="size-5" /> Recent vaccinations
+              </CardTitle>
+              <CardDescription>Summary of your child&apos;s latest vaccine activity</CardDescription>
+            </div>
+            <Button asChild variant="ghost" size="sm" className="gap-1">
+              <Link href="/parent/dashboard/vaccination-status">
+                View full record
+                <ChevronRight className="size-4" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {childrenData.length > 0 ? (
+              childrenData.slice(0, 4).map((child) => (
+                <div
+                  key={child.id}
+                  className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3"
+                >
+                  <div>
+                    <p className="font-semibold">{child.name}</p>
+                    <p className="text-xs text-muted-foreground">{child.age}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">{child.vaccinationProgress.completed}/{child.vaccinationProgress.total} vaccines</p>
+                    <Badge variant={child.vaccinationProgress.percentage >= 80 ? "default" : child.vaccinationProgress.percentage >= 50 ? "secondary" : "outline"}>
+                      {child.vaccinationProgress.percentage}% complete
+                    </Badge>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No vaccination records found.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <AlertTriangle className="size-5" /> Missed reminders
+            </CardTitle>
+            <CardDescription>Action items that need your attention</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {missedVaccinations.length > 0 ? (
+              missedVaccinations.slice(0, 4).map((item, index) => (
+                <div
+                  key={`${item.childId}-${item.vaccine}-${index}`}
+                  className="rounded-xl border border-dashed border-destructive/40 bg-destructive/5 px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{item.vaccine}</p>
+                      <p className="text-xs text-muted-foreground">{item.childName} • Due: {item.dueDate}</p>
+                    </div>
+                    <Badge variant="destructive">{item.daysOverdue} days overdue</Badge>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No missed vaccinations. Great job!</p>
+            )}
+            <Button asChild className="gap-2" variant="secondary">
+              <Link href="/parent/dashboard/missed-vaccinations">
+                Review all missed doses
+                <ChevronRight className="size-4" />
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </section>
@@ -235,14 +387,20 @@ export default function ParentDashboardOverview() {
                     <QrCode className="size-4" /> Scan-ready QR
                   </Badge>
                   <div className="rounded-xl border border-border bg-white p-4 shadow-inner">
-                    <QRCodeCanvas
-                      value={latestCertificate.qrPayload || latestCertificate.certificateId}
-                      size={180}
-                      includeMargin
-                      ref={qrCanvasRef}
-                      bgColor="#ffffff"
-                      fgColor="#111318"
-                    />
+                    {latestCertificate.qrPayload ? (
+                      <QRCodeCanvas
+                        value={latestCertificate.qrPayload}
+                        size={180}
+                        includeMargin
+                        ref={qrCanvasRef}
+                        bgColor="#ffffff"
+                        fgColor="#111318"
+                      />
+                    ) : (
+                      <div className="flex h-[180px] w-[180px] items-center justify-center rounded border border-dashed border-border text-sm text-muted-foreground">
+                        QR unavailable
+                      </div>
+                    )}
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">
                     Public Health Authorities can scan this QR directly from your device to confirm authenticity.
@@ -278,203 +436,6 @@ export default function ParentDashboardOverview() {
           )}
         </Card>
       </section>
-
-      <section className="grid gap-6 lg:grid-cols-2 xl:grid-cols-[3fr,2fr]">
-        <Card>
-          <CardHeader className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Syringe className="size-5" /> Recent vaccinations
-              </CardTitle>
-              <CardDescription>Summary of your child&apos;s latest vaccine activity</CardDescription>
-            </div>
-            <Button asChild variant="ghost" size="sm" className="gap-1">
-              <Link href="/parent/dashboard/vaccination-status">
-                View full record
-                <ChevronRight className="size-4" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {childrenData.length > 0 ? (
-              childrenData.slice(0, 4).map((child) => (
-                <div
-                  key={child.id}
-                  className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3"
-                >
-                  <div>
-                    <p className="font-semibold">{child.name}</p>
-                    <p className="text-xs text-muted-foreground">{child.age}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">{child.vaccinationProgress.completed}/{child.vaccinationProgress.total} vaccines</p>
-                    <Badge variant={child.vaccinationProgress.percentage >= 80 ? "default" : child.vaccinationProgress.percentage >= 50 ? "secondary" : "outline"}>
-                      {child.vaccinationProgress.percentage}% complete
-                    </Badge>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">No vaccination records found.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <AlertTriangle className="size-5" /> Missed reminders
-            </CardTitle>
-            <CardDescription>Action items that need your attention</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {missedVaccinations.length > 0 ? (
-              missedVaccinations.map((item, index) => (
-                <div
-                  key={`${item.childId}-${item.vaccine}-${index}`}
-                  className="rounded-xl border border-dashed border-destructive/40 bg-destructive/5 px-4 py-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{item.vaccine}</p>
-                      <p className="text-xs text-muted-foreground">{item.childName} • Due: {item.dueDate}</p>
-                    </div>
-                    <Badge variant="destructive">{item.daysOverdue} days overdue</Badge>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">No missed vaccinations. Great job!</p>
-            )}
-            <Button asChild className="gap-2" variant="secondary">
-              <Link href="/parent/dashboard/missed-vaccinations">
-                Review all missed doses
-                <ChevronRight className="size-4" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[2fr,3fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <CalendarDays className="size-5" /> Next appointment
-            </CardTitle>
-            <CardDescription>Stay prepared for the next visit</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {nextAppointment ? (
-              <>
-                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
-                  <p className="text-sm text-muted-foreground">Scheduled for</p>
-                  <h3 className="text-lg font-semibold">{formatAppointmentDate(nextAppointment.scheduledDate)}</h3>
-                  <p className="text-sm text-muted-foreground">{formatAppointmentTime(nextAppointment.scheduledTime)}</p>
-                  <p className="text-sm text-muted-foreground">{nextAppointment.facilityName || "Facility pending assignment"}</p>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <p>
-                    <span className="text-muted-foreground">Child:</span>{" "}
-                    <span className="font-medium text-foreground">{nextAppointment.childName || nextAppointmentChild?.name || "Not specified"}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Child ID:</span>{" "}
-                    <span className="font-medium text-foreground">{nextAppointment.childCvccId || nextAppointment.childId}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Vaccine:</span>{" "}
-                    <span className="font-medium text-foreground">{nextAppointment.vaccineName || "General health visit"}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Purpose:</span>{" "}
-                    <span className="font-medium text-foreground">{nextAppointment.purpose}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Status:</span>{" "}
-                    <Badge variant={nextAppointment.status === "confirmed" ? "default" : "secondary"}>
-                      {nextAppointment.status === "confirmed" ? "Confirmed" : "Pending review"}
-                    </Badge>
-                  </p>
-                  {nextAppointment.facilityPhone ? (
-                    <p>
-                      <span className="text-muted-foreground">Facility contact:</span>{" "}
-                      <span className="font-medium text-foreground">{nextAppointment.facilityPhone}</span>
-                    </p>
-                  ) : null}
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">No upcoming appointments scheduled.</p>
-            )}
-            <Button asChild variant="outline" className="gap-2">
-              <Link href="/parent/dashboard/appointments">
-                Manage appointments
-                <Clock3 className="size-4" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <MessageCircle className="size-5" /> Need assistance?
-            </CardTitle>
-            <CardDescription>Contact your clinic or find vaccination guidance</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <p>
-              Get information about post-vaccination care, upcoming appointments, and how to reach your clinic for urgent matters.
-            </p>
-            <Button asChild className="gap-2">
-              <Link href="/parent/dashboard/support">
-                View support
-                <ChevronRight className="size-4" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Clock3 className="size-5" /> Service quick links
-            </CardTitle>
-            <CardDescription>Jump directly to the section you need.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { label: "Vaccination record", href: "/parent/dashboard/vaccination-status" },
-              { label: "Missed vaccinations", href: "/parent/dashboard/missed-vaccinations" },
-              { label: "Child profile", href: "/parent/dashboard/child-details" },
-              { label: "Mother profile", href: "/parent/dashboard/mother-details" },
-              { label: "Appointments", href: "/parent/dashboard/appointments" },
-              { label: "Support center", href: "/parent/dashboard/support" },
-            ].map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3 hover:border-primary/40 hover:shadow-sm"
-              >
-                <span>{link.label}</span>
-                <ChevronRight className="size-4" />
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
-      </section>
-    </div>
-  )
-}
-
-function OverviewStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg bg-background/80 px-4 py-3 shadow-sm">
-      <p className="text-xs uppercase text-muted-foreground">{label}</p>
-      <p className="text-xl font-semibold">{value}</p>
     </div>
   )
 }

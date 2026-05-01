@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -217,11 +218,58 @@ export class BackupService {
   }
 
   /**
-   * Delete old backups based on retention policy
+   * Scheduled backup — runs daily at 2 AM and checks frequency setting
+   */
+  @Cron('0 2 * * *', { name: 'scheduled-backup', timeZone: 'Africa/Accra' })
+  async runScheduledBackup(): Promise<void> {
+    try {
+      const { data: settings } = await this.db.supabase
+        .from('system_settings')
+        .select('id, value')
+        .eq('category', 'backup');
+
+      const settingsMap: Record<string, string> = Object.fromEntries(
+        (settings ?? []).map((s: any) => [s.id, s.value]),
+      );
+
+      const frequency = settingsMap['backup_frequency'] || 'daily';
+      const today = new Date();
+      const dayOfWeek = today.getDay();   // 0 = Sunday
+      const dayOfMonth = today.getDate(); // 1-31
+
+      const shouldRun =
+        frequency === 'daily' ||
+        (frequency === 'weekly' && dayOfWeek === 0) ||
+        (frequency === 'monthly' && dayOfMonth === 1);
+
+      if (!shouldRun) return;
+
+      this.logger.log(`Running scheduled backup (frequency: ${frequency})`);
+      await this.createBackup();
+      await this.cleanupOldBackups();
+      this.logger.log('Scheduled backup completed');
+    } catch (error: any) {
+      this.logger.error(`Scheduled backup failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete old backups based on retention policy (reads from DB, falls back to env)
    */
   async cleanupOldBackups(): Promise<void> {
     try {
-      const retentionDays = parseInt(process.env.BACKUP_RETENTION_DAYS || '30');
+      let retentionDays = parseInt(process.env.BACKUP_RETENTION_DAYS || '30');
+
+      const { data: setting } = await this.db.supabase
+        .from('system_settings')
+        .select('value')
+        .eq('id', 'backup_retention_days')
+        .single();
+
+      if (setting?.value) {
+        retentionDays = parseInt(setting.value);
+      }
+
       const cutoffTime = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
 
       const files = fs.readdirSync(this.backupDir)

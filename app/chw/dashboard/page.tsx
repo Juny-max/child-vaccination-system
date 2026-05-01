@@ -8,7 +8,6 @@ import {
   AlertCircle,
   BookOpen,
   CheckCircle2,
-  Clock,
   CircleDot,
   MapPin,
   RefreshCcw,
@@ -21,7 +20,13 @@ import * as chwStorage from "@/lib/chw-offline-storage"
 import { getAllCHWVaccinations } from "@/lib/chw-offline-storage"
 import { chwBackgroundSync } from "@/lib/chw-offline/background-sync"
 import { chwOfflineDb } from "@/lib/chw-offline/db"
-import { getChwDashboardSummary, type ChwVisit } from "@/lib/api/chw"
+import {
+  getChwDashboardSummary,
+  getChwNotifications,
+  markChwNotificationRead,
+  type ChwVisit,
+  type ChwNotification,
+} from "@/lib/api/chw"
 import { isBackendAvailable } from "@/lib/network/connectivity"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
 import { autoLogoutTimer } from "@/lib/chw-offline/auto-logout"
@@ -54,7 +59,6 @@ type VisitTask = {
   childName: string
   vaccineDue: string
   householdLocation: string
-  distanceKm: number
 }
 
 type VaccinationMapPoint = {
@@ -93,6 +97,61 @@ export default function ChwDashboardPage() {
   const [pendingSyncTotal, setPendingSyncTotal] = useState(0)
   const [todayActivityCount, setTodayActivityCount] = useState(0)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [followUpNotifications, setFollowUpNotifications] = useState<ChwNotification[]>([])
+  const [showFollowUpModal, setShowFollowUpModal] = useState(false)
+  const [acknowledgingFollowUps, setAcknowledgingFollowUps] = useState(false)
+
+  const showFollowUpNotifications = async () => {
+    if (!isOnline) return
+
+    try {
+      const notifications = await getChwNotifications(10, true)
+      const assignmentNotifications = notifications.filter(
+        (notification: ChwNotification) =>
+          notification.templateId === "branch_follow_up_assignment",
+      )
+
+      if (assignmentNotifications.length > 0) {
+        setFollowUpNotifications(assignmentNotifications)
+        setShowFollowUpModal(true)
+      }
+    } catch (error) {
+      console.error("Failed to fetch CHW notifications", error)
+    }
+  }
+
+  const acknowledgeFollowUpNotifications = async () => {
+    if (followUpNotifications.length === 0) {
+      setShowFollowUpModal(false)
+      return
+    }
+
+    setAcknowledgingFollowUps(true)
+    try {
+      const results = await Promise.all(
+        followUpNotifications.map(async (notification) => {
+          try {
+            await markChwNotificationRead(notification.id)
+            return true
+          } catch (error) {
+            console.error("Failed to mark CHW notification as read", error)
+            return false
+          }
+        }),
+      )
+
+      const hasFailure = results.some((ok) => !ok)
+      if (hasFailure) {
+        setSystemMessage("Some follow-up alerts could not be acknowledged. Please try again.")
+        return
+      }
+
+      setFollowUpNotifications([])
+      setShowFollowUpModal(false)
+    } finally {
+      setAcknowledgingFollowUps(false)
+    }
+  }
 
   const loadDashboardSummary = async () => {
     try {
@@ -111,12 +170,12 @@ export default function ChwDashboardPage() {
           childName: entry.childName,
           vaccineDue: entry.vaccineDue,
           householdLocation: entry.householdLocation,
-          distanceKm: entry.distanceKm,
         })),
       )
       setPendingSyncTotal(summary.pendingQueueCount + localPending)
       setLastSyncTime(new Date(summary.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
       setSyncState("synced")
+      await showFollowUpNotifications()
     } catch (error) {
       console.error("Failed to load CHW dashboard summary", error)
       setSyncState("offline")
@@ -172,15 +231,18 @@ export default function ChwDashboardPage() {
     // Security: Start auto-logout timer (15 minutes idle)
     autoLogoutTimer.start(
       () => {
-        // Logout handler
         console.log("[Security] Auto-logout triggered")
         clearEncryptionKey()
-        localStorage.clear()
+        // Selectively remove auth tokens — preserve stable encryption keys so the
+        // same CHW can still decrypt their cached IndexedDB data on next login.
+        ;[
+          "authToken", "accessToken", "userId", "userRole", "userRoleDetail",
+          "userName", "chw-last-background-sync", "chw_last_data_access",
+        ].forEach((k) => localStorage.removeItem(k))
         sessionStorage.clear()
         router.push("/auth/login?timeout=1")
       },
       (secondsRemaining) => {
-        // Warning handler
         if (secondsRemaining === 120) {
           setSystemMessage("⚠️ You will be logged out in 2 minutes due to inactivity")
         }
@@ -191,21 +253,13 @@ export default function ChwDashboardPage() {
     chwBackgroundSync.start()
     loadTodayActivityCount()
 
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/chw-service-worker.js")
-        .then((registration) => {
-          console.log("[CHW Dashboard] Service Worker registered:", registration.scope)
-        })
-        .catch((error) => {
-          console.error("[CHW Dashboard] Service Worker registration failed:", error)
-        })
-    }
-
     return () => {
       chwBackgroundSync.stop()
       autoLogoutTimer.stop()
     }
+  // isOnline intentionally excluded: network changes must not re-run the auth/setup block.
+  // The separate isOnline useEffect below handles network state reactions.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
   const loadTodayActivityCount = async () => {
@@ -336,6 +390,20 @@ export default function ChwDashboardPage() {
     visitListSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
+  const formatNotificationTime = (value: string) => {
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) {
+      return value
+    }
+
+    return parsed.toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
   return (
     <>
     <div className="min-h-screen bg-muted/30">
@@ -449,9 +517,6 @@ export default function ChwDashboardPage() {
                           </Link>
                         ) : null}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" /> {task.distanceKm.toFixed(1)} km away
-                      </div>
                     </div>
                   </div>
                 ))
@@ -511,6 +576,76 @@ export default function ChwDashboardPage() {
         </section>
       </main>
     </div>
+
+    <AlertDialog
+      open={showFollowUpModal}
+      onOpenChange={(open) => {
+        if (acknowledgingFollowUps) return
+        setShowFollowUpModal(open)
+      }}
+    >
+      <AlertDialogContent className="sm:max-w-lg">
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            New follow-up assignment{followUpNotifications.length > 1 ? "s" : ""}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            Review the assignment details below. Acknowledge when you are ready so the alert is cleared.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+          {followUpNotifications.map((notification) => {
+            const queueType =
+              typeof notification.metadata?.queue_type === "string"
+                ? notification.metadata.queue_type.replace(/-/g, " ")
+                : "follow-up"
+
+            return (
+              <div
+                key={notification.id}
+                className="rounded-lg border border-border bg-background/80 p-3"
+              >
+                <p className="text-sm font-semibold text-foreground">
+                  {notification.subject || "New follow-up assignment"}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{notification.message}</p>
+                <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <Badge variant="outline" className="capitalize">
+                    {queueType}
+                  </Badge>
+                  <span>{formatNotificationTime(notification.createdAt)}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <AlertDialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={acknowledgingFollowUps}
+            onClick={() => setShowFollowUpModal(false)}
+          >
+            Remind me later
+          </Button>
+          <Button
+            type="button"
+            className="gap-2"
+            disabled={acknowledgingFollowUps}
+            onClick={() => void acknowledgeFollowUpNotifications()}
+          >
+            {acknowledgingFollowUps ? (
+              <RefreshCcw className="h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            {acknowledgingFollowUps ? "Acknowledging..." : "Acknowledge"}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <AlertDialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
       <AlertDialogContent>

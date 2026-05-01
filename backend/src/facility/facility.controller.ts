@@ -126,6 +126,15 @@ export class FacilityController {
   }
 
   /**
+   * GET /api/facility/children/:childId/aefi
+   * Get AEFI reports for a child (last 30 days)
+   */
+  @Get('children/:childId/aefi')
+  async getChildAefiReports(@Param('childId') childId: string) {
+    return this.facilityService.getChildAefiReports(childId);
+  }
+
+  /**
    * GET /api/facility/children/:childId/guardian
    * Get guardian details for a child
    */
@@ -142,8 +151,19 @@ export class FacilityController {
   async updateGuardian(
     @Param('guardianId') guardianId: string,
     @Body() dto: UpdateGuardianDto,
+    @Request() req: any,
   ) {
-    return this.facilityService.updateGuardian(guardianId, dto);
+    const baseUrl =
+      (req?.headers?.origin as string) ||
+      process.env.FRONTEND_URL ||
+      'http://localhost:3000';
+
+    return this.facilityService.updateGuardian(
+      guardianId,
+      dto,
+      req?.user?.id,
+      baseUrl,
+    );
   }
 
   /**
@@ -162,6 +182,22 @@ export class FacilityController {
   @Get('follow-ups/urgent')
   async getUrgentFollowUps(@Query('facilityId') facilityId?: string) {
     return this.facilityService.getUrgentFollowUps(facilityId);
+  }
+
+  /**
+   * GET /api/facility/appointments/missed
+   * Get recent missed appointment reminders for nurse follow-up
+   */
+  @Get('appointments/missed')
+  async getMissedAppointmentReminders(
+    @Query('facilityId') facilityId?: string,
+    @Query('days') days?: string,
+  ) {
+    const parsedDays = days ? Number.parseInt(days, 10) : undefined;
+    return this.facilityService.getMissedAppointmentReminders(
+      facilityId,
+      parsedDays,
+    );
   }
 
   /**

@@ -29,3 +29,15 @@ export class LogStockDto {
   @IsDateString()
   receivedDate: string;
 }
+
+export class ResetExpiringStockDto {
+  @IsString()
+  @IsNotEmpty()
+  vaccineId: string;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  expiryWindowDays?: number;
+}

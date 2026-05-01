@@ -50,6 +50,65 @@ type VerificationResult = {
   }
 }
 
+function extractCertificateIdentifier(rawValue: string): string {
+  let value = (rawValue || "").trim()
+  if (!value) return ""
+
+  try {
+    const parsed = JSON.parse(value)
+    const candidate =
+      parsed?.certificateId ||
+      parsed?.id ||
+      parsed?.cvccId ||
+      parsed?.qrPayload ||
+      parsed?.token ||
+      parsed?.childId
+
+    if (typeof candidate === "string" && candidate.trim()) {
+      value = candidate.trim()
+    }
+  } catch {
+    // Not JSON payload.
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value)
+      const fromParams =
+        url.searchParams.get("cert") ||
+        url.searchParams.get("id") ||
+        url.searchParams.get("certificateId") ||
+        url.searchParams.get("token") ||
+        url.searchParams.get("childId") ||
+        url.searchParams.get("cvccId")
+
+      if (fromParams && fromParams.trim()) {
+        value = fromParams.trim()
+      } else {
+        const segments = url.pathname.split("/").filter(Boolean)
+        const lastSegment = segments[segments.length - 1]
+        if (lastSegment) {
+          value = lastSegment
+        }
+      }
+    } catch {
+      // Keep raw value when URL parse fails.
+    }
+  }
+
+  if (value.includes("|")) {
+    value = value.split("|")[0].trim()
+  }
+
+  value = value.trim().slice(0, 300)
+
+  if (/^(qrc-(ch|cert)-|cert-gh-|cvcc-|temp-)/i.test(value)) {
+    value = value.toUpperCase()
+  }
+
+  return value
+}
+
 export default function PublicVerifyPage() {
   const [certificateId, setCertificateId] = useState("")
   const [isVerifying, setIsVerifying] = useState(false)
@@ -72,10 +131,11 @@ export default function PublicVerifyPage() {
         const params = new URLSearchParams(window.location.search)
         const certId = params.get('cert')
         if (certId) {
-          setCertificateId(certId.trim().toUpperCase())
+          const parsedId = extractCertificateIdentifier(certId)
+          setCertificateId(parsedId)
           // Auto-verify after a short delay to ensure token is set
           setTimeout(() => {
-            runVerify(certId.trim())
+            runVerify(certId)
           }, 100)
         }
       } catch (error) {
@@ -88,6 +148,13 @@ export default function PublicVerifyPage() {
   }, [])
 
   const runVerify = async (id: string) => {
+    const rawLookupInput = id.trim()
+    const normalizedId = extractCertificateIdentifier(rawLookupInput)
+    if (!rawLookupInput || !normalizedId) {
+      toast.error("Invalid certificate QR payload. Please scan again or enter a valid certificate ID.")
+      return
+    }
+
     if (!verificationToken) {
       toast.error("Verification session not initialized. Please refresh the page.")
       return
@@ -97,10 +164,10 @@ export default function PublicVerifyPage() {
     setVerificationResult(null)
 
     try {
-      const res: PHACertificateVerifyResult = await verifyCertificate(id.trim(), verificationToken)
+      const res: PHACertificateVerifyResult = await verifyCertificate(rawLookupInput, verificationToken)
 
       if (!res.found) {
-        setVerificationResult({ status: "not-found", certificateId: id.trim() })
+        setVerificationResult({ status: "not-found", certificateId: normalizedId })
         toast.error("Certificate not found in system")
       } else if (res.isPending) {
         setVerificationResult({ status: "pending", certificateId: res.certificateId })
@@ -158,17 +225,16 @@ export default function PublicVerifyPage() {
       setShowQRScanner(false)
       return
     }
-    let certId = decodedText.trim()
-    try {
-      const parsed = JSON.parse(decodedText)
-      certId = parsed.certificateId || parsed.id || certId
-    } catch {
-      certId = decodedText.split("|")[0].trim()
+    const certId = extractCertificateIdentifier(decodedText)
+    if (!certId) {
+      toast.error("Scanned QR payload is invalid. Please try again.")
+      setShowQRScanner(false)
+      return
     }
     setCertificateId(certId)
     setShowQRScanner(false)
     toast.success(`QR code scanned: ${certId}`)
-    setTimeout(() => runVerify(certId), 500)
+    setTimeout(() => runVerify(decodedText), 500)
   }
 
   const handleReset = () => {
