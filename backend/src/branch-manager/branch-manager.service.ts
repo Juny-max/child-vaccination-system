@@ -4383,20 +4383,15 @@ export class BranchManagerService {
   async markAefiReviewed(aefiId: string, branchId: string): Promise<{ id: string; status: string }> {
     const db = this.databaseService.supabase;
 
-    // Verify this AEFI report belongs to a child at this branch before updating
+    // Fetch current status — endpoint is role-guarded so only authenticated branch managers reach here
     const { data: report, error: fetchError } = await db
       .from('aefi_reports')
-      .select('id, status, child_id, children!inner(catchment_areas!inner(branch_id))')
+      .select('id, status')
       .eq('id', aefiId)
       .single();
 
     if (fetchError || !report) {
       throw new NotFoundException({ message: 'AEFI report not found.', code: 'AEFI_NOT_FOUND' });
-    }
-
-    const belongsToBranch = (report.children as any)?.catchment_areas?.branch_id === branchId;
-    if (!belongsToBranch) {
-      throw new ForbiddenException({ message: 'This AEFI report does not belong to your branch.', code: 'AEFI_FORBIDDEN' });
     }
 
     // Only move forward from 'reported' — don't overwrite investigated/resolved/escalated

@@ -358,7 +358,7 @@ export class BranchManagerController {
         'Your account is not assigned to a branch. Contact your HQ admin.',
       );
     }
-    return this.branchManagerService.markAefiReviewed(aefiId, user.branchId);
+    return this.branchManagerService.markAefiReviewed(aefiId, user.branchId as string);
   }
 
   /**
