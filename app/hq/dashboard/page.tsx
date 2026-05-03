@@ -23,6 +23,7 @@ import {
   Megaphone,
   Pencil,
   Plus,
+  Info,
   RefreshCw,
   Search,
   ServerCog,
@@ -37,7 +38,7 @@ import {
 import { ResponsiveContainer, RadialBarChart, RadialBar, Legend, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, ReferenceLine } from "recharts"
 
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -562,6 +563,7 @@ export default function HqDashboardPage() {
   const [togglingBranchStatusId, setTogglingBranchStatusId] = useState<string | null>(null)
   const [isAssigningChws, setIsAssigningChws] = useState(false)
   const [isCleaningDuplicates, setIsCleaningDuplicates] = useState(false)
+  const [coverageTrendInfoOpen, setCoverageTrendInfoOpen] = useState(false)
 
   // User management — status toggle spinner, active/inactive tab, search, role filter & pagination
   const [togglingUserStatusId, setTogglingUserStatusId] = useState<string | null>(null)
@@ -2608,10 +2610,22 @@ export default function HqDashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Activity className="h-5 w-5 text-primary" /> Coverage Trend (Measles vs DPT-3)
-            </CardTitle>
-            <CardDescription>Month-on-month national view of critical vaccine completion.</CardDescription>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Activity className="h-5 w-5 text-primary" /> Coverage Trend (Measles vs DPT-3)
+                </CardTitle>
+                <CardDescription>Month-on-month national view of critical vaccine completion.</CardDescription>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCoverageTrendInfoOpen(true)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition hover:border-primary hover:text-primary"
+                aria-label="What is this?"
+              >
+                <Info className="h-4 w-4" />
+              </button>
+            </div>
           </CardHeader>
           <CardContent className="h-[320px]">
             {isOverviewLoading ? (
@@ -4409,6 +4423,36 @@ export default function HqDashboardPage() {
           </div>
         </div>
       ) : null}
+
+      {/* ── Coverage Trend Explainer ─────────────────────────────────────────── */}
+      <Dialog open={coverageTrendInfoOpen} onOpenChange={setCoverageTrendInfoOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" /> Coverage Trend — What does this mean?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <p>
+              This chart tracks the <span className="font-semibold text-foreground">monthly vaccination counts</span> for two critical vaccines — <span className="font-semibold text-foreground">Measles</span> and <span className="font-semibold text-foreground">DPT-3</span> — across all branches nationwide.
+            </p>
+            <p>
+              The <span className="font-semibold text-foreground">dashed reference line</span> marks the <span className="font-semibold text-foreground">92% national target</span> set by Ghana Health Service and the WHO. Any month where the lines fall below this target requires investigation.
+            </p>
+            <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+              <p className="font-medium text-foreground">Why Measles and DPT-3?</p>
+              <p><span className="font-semibold text-foreground">Measles</span> is the most contagious vaccine-preventable disease. A drop in measles coverage is an early warning sign of outbreak risk.</p>
+              <p><span className="font-semibold text-foreground">DPT-3</span> (the third dose of the Diphtheria, Pertussis, Tetanus series) is the WHO's benchmark indicator for a country's immunisation programme performance. It is reported to UNICEF quarterly.</p>
+            </div>
+            <p>
+              Use this chart to spot declining months early and investigate whether the cause is supply chain, CHW performance, or community demand issues.
+            </p>
+          </div>
+          <DialogFooter className="pt-2">
+            <Button onClick={() => setCoverageTrendInfoOpen(false)} className="w-full">Got it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

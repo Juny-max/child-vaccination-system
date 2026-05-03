@@ -18,6 +18,7 @@ import {
   ClipboardList,
   Compass,
   Gauge,
+  Info,
   Layers,
   Loader2,
   MessageSquareWarning,
@@ -207,6 +208,10 @@ export default function BranchDashboardPage() {
   const [stockWarningModalOpen, setStockWarningModalOpen] = useState(false)
   const [stockWarningAcknowledged, setStockWarningAcknowledged] = useState(false)
 
+  // AEFI login alert modal — auto-opens on load when there are unreviewed AEFI events
+  const [aefiLoginAlertOpen, setAefiLoginAlertOpen] = useState(false)
+  const [aefiLoginAlertAcknowledged, setAefiLoginAlertAcknowledged] = useState(false)
+
   // Logout state
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
@@ -220,6 +225,7 @@ export default function BranchDashboardPage() {
   const [overdueFilterEnd, setOverdueFilterEnd] = useState<Date | undefined>(undefined)
   const [selectedOverdueItem, setSelectedOverdueItem] = useState<AlertItem | null>(null)
   const [aefiModalOpen, setAefiModalOpen] = useState(false)
+  const [dropoutInfoOpen, setDropoutInfoOpen] = useState(false)
   const [aefiFilterStart, setAefiFilterStart] = useState<Date | undefined>(undefined)
   const [aefiFilterEnd, setAefiFilterEnd] = useState<Date | undefined>(undefined)
   const [selectedAefiItem, setSelectedAefiItem] = useState<AlertItem | null>(null)
@@ -321,6 +327,13 @@ export default function BranchDashboardPage() {
     )
     if (hasCritical) setStockWarningModalOpen(true)
   }, [dashData, stockWarningAcknowledged])
+
+  // Auto-open AEFI alert modal once per mount when there are unreviewed AEFI events
+  useEffect(() => {
+    if (!dashData || aefiLoginAlertAcknowledged) return
+    const hasNew = (dashData.aefiEvents ?? []).some((e: any) => e.status === 'New')
+    if (hasNew) setAefiLoginAlertOpen(true)
+  }, [dashData, aefiLoginAlertAcknowledged])
 
   useEffect(() => {
     if (childLookupModalOpen) return
@@ -952,60 +965,6 @@ export default function BranchDashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr,1fr]">
-        <Card className="flex flex-col">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Gauge className="h-5 w-5 text-primary" /> Branch coverage rate
-            </CardTitle>
-            <CardDescription>Coverage across all registered children</CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1">
-            <ResponsiveContainer width="100%" height={280}>
-              <RadialBarChart innerRadius="60%" outerRadius="110%" data={branchCoverageChart} startAngle={90} endAngle={-270}>
-                <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                <RadialBar
-                  dataKey="covered"
-                  cornerRadius={18}
-                  fill="#16a34a"
-                  background={{ fill: "#cbd5e1" }}
-                  clockWise
-                />
-              </RadialBarChart>
-            </ResponsiveContainer>
-            <div className="mt-3 flex items-center justify-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" /> Covered
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-slate-300" /> Remaining
-              </span>
-            </div>
-            <p className="mt-4 text-center text-sm text-muted-foreground">Coverage: {branchCoverageValue}%</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Activity className="h-5 w-5 text-primary" /> 7-day coverage trend
-            </CardTitle>
-            <CardDescription>Daily vaccination count (7 days)</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={coverageTrendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="measles" stroke="#2563eb" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -1074,6 +1033,60 @@ export default function BranchDashboardPage() {
           })}
         </CardContent>
       </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[1.2fr,1fr]">
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Gauge className="h-5 w-5 text-primary" /> Branch coverage rate
+            </CardTitle>
+            <CardDescription>Coverage across all registered children</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1">
+            <ResponsiveContainer width="100%" height={280}>
+              <RadialBarChart innerRadius="60%" outerRadius="110%" data={branchCoverageChart} startAngle={90} endAngle={-270}>
+                <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                <RadialBar
+                  dataKey="covered"
+                  cornerRadius={18}
+                  fill="#16a34a"
+                  background={{ fill: "#cbd5e1" }}
+                  clockWise
+                />
+              </RadialBarChart>
+            </ResponsiveContainer>
+            <div className="mt-3 flex items-center justify-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" /> Covered
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-slate-300" /> Remaining
+              </span>
+            </div>
+            <p className="mt-4 text-center text-sm text-muted-foreground">Coverage: {branchCoverageValue}%</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Activity className="h-5 w-5 text-primary" /> 7-day coverage trend
+            </CardTitle>
+            <CardDescription>Daily vaccination count (7 days)</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[320px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={coverageTrendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis />
+                <Tooltip />
+                <Line type="monotone" dataKey="measles" stroke="#2563eb" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 
@@ -1346,10 +1359,22 @@ export default function BranchDashboardPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Layers className="h-5 w-5 text-primary" /> Dropout analysis (Dose 1 vs Dose 3)
-          </CardTitle>
-          <CardDescription>Track follow-up needs for incomplete vaccination series.</CardDescription>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Layers className="h-5 w-5 text-primary" /> Dropout analysis (Dose 1 vs Dose 3)
+              </CardTitle>
+              <CardDescription>Track follow-up needs for incomplete vaccination series.</CardDescription>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDropoutInfoOpen(true)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition hover:border-primary hover:text-primary"
+              aria-label="What is this?"
+            >
+              <Info className="h-4 w-4" />
+            </button>
+          </div>
         </CardHeader>
         <CardContent className="h-[320px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -1951,7 +1976,106 @@ export default function BranchDashboardPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Urgent Stock Warning Modal ─────────────────────────────────────── */}
+      {/* ── Dropout Analysis Explainer ───────────────────────────────────────── */}
+      <Dialog open={dropoutInfoOpen} onOpenChange={setDropoutInfoOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Layers className="h-5 w-5 text-primary" /> Dropout Analysis — What does this mean?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <p>
+              This chart compares how many children received <span className="font-semibold text-foreground">Dose 1</span> of a vaccine series against how many completed <span className="font-semibold text-foreground">Dose 3</span> — for Penta, OPV, and PCV vaccines.
+            </p>
+            <p>
+              The <span className="font-semibold text-foreground">gap between the two bars</span> represents <span className="font-semibold text-foreground">dropouts</span> — children who started a vaccine series but never finished it. These children are partially protected and remain at risk.
+            </p>
+            <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-1">
+              <p className="font-medium text-foreground">Example</p>
+              <p>120 children received Penta Dose 1 but only 80 completed Penta Dose 3. That means <span className="font-semibold text-foreground">40 children dropped out</span> and need a follow-up visit from a CHW.</p>
+            </div>
+            <p>
+              This is one of the key metrics used by <span className="font-semibold text-foreground">Ghana Health Service</span> and the <span className="font-semibold text-foreground">WHO</span> to measure how well an immunisation programme is performing. A large gap signals that CHW outreach or supply chain issues are interrupting vaccine series midway.
+            </p>
+            <p>
+              Use this chart during your branch review meetings to identify which vaccines have the highest dropout and direct CHWs to follow up with those families.
+            </p>
+          </div>
+          <DialogFooter className="pt-2">
+            <Button onClick={() => setDropoutInfoOpen(false)} className="w-full">Got it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── AEFI Login Alert Modal ───────────────────────────────────────────── */}
+      <Dialog
+        open={aefiLoginAlertOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAefiLoginAlertOpen(false)
+            setAefiLoginAlertAcknowledged(true)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <div className="flex flex-col items-center gap-3 pb-2 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/40">
+                <BellRing className="h-9 w-9 text-amber-600 dark:text-amber-400" />
+              </div>
+              <DialogTitle className="text-xl font-bold text-amber-700 dark:text-amber-400">
+                Unreviewed AEFI Reports
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                The following adverse events have been reported and require your <span className="font-semibold text-foreground">review and follow-up</span>.
+              </p>
+            </div>
+          </DialogHeader>
+
+          <div className="max-h-72 space-y-3 overflow-y-auto py-1">
+            {(dashData?.aefiEvents ?? [])
+              .filter((e: any) => e.status === 'New')
+              .map((event: any) => (
+                <div
+                  key={event.id}
+                  className="rounded-xl border border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 p-4"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-foreground">{event.child}</p>
+                    <Badge variant="destructive" className="shrink-0 text-xs">New</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{event.detail}</p>
+                  <p className="mt-2 text-xs text-muted-foreground/70">{event.timestamp}</p>
+                </div>
+              ))}
+          </div>
+
+          <DialogFooter className="flex flex-col gap-2 pt-2 sm:flex-col">
+            <Button
+              className="w-full gap-2 py-5 text-base font-semibold bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => {
+                setAefiLoginAlertOpen(false)
+                setAefiLoginAlertAcknowledged(true)
+                setAefiModalOpen(true)
+              }}
+            >
+              <BellRing className="h-5 w-5" /> Review AEFI reports now
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setAefiLoginAlertOpen(false)
+                setAefiLoginAlertAcknowledged(true)
+              }}
+            >
+              Dismiss — I will review later
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={stockWarningModalOpen}
         onOpenChange={(open) => {
@@ -2103,26 +2227,30 @@ export default function BranchDashboardPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="stock-rcvd">Date received *</Label>
-                <Input
-                  id="stock-rcvd"
-                  type="date"
-                  value={stockForm.receivedDate}
-                  onChange={(e) => setStockForm((f) => ({ ...f, receivedDate: e.target.value }))}
-                  required
+                <Label>Date received *</Label>
+                <DatePicker
+                  date={stockForm.receivedDate ? new Date(stockForm.receivedDate) : undefined}
+                  onDateChange={(d) => setStockForm((f) => ({
+                    ...f,
+                    receivedDate: d ? d.toISOString().split("T")[0] : "",
+                  }))}
+                  placeholder="Pick received date"
+                  maxDate={new Date()}
                 />
               </div>
             </div>
 
             {/* Expiry date */}
             <div className="space-y-1">
-              <Label htmlFor="stock-exp">Expiry date *</Label>
-              <Input
-                id="stock-exp"
-                type="date"
-                value={stockForm.expiryDate}
-                onChange={(e) => setStockForm((f) => ({ ...f, expiryDate: e.target.value }))}
-                required
+              <Label>Expiry date *</Label>
+              <DatePicker
+                date={stockForm.expiryDate ? new Date(stockForm.expiryDate) : undefined}
+                onDateChange={(d) => setStockForm((f) => ({
+                  ...f,
+                  expiryDate: d ? d.toISOString().split("T")[0] : "",
+                }))}
+                placeholder="Pick expiry date"
+                minDate={new Date()}
               />
             </div>
 
