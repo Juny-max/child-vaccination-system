@@ -48,7 +48,7 @@ Visit `http://localhost:3000`
 1. `cd backend`
 2. Copy `.env.example` to `.env` (or keep using the existing `.env`) and populate the following keys:
 
-- `SUPABASE_URL=https://pvzatstzlvtaequsqhec.supabase.co`
+- `SUPABASE_URL=https://<your-project-ref>.supabase.co`
 - `SUPABASE_SERVICE_ROLE_KEY=<service role key from Supabase → Settings → API>`
 - `JWT_SECRET=<any strong string>`
 - `PORT=3001`
@@ -178,7 +178,7 @@ pnpm run start:prod # runs node dist/src/main
 
 | Key | Value |
 |-----|-------|
-| `SUPABASE_URL` | `https://pvzatstzlvtaequsqhec.supabase.co` |
+| `SUPABASE_URL` | `https://<your-project-ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | (same as local `.env`, never commit) |
 | `JWT_SECRET` | Same as local secret |
 | `PORT` | `3001` |
@@ -202,7 +202,7 @@ We're using **Supabase** (managed PostgreSQL) as our database. You've been invit
 The Supabase connection details are already configured in `.env.local`:
 
 \`\`\`env
-NEXT_PUBLIC_SUPABASE_URL=<https://pvzatstzlvtaequsqhec.supabase.co>
+NEXT_PUBLIC_SUPABASE_URL=<https://<your-project-ref>.supabase.co>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...truncated (see .env.local file)
 \`\`\`
 
@@ -412,7 +412,7 @@ backend/
 Create `backend/.env` for active backend modules:
 
 \`\`\`env
-SUPABASE_URL=<https://pvzatstzlvtaequsqhec.supabase.co>
+SUPABASE_URL=<https://<your-project-ref>.supabase.co>
 SUPABASE_ANON_KEY=<copy from .env.local in project root>
 SUPABASE_SERVICE_ROLE_KEY=<ask project lead if needed>
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
