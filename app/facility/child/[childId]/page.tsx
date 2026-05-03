@@ -282,6 +282,7 @@ export default function ChildPatientChartPage() {
   const [isSavingVaccine, setIsSavingVaccine] = useState(false)
   const [isLoadingStock, setIsLoadingStock] = useState(false)
   const [stockFromInventory, setStockFromInventory] = useState(false)
+  const [noStockAvailable, setNoStockAvailable] = useState(false)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [isOnline, setIsOnline] = useState(true)
   
@@ -782,6 +783,7 @@ export default function ChildPatientChartPage() {
     })
 
     // Auto-fill batch number and expiry date from stock inventory
+    setNoStockAvailable(false)
     const facilityId = childProfile?.facilityId
     if (facilityId && entry.vaccine) {
       setIsLoadingStock(true)
@@ -794,9 +796,11 @@ export default function ChildPatientChartPage() {
             expiryDate: stock.expiryDate,
           }))
           setStockFromInventory(true)
+        } else {
+          setNoStockAvailable(true)
         }
       } catch {
-        // Leave fields empty — nurse fills them in manually
+        setNoStockAvailable(true)
       } finally {
         setIsLoadingStock(false)
       }
@@ -806,6 +810,8 @@ export default function ChildPatientChartPage() {
   const closeAdministerModal = () => {
     setSelectedDose(null)
     setAdministerForm(initialAdministerState)
+    setStockFromInventory(false)
+    setNoStockAvailable(false)
   }
 
   const handleAdministerChange = (field: keyof AdministerFormState, value: string | boolean) => {
@@ -1833,20 +1839,24 @@ export default function ChildPatientChartPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="batchNumber" className="flex items-center gap-2">
-                    Batch / lot number
+                    Batch number
                     {isLoadingStock && <span className="text-xs text-muted-foreground animate-pulse">Loading…</span>}
                     {stockFromInventory && !isLoadingStock && (
                       <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">From inventory</span>
+                    )}
+                    {noStockAvailable && !isLoadingStock && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">No stock logged</span>
                     )}
                   </Label>
                   <Input
                     id="batchNumber"
                     required
-                    placeholder={isLoadingStock ? "Fetching…" : "e.g. PEN-44192"}
+                    placeholder={isLoadingStock ? "Fetching…" : noStockAvailable ? "Branch manager has not logged this vaccine" : "e.g. PEN-44192"}
                     value={administerForm.batchNumber}
-                    readOnly={stockFromInventory}
-                    className={stockFromInventory ? "bg-muted cursor-not-allowed" : ""}
-                    onChange={(event) => !stockFromInventory && handleAdministerChange("batchNumber", event.target.value)}
+                    readOnly={stockFromInventory || noStockAvailable}
+                    disabled={noStockAvailable}
+                    className={(stockFromInventory || noStockAvailable) ? "bg-muted cursor-not-allowed" : ""}
+                    onChange={(event) => !stockFromInventory && !noStockAvailable && handleAdministerChange("batchNumber", event.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1855,12 +1865,23 @@ export default function ChildPatientChartPage() {
                     {stockFromInventory && !isLoadingStock && (
                       <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">From inventory</span>
                     )}
+                    {noStockAvailable && !isLoadingStock && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">No stock logged</span>
+                    )}
                   </Label>
                   {stockFromInventory ? (
                     <Input
                       id="expiryDate"
                       value={administerForm.expiryDate}
                       readOnly
+                      className="bg-muted cursor-not-allowed"
+                    />
+                  ) : noStockAvailable ? (
+                    <Input
+                      id="expiryDate"
+                      placeholder="Branch manager has not logged this vaccine"
+                      readOnly
+                      disabled
                       className="bg-muted cursor-not-allowed"
                     />
                   ) : (
