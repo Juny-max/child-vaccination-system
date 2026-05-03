@@ -472,6 +472,18 @@ export async function deleteBranchCatchmentArea(
 }
 
 /**
+ * Mark an AEFI report as under-review when the branch manager opens it.
+ */
+export async function markAefiReviewed(
+  aefiId: string,
+): Promise<{ id: string; status: string }> {
+  return apiRequest<{ id: string; status: string }>(
+    `/branch-manager/aefi/${aefiId}/review`,
+    { method: 'PATCH' },
+  );
+}
+
+/**
  * Assign a CHW to a catchment area.
  */
 export async function assignCatchmentAreaChw(

@@ -345,6 +345,23 @@ export class BranchManagerController {
   }
 
   /**
+   * PATCH /api/branch-manager/aefi/:id/review
+   * Mark an AEFI report as under-review when the branch manager opens it.
+   */
+  @Patch('aefi/:id/review')
+  async markAefiReviewed(
+    @CurrentUser() user: any,
+    @Param('id', new ParseUUIDPipe()) aefiId: string,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+    return this.branchManagerService.markAefiReviewed(aefiId, user.branchId);
+  }
+
+  /**
    * PATCH /api/branch-manager/catchment-areas/:id/assign
    * Assign a CHW to a catchment zone.
    */

@@ -66,6 +66,7 @@ import {
   searchBranchChildren,
   registerStaff,
   updateStaffStatus,
+  markAefiReviewed,
   type AlertItem,
   type BranchDashboardData,
   type BranchChildManagementQueues,
@@ -417,6 +418,28 @@ export default function BranchDashboardPage() {
   }, [childManagementQueues, childQueueTab])
 
   const activeChildQueueCopy = CHILD_QUEUE_COPY[childQueueTab]
+
+  const handleOpenAefiDetail = async (event: AlertItem) => {
+    setSelectedAefiItem(event)
+    if (event.status === "New") {
+      try {
+        await markAefiReviewed(event.id)
+        // Optimistically update local state so the badge changes immediately
+        setDashData((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            aefiEvents: prev.aefiEvents.map((e) =>
+              e.id === event.id ? { ...e, status: "Under review" } : e
+            ),
+          }
+        })
+        setSelectedAefiItem({ ...event, status: "Under review" })
+      } catch {
+        // Non-critical — detail still opens, badge stays New until next refresh
+      }
+    }
+  }
 
   const handleOpenStockModal = async () => {
     setStockModalOpen(true)
@@ -1184,7 +1207,7 @@ export default function BranchDashboardPage() {
                 type="button"
                 className="w-full rounded-lg border border-border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-primary/5"
                 onClick={() => {
-                  setSelectedAefiItem(event)
+                  handleOpenAefiDetail(event)
                   setAefiModalOpen(true)
                 }}
               >
@@ -2566,7 +2589,7 @@ export default function BranchDashboardPage() {
                     key={event.id}
                     type="button"
                     className="w-full rounded-lg border border-border bg-background p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
-                    onClick={() => setSelectedAefiItem(event)}
+                    onClick={() => handleOpenAefiDetail(event)}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-semibold text-foreground">{event.child}</p>
