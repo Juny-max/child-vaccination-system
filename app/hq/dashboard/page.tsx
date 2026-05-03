@@ -24,6 +24,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   ServerCog,
   Shield,
   ShieldAlert,
@@ -58,6 +59,7 @@ import {
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
 import { getHqAnalytics, getHqOverviewStats, HqOverviewStats, getHqAefiReports, getHqDeviceSyncStatus, getHqChwProductivity, HqChwProductivity } from "@/lib/api/hq-analytics"
+import { GHANA_REGIONS } from "@/lib/constants/ghana-regions"
 import {
   getHqVaccines,
   createHqVaccine,
@@ -454,11 +456,13 @@ export default function HqDashboardPage() {
   const [branchForm, setBranchForm] = useState({
     name: "",
     region: "",
+    district: "",
     managerId: "",
   })
   const [editBranchForm, setEditBranchForm] = useState({
     name: "",
     region: "",
+    district: "",
     managerId: "",
   })
   const [editingBranchId, setEditingBranchId] = useState<string | null>(null)
@@ -558,6 +562,21 @@ export default function HqDashboardPage() {
   const [togglingBranchStatusId, setTogglingBranchStatusId] = useState<string | null>(null)
   const [isAssigningChws, setIsAssigningChws] = useState(false)
   const [isCleaningDuplicates, setIsCleaningDuplicates] = useState(false)
+
+  // User management — status toggle spinner, active/inactive tab, search, role filter & pagination
+  const [togglingUserStatusId, setTogglingUserStatusId] = useState<string | null>(null)
+  const [userStatusTab, setUserStatusTab] = useState<"active" | "inactive">("active")
+  const [userSearchQuery, setUserSearchQuery] = useState("")
+  const [userRoleFilter, setUserRoleFilter] = useState("")
+  const [userPage, setUserPage] = useState(1)
+
+  // Branch directory — active/inactive tab, search, filter & pagination
+  const [branchStatusTab, setBranchStatusTab] = useState<"active" | "inactive">("active")
+  const [branchSearchQuery, setBranchSearchQuery] = useState("")
+  const [branchRegionFilter, setBranchRegionFilter] = useState("")
+  const [branchPage, setBranchPage] = useState(1)
+
+  const ITEMS_PER_PAGE = 10
 
   // FEATURE 7: User Roles & Permissions
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([])
@@ -1126,6 +1145,7 @@ export default function HqDashboardPage() {
     setEditBranchForm({
       name: branch.name,
       region: branch.region,
+      district: branch.district ?? "",
       managerId: currentManagerUser?.id ?? "",
     })
     setIsBranchEditModalOpen(true)
@@ -1133,7 +1153,7 @@ export default function HqDashboardPage() {
 
   const cancelBranchEditing = () => {
     setEditingBranchId(null)
-    setEditBranchForm({ name: "", region: "", managerId: "" })
+    setEditBranchForm({ name: "", region: "", district: "", managerId: "" })
     setIsBranchEditModalOpen(false)
   }
 
@@ -1234,6 +1254,7 @@ export default function HqDashboardPage() {
         const updatedBranch = await updateHqBranch(editingBranchId, {
           name: editBranchForm.name.trim(),
           region: editBranchForm.region.trim(),
+          district: editBranchForm.district.trim() || undefined,
           managerId: editBranchForm.managerId || undefined,
         })
 
@@ -1246,6 +1267,7 @@ export default function HqDashboardPage() {
         const createdBranch = await createHqBranch({
           name: branchForm.name.trim(),
           region: branchForm.region.trim(),
+          district: branchForm.district.trim() || undefined,
           managerId: branchForm.managerId || undefined,
         })
 
@@ -1272,7 +1294,7 @@ export default function HqDashboardPage() {
     }
 
     if (!editingBranchId) {
-      setBranchForm({ name: "", region: "", managerId: "" })
+      setBranchForm({ name: "", region: "", district: "", managerId: "" })
     }
     setEditingBranchId(null)
     setEditBranchForm({ name: "", region: "", managerId: "" })
@@ -2213,6 +2235,7 @@ export default function HqDashboardPage() {
 
     const nextStatus: UserRecord["status"] = targetUser.status === "active" ? "inactive" : "active"
 
+    setTogglingUserStatusId(userId)
     try {
       const updatedUser = await updateHqUserStatus(userId, nextStatus)
       setUsers((previous) => previous.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
@@ -2229,6 +2252,8 @@ export default function HqDashboardPage() {
       const notice = mapUserManagementError(error)
       setUserActionNotice(notice)
       setSystemMessage(notice.detail)
+    } finally {
+      setTogglingUserStatusId(null)
     }
   }
 
@@ -2802,12 +2827,24 @@ export default function HqDashboardPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="branchRegion">Region</Label>
-              <Input
+              <select
                 id="branchRegion"
-                placeholder="Greater Accra"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={branchForm.region}
                 onChange={(event) => setBranchForm((prev) => ({ ...prev, region: event.target.value }))}
                 required
+              >
+                <option value="">— Select a region —</option>
+                {GHANA_REGIONS.map((r) => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="branchDistrict">District</Label>
+              <Input
+                id="branchDistrict"
+                placeholder="e.g. Awutu Senya East"
+                value={branchForm.district}
+                onChange={(event) => setBranchForm((prev) => ({ ...prev, district: event.target.value }))}
               />
             </div>
             <div className="space-y-2">
@@ -2874,12 +2911,24 @@ export default function HqDashboardPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="editBranchRegion">Region</Label>
-              <Input
+              <select
                 id="editBranchRegion"
-                placeholder="Greater Accra"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={editBranchForm.region}
                 onChange={(event) => setEditBranchForm((prev) => ({ ...prev, region: event.target.value }))}
                 required
+              >
+                <option value="">— Select a region —</option>
+                {GHANA_REGIONS.map((r) => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editBranchDistrict">District</Label>
+              <Input
+                id="editBranchDistrict"
+                placeholder="e.g. Awutu Senya East"
+                value={editBranchForm.district}
+                onChange={(event) => setEditBranchForm((prev) => ({ ...prev, district: event.target.value }))}
               />
             </div>
             <div className="space-y-2">
@@ -2949,9 +2998,76 @@ export default function HqDashboardPage() {
               Clean up duplicates
             </Button>
           </div>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setBranchStatusTab("active"); setBranchPage(1) }}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${branchStatusTab === "active" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+            >
+              Active
+              <span className="ml-1.5 rounded-full bg-background/20 px-1.5 py-0.5 text-xs">
+                {branches.filter((b) => b.status === "active").length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setBranchStatusTab("inactive"); setBranchPage(1) }}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${branchStatusTab === "inactive" ? "bg-destructive text-destructive-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+            >
+              Inactive
+              <span className="ml-1.5 rounded-full bg-background/20 px-1.5 py-0.5 text-xs">
+                {branches.filter((b) => b.status === "inactive").length}
+              </span>
+            </button>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, district, or manager..."
+                value={branchSearchQuery}
+                onChange={(e) => { setBranchSearchQuery(e.target.value); setBranchPage(1) }}
+                className="pl-9"
+              />
+            </div>
+            <select
+              className="rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:w-48"
+              value={branchRegionFilter}
+              onChange={(e) => { setBranchRegionFilter(e.target.value); setBranchPage(1) }}
+            >
+              <option value="">All regions</option>
+              {GHANA_REGIONS.map((r) => <option key={r}>{r}</option>)}
+            </select>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {branches.map((branch) => {
+          {(() => {
+            const q = branchSearchQuery.trim().toLowerCase()
+            const filtered = branches.filter((b) => {
+              if (b.status !== branchStatusTab) return false
+              if (branchRegionFilter && b.region !== branchRegionFilter) return false
+              if (q) {
+                return (
+                  b.name.toLowerCase().includes(q) ||
+                  (b.district ?? "").toLowerCase().includes(q) ||
+                  b.manager.toLowerCase().includes(q)
+                )
+              }
+              return true
+            })
+            if (filtered.length === 0) {
+              return (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No branches match your search.
+                </p>
+              )
+            }
+            const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
+            const safePage = Math.min(branchPage, totalPages)
+            const paginated = filtered.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE)
+            return (
+              <>
+                {paginated.map((branch) => {
             const isInactive = branch.status === "inactive"
             const isToggling = togglingBranchStatusId === branch.id
             return (
@@ -3000,6 +3116,24 @@ export default function HqDashboardPage() {
               </div>
             )
           })}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between border-t border-border pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Showing {(safePage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(safePage * ITEMS_PER_PAGE, filtered.length)} of {filtered.length} branches
+                    </p>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" disabled={safePage === 1} onClick={() => setBranchPage((p) => p - 1)}>
+                        Previous
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={safePage === totalPages} onClick={() => setBranchPage((p) => p + 1)}>
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </CardContent>
       </Card>
 
@@ -3262,12 +3396,85 @@ export default function HqDashboardPage() {
               User list is offline. Showing saved data.
             </p>
           ) : null}
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setUserStatusTab("active"); setUserPage(1) }}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${userStatusTab === "active" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+            >
+              Active
+              <span className="ml-1.5 rounded-full bg-background/20 px-1.5 py-0.5 text-xs">
+                {users.filter((u) => u.status === "active").length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setUserStatusTab("inactive"); setUserPage(1) }}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${userStatusTab === "inactive" ? "bg-destructive text-destructive-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+            >
+              Inactive
+              <span className="ml-1.5 rounded-full bg-background/20 px-1.5 py-0.5 text-xs">
+                {users.filter((u) => u.status === "inactive").length}
+              </span>
+            </button>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by name or email..."
+                value={userSearchQuery}
+                onChange={(e) => { setUserSearchQuery(e.target.value); setUserPage(1) }}
+                className="pl-9"
+              />
+            </div>
+            <select
+              className="rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:w-52"
+              value={userRoleFilter}
+              onChange={(e) => { setUserRoleFilter(e.target.value); setUserPage(1) }}
+            >
+              <option value="">All roles</option>
+              <option value="branch-manager">Branch Manager</option>
+              <option value="facility-nurse">Facility Nurse</option>
+              <option value="chw">Community Health Worker</option>
+              <option value="parent">Parent</option>
+            </select>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {users.map((user) => (
+          {(() => {
+            const q = userSearchQuery.trim().toLowerCase()
+            const filtered = users.filter((u) => {
+              if (u.status !== userStatusTab) return false
+              if (userRoleFilter) {
+                const normalized = u.role.toLowerCase().replace(/\s+/g, "-")
+                if (normalized !== userRoleFilter) return false
+              }
+              if (q) {
+                return (
+                  u.name.toLowerCase().includes(q) ||
+                  u.email.toLowerCase().includes(q)
+                )
+              }
+              return true
+            })
+            if (filtered.length === 0) {
+              return (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No users match your search.
+                </p>
+              )
+            }
+            const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
+            const safePage = Math.min(userPage, totalPages)
+            const paginated = filtered.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE)
+            return (
+              <>
+                {paginated.map((user) => (
             <div key={user.id} className="rounded-lg border border-border bg-background p-4">
               {(() => {
                 const resetStatus = userResetStatusById[user.id]
+                const isTogglingThis = togglingUserStatusId === user.id
 
                 return (
                   <>
@@ -3300,8 +3507,11 @@ export default function HqDashboardPage() {
                   variant="ghost"
                   className={user.status === "active" ? "text-destructive" : "text-emerald-600"}
                   onClick={() => handleUserStatusToggle(user.id)}
+                  disabled={isTogglingThis}
                 >
-                  {user.status === "active" ? "Deactivate" : "Activate"}
+                  {isTogglingThis
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : user.status === "active" ? "Deactivate" : "Activate"}
                 </Button>
               </div>
               {resetStatus ? (
@@ -3334,6 +3544,24 @@ export default function HqDashboardPage() {
               })()}
             </div>
           ))}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between border-t border-border pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Showing {(safePage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(safePage * ITEMS_PER_PAGE, filtered.length)} of {filtered.length} users
+                    </p>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" disabled={safePage === 1} onClick={() => setUserPage((p) => p - 1)}>
+                        Previous
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={safePage === totalPages} onClick={() => setUserPage((p) => p + 1)}>
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </CardContent>
       </Card>
 

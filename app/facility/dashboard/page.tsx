@@ -52,7 +52,7 @@ type CameraState = "idle" | "starting" | "active" | "error"
 export default function FacilityDashboardPage() {
   const router = useRouter()
   const [userName, setUserName] = useState("")
-  const [facilityInfo, setFacilityInfo] = useState<{ name: string; region: string } | null>(null)
+  const [facilityInfo, setFacilityInfo] = useState<{ name: string; region: string; district: string } | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [searchResults, setSearchResults] = useState<facilityApi.ChildSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -107,7 +107,7 @@ export default function FacilityDashboardPage() {
     if (branchId) {
       facilityApi.getBranchDetails(branchId)
         .then(details => {
-          setFacilityInfo({ name: details.name, region: details.region })
+          setFacilityInfo({ name: details.name, region: details.region, district: details.district })
         })
         .catch(error => {
           console.error("Failed to fetch facility details:", error)
@@ -444,7 +444,9 @@ export default function FacilityDashboardPage() {
             <div>
               <p className="text-sm text-muted-foreground">Today&apos;s Clinic · Facility Nurse Console</p>
               <p className="text-xl font-semibold text-foreground">{facilityInfo?.name || "Loading..."}</p>
-              <p className="text-xs text-muted-foreground">{facilityInfo?.region || ""}</p>
+              <p className="text-xs text-muted-foreground">
+                {[facilityInfo?.district, facilityInfo?.region].filter(Boolean).join(" · ")}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-4">

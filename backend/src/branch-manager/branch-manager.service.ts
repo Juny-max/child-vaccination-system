@@ -2383,10 +2383,11 @@ export class BranchManagerService {
         name: dto.name.trim(),
         code,
         region: dto.region.trim(),
+        district: dto.district?.trim() || null,
         status: 'active',
         metadata: { managerName, assignedChwNames: [] },
       })
-      .select('id, name, code, region, status, metadata')
+      .select('id, name, code, region, district, status, metadata')
       .single();
 
     if (createError || !createdBranch) {
@@ -2457,6 +2458,7 @@ export class BranchManagerService {
       .update({
         name: dto.name.trim(),
         region: dto.region.trim(),
+        district: dto.district?.trim() || null,
         metadata: {
           ...currentMetadata,
           managerName,
