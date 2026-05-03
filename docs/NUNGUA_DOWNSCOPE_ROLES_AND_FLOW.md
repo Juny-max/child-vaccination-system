@@ -121,3 +121,51 @@ Both are correct, but they are different levels of scheduling.
 ## 7) One-Line Presentation Summary
 
 "Our pilot is down-scoped to Nungua and nearby areas, with 5 primary users and 6 practical roles, where admin sets vaccine timing rules while branch and clinic teams handle real child appointments and field follow-up."
+
+---
+
+## 8) Real-World GHS Mapping (Ledzokuku Municipal Assembly)
+
+### Who is the Admin (HQ)?
+
+In real life for this scope, the **District Director of Health Services (DDHS)** for **Ledzokuku Municipal Assembly** — which covers Nungua, Teshie, and the surrounding corridor — is the equivalent of the HQ Admin in our system. The DDHS sits above all facilities in the district, has visibility into all data, and makes decisions on staffing, vaccine supply, and national coverage targets. Our "HQ Admin" role maps directly to that district-level office.
+
+---
+
+### Are Branch Managers = Hospital/Clinic Managers?
+
+Yes. In GHS terminology they are called the **Officer-in-Charge (OIC)** for health centers, or **Medical Superintendent** for hospitals. The mapping is:
+
+| System Role | Real GHS Title | Example |
+|---|---|---|
+| HQ Admin | District Director of Health Services (DDHS) | Ledzokuku District Health Directorate |
+| Branch Manager | Officer-in-Charge (OIC) / Medical Superintendent | Nungua Health Center OIC, Teshie Health Center OIC |
+| Facility Nurse | EPI / Vaccination Nurse | Immunisation nurse at the health center |
+| CHW | Community Health Officer (CHO) | Field officer attached to a CHPS compound |
+
+---
+
+### Do They Actually Draw Catchment Areas on a Map?
+
+Yes — this is standard GHS practice. Specifically:
+
+- Every **CHPS zone** (Community Health Planning and Services) has a defined geographic catchment area drawn on a map.
+- The OIC and the district office define which communities, streets, and households fall under which CHPS compound.
+- Modern districts use **DHIS2** (the national health information system adopted by Ghana) which has built-in GIS mapping for catchment boundaries.
+- Field workers walk boundaries with GPS devices or use satellite imagery to define and update zones.
+- The DDHS office holds the official catchment maps and uses them for resource allocation and coverage reporting.
+
+Our system's concept of catchment areas is grounded in this real practice. The current implementation uses text-based catchment names (e.g., "Nungua Barrier", "Teshie New Town"); in a production GHS deployment those would be geographic polygons stored in DHIS2 or a GIS layer.
+
+---
+
+### Scoping to Nungua and Environs — Concrete Picture
+
+| Layer | Detail |
+|---|---|
+| HQ Admin (1) | Ledzokuku District Health Directorate (DDHS office) |
+| Branches (up to 5) | Nungua Health Center, Teshie Health Center, Spintex CHPS Compound, Labadi Health Center, Ashaiman Health Center |
+| CHWs | Assigned to specific streets and communities within each CHPS zone |
+| Catchment Area Examples | "Nungua Barrier", "Teshie New Town", "Spintex Road Community", "Labadi Beach Area" |
+
+Our system architecture mirrors this structure exactly.
