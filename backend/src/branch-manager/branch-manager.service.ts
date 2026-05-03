@@ -1784,6 +1784,92 @@ export class BranchManagerService {
     };
   }
 
+  async adjustStock(
+    branchId: string,
+    userId: string,
+    dto: {
+      vaccineId: string;
+      newQuantity: number;
+      reason: string;
+      notes?: string;
+    },
+  ) {
+    const db = this.databaseService.supabase;
+
+    // Fetch all batches for this vaccine at this facility, ordered earliest expiry first (FEFO)
+    const { data: batches, error: fetchError } = await db
+      .from('stock_inventory')
+      .select('id, quantity_remaining, quantity_used, quantity_received')
+      .eq('facility_id', branchId)
+      .eq('vaccine_id', dto.vaccineId)
+      .order('expiry_date', { ascending: true });
+
+    if (fetchError) {
+      throw new InternalServerErrorException({ message: 'Failed to fetch stock batches.', code: 'STOCK_FETCH_FAILED' });
+    }
+
+    const currentTotal = (batches ?? []).reduce((sum: number, b: any) => sum + (b.quantity_remaining ?? 0), 0);
+    const delta = dto.newQuantity - currentTotal;
+
+    if (delta === 0) {
+      return { previousTotal: currentTotal, newTotal: dto.newQuantity, reason: dto.reason };
+    }
+
+    let remaining = Math.abs(delta);
+
+    if (delta < 0) {
+      // Reducing — subtract from earliest-expiry batches first
+      for (const batch of batches ?? []) {
+        if (remaining <= 0) break;
+        const deduct = Math.min(remaining, batch.quantity_remaining ?? 0);
+        if (deduct === 0) continue;
+        const { error } = await db
+          .from('stock_inventory')
+          .update({
+            quantity_remaining: (batch.quantity_remaining ?? 0) - deduct,
+            quantity_used: (batch.quantity_used ?? 0) + deduct,
+          })
+          .eq('id', batch.id);
+        if (error) throw new InternalServerErrorException({ message: 'Failed to adjust stock batch.', code: 'STOCK_ADJUST_FAILED' });
+        remaining -= deduct;
+      }
+    } else {
+      // Increasing — add to the most recently received batch (last in array after re-sort)
+      const { data: latestBatch } = await db
+        .from('stock_inventory')
+        .select('id, quantity_remaining, quantity_received')
+        .eq('facility_id', branchId)
+        .eq('vaccine_id', dto.vaccineId)
+        .order('received_date', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (latestBatch) {
+        const newRemaining = (latestBatch.quantity_remaining ?? 0) + delta;
+        const newReceived = Math.max(latestBatch.quantity_received ?? 0, newRemaining);
+        await db
+          .from('stock_inventory')
+          .update({ quantity_remaining: newRemaining, quantity_received: newReceived })
+          .eq('id', latestBatch.id);
+      }
+    }
+
+    // Write to audit log
+    const reasonLabel: Record<string, string> = {
+      wastage: 'Wastage',
+      physical_count: 'Physical count correction',
+      transfer_out: 'Transfer out',
+      correction: 'Stock correction',
+    };
+    await db.from('audit_logs').insert({
+      user_id: userId,
+      action: `Stock adjusted for vaccine — ${reasonLabel[dto.reason] ?? dto.reason}. Previous: ${currentTotal} doses → New: ${dto.newQuantity} doses.${dto.notes ? ` Notes: ${dto.notes}` : ''}`,
+      category: 'Stock',
+    });
+
+    return { previousTotal: currentTotal, newTotal: dto.newQuantity, reason: dto.reason };
+  }
+
   async getHqBranches() {
     const db = this.databaseService.supabase;
 

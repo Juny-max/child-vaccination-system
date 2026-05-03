@@ -23,6 +23,7 @@ import {
   Loader2,
   MessageSquareWarning,
   Package,
+  Pencil,
   Radio,
   RefreshCw,
   Search,
@@ -67,6 +68,7 @@ import {
   registerStaff,
   updateStaffStatus,
   markAefiReviewed,
+  adjustStock,
   type AlertItem,
   type BranchDashboardData,
   type BranchChildManagementQueues,
@@ -204,6 +206,11 @@ export default function BranchDashboardPage() {
   const [resettingStockVaccineId, setResettingStockVaccineId] = useState<string | null>(null)
   const [resetStockModalOpen, setResetStockModalOpen] = useState(false)
   const [resetStockTarget, setResetStockTarget] = useState<StockAlert | null>(null)
+  const [adjustStockModalOpen, setAdjustStockModalOpen] = useState(false)
+  const [adjustStockTarget, setAdjustStockTarget] = useState<StockAlert | null>(null)
+  const [adjustStockForm, setAdjustStockForm] = useState({ newQuantity: "", reason: "", notes: "" })
+  const [isAdjustingStock, setIsAdjustingStock] = useState(false)
+  const [adjustStockError, setAdjustStockError] = useState<string | null>(null)
 
   // Stock warning modal — auto-opens on load when vaccines are expired or out of stock
   const [stockWarningModalOpen, setStockWarningModalOpen] = useState(false)
@@ -500,6 +507,45 @@ export default function BranchDashboardPage() {
     if (!canResetAlertStock(alert)) return
     setResetStockTarget(alert)
     setResetStockModalOpen(true)
+  }
+
+  const handleOpenAdjustStockModal = (alert: StockAlert) => {
+    setAdjustStockTarget(alert)
+    setAdjustStockForm({ newQuantity: String(alert.remaining), reason: "", notes: "" })
+    setAdjustStockError(null)
+    setAdjustStockModalOpen(true)
+  }
+
+  const handleAdjustStockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!adjustStockTarget) return
+    const newQty = parseInt(adjustStockForm.newQuantity, 10)
+    if (isNaN(newQty) || newQty < 0) {
+      setAdjustStockError("Please enter a valid quantity (0 or more).")
+      return
+    }
+    if (!adjustStockForm.reason) {
+      setAdjustStockError("Please select a reason for this adjustment.")
+      return
+    }
+    setIsAdjustingStock(true)
+    setAdjustStockError(null)
+    try {
+      await adjustStock({
+        vaccineId: adjustStockTarget.vaccineId,
+        newQuantity: newQty,
+        reason: adjustStockForm.reason,
+        notes: adjustStockForm.notes || undefined,
+      })
+      setSystemMessage(`Stock adjusted: ${adjustStockTarget.vaccine} updated to ${newQty} doses.`)
+      setAdjustStockModalOpen(false)
+      setAdjustStockTarget(null)
+      loadDashboard()
+    } catch (err: unknown) {
+      setAdjustStockError(err instanceof Error ? err.message : "Failed to adjust stock. Please try again.")
+    } finally {
+      setIsAdjustingStock(false)
+    }
   }
 
   const handleResetExpiringAndRestock = async (alert: StockAlert) => {
@@ -1033,24 +1079,37 @@ export default function BranchDashboardPage() {
                     Exp: {alert.expiryDate} {expiryWarning && `(${alert.daysToExpiry}d)`}
                   </p>
                 </div>
-                {canReset ? (
+                <div className="flex items-center justify-end gap-2 mt-1">
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="group mt-1 h-8 w-8 self-end p-0"
-                    disabled={resetInProgress}
-                    aria-label="Reset expiring stock and restock"
-                    title="Reset expiring stock and restock"
-                    onClick={() => handleOpenResetStockModal(alert)}
+                    className="h-8 w-8 p-0"
+                    aria-label="Adjust stock quantity"
+                    title="Adjust stock quantity"
+                    onClick={() => handleOpenAdjustStockModal(alert)}
                   >
-                    {resetInProgress ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3.5 w-3.5 transition-transform duration-300 group-hover:rotate-180" />
-                    )}
+                    <Pencil className="h-3.5 w-3.5" />
                   </Button>
-                ) : null}
+                  {canReset ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="group h-8 w-8 p-0"
+                      disabled={resetInProgress}
+                      aria-label="Reset expiring stock and restock"
+                      title="Reset expiring stock and restock"
+                      onClick={() => handleOpenResetStockModal(alert)}
+                    >
+                      {resetInProgress ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5 transition-transform duration-300 group-hover:rotate-180" />
+                      )}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             )
           })}
@@ -2343,6 +2402,92 @@ export default function BranchDashboardPage() {
               {resettingStockVaccineId ? "Resetting..." : "Confirm reset"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Stock Adjustment Modal ──────────────────────────────────────── */}
+      <Dialog
+        open={adjustStockModalOpen}
+        onOpenChange={(open) => {
+          if (!isAdjustingStock) {
+            setAdjustStockModalOpen(open)
+            if (!open) { setAdjustStockTarget(null); setAdjustStockError(null) }
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" /> Adjust stock quantity
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Record a change to the current stock level. A reason is required for the audit trail.
+            </p>
+          </DialogHeader>
+          <form onSubmit={handleAdjustStockSubmit} className="space-y-4">
+            <div className="space-y-1">
+              <Label>Vaccine</Label>
+              <Input value={adjustStockTarget?.vaccine ?? ""} readOnly className="bg-muted cursor-not-allowed" />
+            </div>
+            <div className="space-y-1">
+              <Label>Current quantity on hand</Label>
+              <Input value={`${adjustStockTarget?.remaining ?? 0} doses`} readOnly className="bg-muted cursor-not-allowed" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="newQuantity">New quantity <span className="text-destructive">*</span></Label>
+              <Input
+                id="newQuantity"
+                type="number"
+                min="0"
+                required
+                placeholder="Enter corrected quantity"
+                value={adjustStockForm.newQuantity}
+                onChange={(e) => setAdjustStockForm((f) => ({ ...f, newQuantity: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="adjustReason">Reason <span className="text-destructive">*</span></Label>
+              <select
+                id="adjustReason"
+                required
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                value={adjustStockForm.reason}
+                onChange={(e) => setAdjustStockForm((f) => ({ ...f, reason: e.target.value }))}
+              >
+                <option value="">Select a reason</option>
+                <option value="wastage">Wastage (damaged, cold-chain failure, discarded)</option>
+                <option value="physical_count">Physical count correction (stocktake mismatch)</option>
+                <option value="transfer_out">Transfer out (sent to another facility)</option>
+                <option value="correction">Stock correction (wrong quantity logged)</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="adjustNotes">Notes (optional)</Label>
+              <Input
+                id="adjustNotes"
+                placeholder="e.g. 12 vials found damaged after cold chain power cut"
+                value={adjustStockForm.notes}
+                onChange={(e) => setAdjustStockForm((f) => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+            {adjustStockError && (
+              <p className="text-sm text-destructive">{adjustStockError}</p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isAdjustingStock}
+                onClick={() => { setAdjustStockModalOpen(false); setAdjustStockTarget(null); setAdjustStockError(null) }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isAdjustingStock} className="gap-2">
+                {isAdjustingStock ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                {isAdjustingStock ? "Saving..." : "Save adjustment"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
