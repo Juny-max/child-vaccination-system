@@ -1084,12 +1084,12 @@ export default function BranchDashboardPage() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-8 w-8 p-0"
+                    className="group h-8 w-8 p-0 transition-all duration-300 hover:border-primary hover:bg-primary/10 hover:shadow-md"
                     aria-label="Adjust stock quantity"
                     title="Adjust stock quantity"
                     onClick={() => handleOpenAdjustStockModal(alert)}
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <Pencil className="h-3.5 w-3.5 transition-all duration-300 group-hover:-rotate-12 group-hover:scale-125 group-hover:text-primary group-hover:drop-shadow-sm" />
                   </Button>
                   {canReset ? (
                     <Button
