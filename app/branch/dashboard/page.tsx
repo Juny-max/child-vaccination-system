@@ -537,7 +537,7 @@ export default function BranchDashboardPage() {
         reason: adjustStockForm.reason,
         notes: adjustStockForm.notes || undefined,
       })
-      setSystemMessage(`Stock adjusted: ${adjustStockTarget.vaccine} updated to ${newQty} doses.`)
+      toast.success(`Stock adjusted: ${adjustStockTarget.vaccine} updated to ${newQty} doses.`)
       setAdjustStockModalOpen(false)
       setAdjustStockTarget(null)
       loadDashboard()
