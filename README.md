@@ -8,7 +8,7 @@
 
 **Frontend:** ✅ Complete (Next.js 16 + React 19 + TypeScript + Tailwind CSS)  
 **Database:** ✅ Schema designed and seeded in Supabase (PostgreSQL)  
-**Backend:** ✅ Deployed (NestJS API running on Render → `https://child-vaccination-system-e18o.onrender.com/api`)
+**Backend:** ✅ Deployed (NestJS API running on Render)
 
 ---
 
@@ -185,7 +185,7 @@ pnpm run start:prod # runs node dist/src/main
 | `CORS_ORIGIN` | Production frontend URL (e.g., `https://cvcc-iota.vercel.app`) |
 | `NODE_ENV` | `production` |
 
-1. After deploy completes, the API will be live (currently `https://child-vaccination-system-e18o.onrender.com/api`). Update the frontend `NEXT_PUBLIC_API_URL` to match.
+1. After deploy completes, the API will be live. Update the frontend `NEXT_PUBLIC_API_URL` to match the Render-provided URL.
 
 > ℹ️ The root route (`/`) returns 404 on purpose; test endpoints such as `/api/auth/login` or `/api/parent/dashboard` instead.
 
