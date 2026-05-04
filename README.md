@@ -720,18 +720,27 @@ git push origin backend
 - [x] Database schema (21 tables)
 - [x] Seed data with test accounts
 - [x] Supabase setup and configuration
-- [ ] **Backend API (NestJS) - IN PROGRESS**
-  - [ ] HQ Admin endpoints
-  - [ ] Branch Manager endpoints
-  - [ ] Parent Portal endpoints
-  - [ ] Facility Nurse endpoints
-  - [ ] CHW endpoints
+- [x] Backend API (NestJS)
+  - [x] HQ Admin endpoints
+  - [x] Branch Manager endpoints
+  - [x] Parent Portal endpoints
+  - [x] Facility Nurse endpoints
 - [x] Public certificate scanner and verification endpoint (`/verify`)
-- [ ] Authentication with JWT
-- [ ] SMS/Email notifications (Twilio/SendGrid)
-- [ ] PDF certificate generation
-- [ ] QR code scanning and verification
+- [x] Authentication with JWT
+- [x] SMS notifications (registration, guardian invite)
+- [x] PDF certificate generation and download
+- [x] QR code scanning and verification
+- [x] Auto-certificate issuance on vaccination completion
+- [x] Rate limiting on public verify endpoint
 - [ ] Offline sync with Service Workers
+
+### 🔭 Future Implementations
+
+- [ ] **USSD vaccination status check** — Allow guardians (including those without smartphones or internet access) to dial a shortcode such as `*XXX*ChildID#` to instantly retrieve their child's vaccination status and certificate ID on any basic feature phone. Requires integration with a Ghanaian telco (MTN, Vodafone/Telecel, AirtelTigo) via their USSD gateway API. This would be the most inclusive access channel for rural and low-income communities where smartphone penetration is low but mobile phone ownership is near-universal.
+
+- [ ] **Auto-SMS on certificate issuance** — When a child completes all mandatory vaccines and a certificate is auto-generated, send an SMS to the registered guardian's phone with the Certificate ID and a short verification link. Removes dependence on the parent portal for guardians who registered with a phone number only.
+
+- [ ] **Guardian registration without email** — Currently the parent portal requires an email address to create an account. Future work should support phone-number-only registration with OTP login, so guardians in rural areas who do not have email can still access their child's digital records.
 
 ---
 
