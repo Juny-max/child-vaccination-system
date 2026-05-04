@@ -403,7 +403,7 @@ export default function ParentDashboardOverview() {
                     )}
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">
-                    Public Health Authorities can scan this QR directly from your device to confirm authenticity.
+                    Show this QR to schools, clinics or any institution to verify your child's vaccination.
                   </p>
                 </div>
               </CardContent>
