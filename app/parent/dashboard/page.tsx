@@ -114,7 +114,7 @@ export default function ParentDashboardOverview() {
         { label: "Certificate ID", value: latestCertificate.certificateId },
         { label: "Child", value: `${latestCertificate.childName} (${latestCertificate.childId})` },
         { label: "Issued", value: latestCertificate.issuedDate || "N/A" },
-        { label: "Facility", value: latestCertificate.issuedBy || "N/A" },
+        { label: "Facility", value: latestCertificate.issuedByFacility || latestCertificate.issuedBy || "N/A" },
       ]
     : []
 
