@@ -57,6 +57,7 @@ const supabase = createClient(supabaseUrl, supabaseClientKey, {
 })
 
 const CERTIFICATE_SELECT_FIELDS = `
+  id,
   certificate_id,
   qr_payload,
   issued_date,
@@ -64,6 +65,7 @@ const CERTIFICATE_SELECT_FIELDS = `
   vaccines_completed,
   status,
   issued_by_facility_id,
+  last_verified_at,
   branches!issued_by_facility_id ( name, region )
 `
 
@@ -292,6 +294,12 @@ export async function GET(req: NextRequest) {
 
   const isRevoked = cert.status === 'revoked' || cert.status === 'expired'
   const branch = Array.isArray(cert.branches) ? cert.branches[0] : cert.branches
+  const nowIso = new Date().toISOString()
+
+  // Stamp last_verified_at on every successful scan
+  if (!isRevoked && cert.id) {
+    await supabase.from('certificates').update({ last_verified_at: nowIso }).eq('id', cert.id)
+  }
 
   return NextResponse.json({
     found: true,
@@ -304,5 +312,6 @@ export async function GET(req: NextRequest) {
     issuedBy: branch?.name ?? '',
     region: branch?.region ?? '',
     status: cert.status,
+    lastVerifiedAt: isRevoked ? null : nowIso,
   })
 }
