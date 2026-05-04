@@ -572,6 +572,42 @@ export class FacilityService {
       }
     }
 
+    // ── Auto-issue certificate when all mandatory vaccines are complete ──
+    try {
+      const completionStatus = await this.db.getVaccinationCompletionStatus(childId);
+      if (completionStatus.isComplete) {
+        // Only create if one doesn't already exist for this child
+        const { data: existing } = await this.db.supabase
+          .from('certificates')
+          .select('id')
+          .eq('child_id', childId)
+          .limit(1)
+          .maybeSingle();
+
+        if (!existing) {
+          const year = new Date().getFullYear();
+          const suffix = Math.floor(Math.random() * 900000) + 100000;
+          const certificateId = `CERT-GH-${year}-${suffix}`;
+          const qrPayload = this.qrTokenService.generateCertificateToken();
+
+          await this.db.supabase.from('certificates').insert({
+            certificate_id: certificateId,
+            child_id: childId,
+            qr_payload: qrPayload,
+            issued_date: new Date().toISOString().split('T')[0],
+            issued_by_user_id: userId,
+            issued_by_facility_id: facilityId || null,
+            completion_status: 'Complete',
+            vaccines_completed: completionStatus.completedVaccines,
+            status: 'issued',
+          });
+        }
+      }
+    } catch (certError) {
+      // Certificate generation failure must not abort the vaccination record
+      this.logger.warn(`Auto-certificate generation failed for child ${childId}: ${(certError as Error).message}`);
+    }
+
     return {
       id: event.id,
       vaccineId: event.vaccine_id,
@@ -586,6 +622,64 @@ export class FacilityService {
       status: event.status,
       notes: event.notes,
     };
+  }
+
+  /**
+   * Backfill missing certificates for all children who completed all mandatory
+   * vaccines but never received a certificate record (e.g. pre-auto-issue data).
+   */
+  async backfillMissingCertificates(userId: string, facilityId?: string): Promise<{ issued: number; skipped: number }> {
+    const db = this.db.supabase;
+
+    // Get all mandatory schedule entries to know the total required
+    const { data: schedules } = await db
+      .from('vaccination_schedules')
+      .select('id')
+      .eq('is_mandatory', true);
+    const totalRequired = schedules?.length || 0;
+    if (totalRequired === 0) return { issued: 0, skipped: 0 };
+
+    // Get all active children (optionally scoped to this facility)
+    let childQuery = db.from('children').select('id').eq('is_active', true);
+    if (facilityId) childQuery = childQuery.eq('primary_facility_id', facilityId);
+    const { data: children } = await childQuery;
+
+    let issued = 0;
+    let skipped = 0;
+
+    for (const child of children ?? []) {
+      const completionStatus = await this.db.getVaccinationCompletionStatus(child.id);
+      if (!completionStatus.isComplete) { skipped++; continue; }
+
+      const { data: existing } = await db
+        .from('certificates')
+        .select('id')
+        .eq('child_id', child.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) { skipped++; continue; }
+
+      const year = new Date().getFullYear();
+      const suffix = Math.floor(Math.random() * 900000) + 100000;
+      const certificateId = `CERT-GH-${year}-${suffix}`;
+      const qrPayload = this.qrTokenService.generateCertificateToken();
+
+      await db.from('certificates').insert({
+        certificate_id: certificateId,
+        child_id: child.id,
+        qr_payload: qrPayload,
+        issued_date: new Date().toISOString().split('T')[0],
+        issued_by_user_id: userId,
+        issued_by_facility_id: facilityId || null,
+        completion_status: 'Complete',
+        vaccines_completed: completionStatus.completedVaccines,
+        status: 'issued',
+      });
+      issued++;
+    }
+
+    return { issued, skipped };
   }
 
   /**
