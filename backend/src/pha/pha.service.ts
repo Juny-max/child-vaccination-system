@@ -805,7 +805,7 @@ export class PhaService {
       // Look up a formal certificate for this child
       const { data: cert } = await db
         .from('certificates')
-        .select('certificate_id, issued_date, completion_status, vaccines_completed, status, issued_by_facility_id, branches!issued_by_facility_id(name, region)')
+        .select('id, certificate_id, issued_date, completion_status, vaccines_completed, status, issued_by_facility_id, branches!issued_by_facility_id(name, region)')
         .eq('child_id', (childRow as any).id)
         .eq('status', 'issued')
         .order('created_at', { ascending: false })
@@ -824,6 +824,9 @@ export class PhaService {
         };
       }
 
+      // Stamp last_verified_at every time a valid certificate is scanned
+      await db.from('certificates').update({ last_verified_at: new Date().toISOString() }).eq('id', (cert as any).id);
+
       const certBranch: any = cert.branches;
       return {
         found: true,
@@ -837,6 +840,7 @@ export class PhaService {
         issuedBy: Array.isArray(certBranch) ? certBranch[0]?.name ?? 'Unknown Facility' : certBranch?.name ?? 'Unknown Facility',
         region: Array.isArray(certBranch) ? certBranch[0]?.region ?? '' : certBranch?.region ?? '',
         status: (cert as any).status,
+        lastVerifiedAt: new Date().toISOString(),
       };
     }
 
@@ -870,7 +874,7 @@ export class PhaService {
     const { data, error } = await db
       .from('certificates')
       .select(
-        'certificate_id, child_id, issued_date, completion_status, vaccines_completed, status, issued_by_facility_id, branches!issued_by_facility_id(name, region)',
+        'id, certificate_id, child_id, issued_date, completion_status, vaccines_completed, status, issued_by_facility_id, last_verified_at, branches!issued_by_facility_id(name, region)',
       )
       .eq(lookupColumn, scannedValue)
       .single();
@@ -918,6 +922,9 @@ export class PhaService {
     // Dynamically recalculate completion status from actual vaccination events
     // so stale DB values never override real progress
     let completionStatus = data.completion_status;
+    const nowIso = new Date().toISOString();
+    const updatePayload: Record<string, any> = { last_verified_at: nowIso };
+
     if (certificate?.child_id) {
       const { data: completedEvents } = await db
         .from('vaccination_events')
@@ -932,10 +939,12 @@ export class PhaService {
       const completedCount = completedEvents?.length || 0;
       if (totalRequired > 0 && completedCount >= totalRequired) {
         completionStatus = 'Complete';
-        // Update stale DB value in the background
-        await db.from('certificates').update({ completion_status: 'Complete' }).eq('id', (data as any).id);
+        updatePayload.completion_status = 'Complete';
       }
     }
+
+    // Stamp last_verified_at (and heal completion_status if needed) on every scan
+    await db.from('certificates').update(updatePayload).eq('id', (data as any).id);
 
     return {
       found: true,
@@ -949,6 +958,7 @@ export class PhaService {
       issuedBy: facilityName,
       region,
       status: data.status,
+      lastVerifiedAt: nowIso,
     };
   }
 }
