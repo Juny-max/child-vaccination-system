@@ -778,25 +778,65 @@ export class PhaService {
     const db = this.databaseService.supabase;
     const scannedValue = (certificateId || '').trim();
 
-    // Child QR tokens map to pending status when no certificate has been issued.
+    // Child QR tokens — check if a formal certificate has been issued for this child.
     if (this.qrTokenService.isChildToken(scannedValue)) {
-      const childByToken = await this.getChildIdentityByField(
-        'qr_code_payload',
-        scannedValue,
-      );
+      const { data: childRow } = await db
+        .from('children')
+        .select(`
+          id, cvcc_id, full_name,
+          child_guardian (
+            is_primary,
+            guardians ( full_name )
+          )
+        `)
+        .eq('qr_code_payload', scannedValue)
+        .single();
 
-      if (!childByToken) {
+      if (!childRow) {
         return { found: false, certificateId: scannedValue };
       }
 
+      const childIdentity = {
+        cvccId: (childRow as any).cvcc_id,
+        childName: (childRow as any).full_name,
+        motherName: this.readMotherName((childRow as any).child_guardian),
+      };
+
+      // Look up a formal certificate for this child
+      const { data: cert } = await db
+        .from('certificates')
+        .select('certificate_id, issued_date, completion_status, vaccines_completed, status, issued_by_facility_id, branches!issued_by_facility_id(name, region)')
+        .eq('child_id', (childRow as any).id)
+        .eq('status', 'issued')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!cert) {
+        return {
+          found: true,
+          isValid: false,
+          isPending: true,
+          certificateId: `TEMP-${childIdentity.cvccId}`,
+          childCvccId: childIdentity.cvccId,
+          childName: childIdentity.childName,
+          motherName: childIdentity.motherName,
+        };
+      }
+
+      const certBranch: any = cert.branches;
       return {
         found: true,
-        isValid: false,
-        isPending: true,
-        certificateId: `TEMP-${childByToken.cvccId}`,
-        childCvccId: childByToken.cvccId,
-        childName: childByToken.childName,
-        motherName: childByToken.motherName,
+        isValid: true,
+        certificateId: (cert as any).certificate_id,
+        childName: childIdentity.childName,
+        motherName: childIdentity.motherName,
+        issuedDate: (cert as any).issued_date,
+        completionStatus: (cert as any).completion_status,
+        vaccinesCompleted: (cert as any).vaccines_completed ?? [],
+        issuedBy: Array.isArray(certBranch) ? certBranch[0]?.name ?? 'Unknown Facility' : certBranch?.name ?? 'Unknown Facility',
+        region: Array.isArray(certBranch) ? certBranch[0]?.region ?? '' : certBranch?.region ?? '',
+        status: (cert as any).status,
       };
     }
 
@@ -875,6 +915,28 @@ export class PhaService {
       ? await this.getChildIdentityByField('id', certificate.child_id)
       : null;
 
+    // Dynamically recalculate completion status from actual vaccination events
+    // so stale DB values never override real progress
+    let completionStatus = data.completion_status;
+    if (certificate?.child_id) {
+      const { data: completedEvents } = await db
+        .from('vaccination_events')
+        .select('id')
+        .eq('child_id', certificate.child_id)
+        .eq('status', 'completed');
+      const { data: schedules } = await db
+        .from('vaccination_schedules')
+        .select('id')
+        .eq('is_mandatory', true);
+      const totalRequired = schedules?.length || 0;
+      const completedCount = completedEvents?.length || 0;
+      if (totalRequired > 0 && completedCount >= totalRequired) {
+        completionStatus = 'Complete';
+        // Update stale DB value in the background
+        await db.from('certificates').update({ completion_status: 'Complete' }).eq('id', (data as any).id);
+      }
+    }
+
     return {
       found: true,
       isValid,
@@ -882,7 +944,7 @@ export class PhaService {
       childName: childIdentity?.childName,
       motherName: childIdentity?.motherName,
       issuedDate: data.issued_date,
-      completionStatus: data.completion_status,
+      completionStatus,
       vaccinesCompleted: data.vaccines_completed ?? [],
       issuedBy: facilityName,
       region,
