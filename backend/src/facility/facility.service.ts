@@ -601,6 +601,32 @@ export class FacilityService {
             vaccines_completed: completionStatus.completedVaccines,
             status: 'issued',
           });
+
+          // SMS guardians who have no email (no portal access) so they know the cert exists
+          try {
+            const { data: childRow } = await this.db.supabase
+              .from('children')
+              .select(`
+                full_name,
+                child_guardian!inner (
+                  is_primary,
+                  guardians ( email, phone_primary )
+                )
+              `)
+              .eq('id', childId)
+              .limit(1)
+              .maybeSingle();
+
+            const primaryLink = (childRow as any)?.child_guardian?.find?.((cg: any) => cg.is_primary) ?? (childRow as any)?.child_guardian?.[0];
+            const guardian = primaryLink?.guardians;
+
+            if (guardian && !guardian.email && guardian.phone_primary) {
+              const firstName = ((childRow as any).full_name as string).split(' ')[0];
+              await this.smsService.sendCertificateIssuedSms(guardian.phone_primary, firstName, certificateId);
+            }
+          } catch (smsError) {
+            this.logger.warn(`Certificate SMS failed for child ${childId}: ${(smsError as Error).message}`);
+          }
         }
       }
     } catch (certError) {

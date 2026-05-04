@@ -142,6 +142,23 @@ export class SmsService {
   }
 
   /**
+   * Send certificate issued SMS to guardians without portal access (no email)
+   */
+  async sendCertificateIssuedSms(
+    to: string,
+    childFirstName: string,
+    certificateId: string,
+  ): Promise<boolean> {
+    try {
+      const message = `CVCC: ${childFirstName}'s vaccination schedule is complete. Certificate ID: ${certificateId}. Present this ID at schools, hospitals or any institution requiring proof of vaccination.`;
+      return await this.sendSms(to, message);
+    } catch (error) {
+      this.logger.error(`Failed to send certificate SMS to ${to}`, error);
+      return false;
+    }
+  }
+
+  /**
    * Send appointment confirmation SMS
    */
   async sendAppointmentConfirmation(
