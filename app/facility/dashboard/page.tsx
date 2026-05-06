@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Html5Qrcode } from "html5-qrcode"
+import type { Html5Qrcode } from "html5-qrcode"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import {
   AlertCircle,
@@ -224,6 +224,8 @@ export default function FacilityDashboardPage() {
       if (!element) {
         throw new Error("Scanner container not found. Please try again.")
       }
+
+      const { Html5Qrcode } = await import("html5-qrcode")
 
       // Initialize scanner
       if (!scannerRef.current) {
@@ -861,82 +863,6 @@ export default function FacilityDashboardPage() {
           </CardContent>
         </Card>
       </main>
-
-      {/* Urgent Follow-ups Modal */}
-      {showUrgentFollowUpsModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowUrgentFollowUpsModal(false)}>
-          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-xl border border-border bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div>
-                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-destructive" /> Urgent Follow-ups
-                </h3>
-                <p className="text-xs text-muted-foreground mt-1">Prioritise these children if they attend clinic today</p>
-              </div>
-              <button onClick={() => setShowUrgentFollowUpsModal(false)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="space-y-3 px-5 py-5 overflow-y-auto flex-1 min-h-0">
-              {isLoadingFollowUps ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-destructive" />
-                  <span className="ml-2 text-sm text-muted-foreground">Loading follow-ups...</span>
-                </div>
-              ) : todaysFollowUps.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No flagged children for today.</p>
-              ) : (
-                followUpsPreview.map((followUp, index) => (
-                  <div key={`${followUp.id}-${index}`} className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{followUp.childName}</p>
-                        <p className="text-xs text-muted-foreground">Guardian: {followUp.caregiver}{followUp.relationship ? ` (${followUp.relationship})` : ""}</p>
-                      </div>
-                      <Badge variant="destructive" className="text-[10px] shrink-0">
-                        {followUp.daysOverdue} days overdue
-                      </Badge>
-                    </div>
-                    <p className="mt-2 text-xs text-destructive">{followUp.reason}</p>
-                    <div className="mt-3 flex items-center gap-3">
-                      <Link href={`tel:${followUp.contact.replace(/\s+/g, "")}`} className="inline-flex items-center gap-1.5 rounded-md bg-destructive/15 px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/25 transition-colors">
-                        <Phone className="h-3 w-3" /> {followUp.contact !== "N/A" ? followUp.contact : "No phone"}
-                      </Link>
-                      <button
-                        onClick={() => setContactDetail(followUp)}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                      >
-                        <Info className="h-3 w-3" /> Contact info
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-              {!isLoadingFollowUps && todaysFollowUps.length > 4 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => setFollowUpsModalOpen(true)}
-                >
-                  View all urgent follow-ups ({todaysFollowUps.length})
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-
-            {/* Footer */}
-            <div className="border-t border-border px-5 py-3 flex justify-end">
-              <Button variant="outline" size="sm" onClick={() => setShowUrgentFollowUpsModal(false)}>Close</Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Guardian Contact Details Modal */}
       {contactDetail && (
