@@ -307,6 +307,16 @@ const coverageGaugeData: Array<{ name: string; value: number; fill: string }> = 
 // Coverage trend data is loaded from API
 const coverageTrendData: Array<{ period: string; measles: number; dpt3: number }> = []
 
+// Certificate issuance trend fallback (until backend analytics endpoint is wired)
+const certificateTrendDataFallback: Array<{ month: string; issued: number; completed: number }> = [
+  { month: "Jan", issued: 240, completed: 225 },
+  { month: "Feb", issued: 265, completed: 248 },
+  { month: "Mar", issued: 310, completed: 292 },
+  { month: "Apr", issued: 355, completed: 334 },
+  { month: "May", issued: 390, completed: 372 },
+  { month: "Jun", issued: 420, completed: 401 },
+]
+
 // AEFI Feed is loaded from API via getHqAefiReports()
 const aefiFeed: any[] = []
 

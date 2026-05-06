@@ -103,11 +103,35 @@ const topNavMobileItems = [
 
 const withAuthRedirect = (path: string) => `/auth/login?redirect=${encodeURIComponent(path)}`
 
+type ContactFormValues = {
+  name: string
+  email: string
+  facility: string
+  message: string
+  website: string
+}
+
+type ContactRequestState = {
+  type: "idle" | "success" | "error"
+  message: string
+}
+
 export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [activeMoment, setActiveMoment] = useState(0)
   const [navCollapsed, setNavCollapsed] = useState(false)
+
+  const [contactForm, setContactForm] = useState<ContactFormValues>({
+    name: "",
+    email: "",
+    facility: "",
+    message: "",
+    website: "",
+  })
+  const [submittingContact, setSubmittingContact] = useState(false)
+  const [contactState, setContactState] = useState<ContactRequestState>({ type: "idle", message: "" })
+
   const { resolvedTheme } = useTheme()
 
   useEffect(() => {
