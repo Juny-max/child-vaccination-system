@@ -63,7 +63,7 @@ const MAX_CHILD_REGISTRATION_AGE_YEARS = 5
 const toDateOnly = (value: Date) =>
   new Date(value.getFullYear(), value.getMonth(), value.getDate())
 
-export default function RegisterChildPage() {
+function RegisterChildContent() {
   const GUARDIANS_PAGE_SIZE = 20
   const router = useRouter()
   const searchParams = useSearchParams()
