@@ -13,6 +13,11 @@ export class CreateHqBranchDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(100)
+  district?: string;
+
+  @IsString()
+  @IsOptional()
   @MaxLength(255)
   manager?: string;
 
@@ -36,6 +41,11 @@ export class UpdateHqBranchDto {
   @MinLength(2)
   @MaxLength(100)
   region: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  district?: string;
 
   @IsString()
   @IsOptional()

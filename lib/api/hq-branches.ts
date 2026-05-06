@@ -5,6 +5,7 @@ export interface HqBranch {
   dbId: string;
   name: string;
   region: string;
+  district?: string;
   manager: string;
   status: 'active' | 'inactive';
   catchmentAreas: string[];
@@ -14,6 +15,7 @@ export interface HqBranch {
 export interface UpsertHqBranchPayload {
   name: string;
   region: string;
+  district?: string;
   manager?: string;
   managerId?: string;
   catchmentAreas?: string[];

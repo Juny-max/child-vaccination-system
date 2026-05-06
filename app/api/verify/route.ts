@@ -7,6 +7,37 @@ import { resolve } from 'node:path'
 const CHILD_QR_TOKEN_REGEX = /^QRC-CH-[A-Z0-9-]{10,64}$/i
 const CERT_QR_TOKEN_REGEX = /^QRC-CERT-[A-Z0-9-]{10,64}$/i
 
+// ── In-memory rate limiter ─────────────────────────────────────────────────
+// 15 requests per IP per minute. Resets automatically as the window slides.
+const RATE_LIMIT = 15
+const WINDOW_MS = 60_000
+
+const ipHits = new Map<string, { count: number; windowStart: number }>()
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const entry = ipHits.get(ip)
+
+  if (!entry || now - entry.windowStart >= WINDOW_MS) {
+    ipHits.set(ip, { count: 1, windowStart: now })
+    return false
+  }
+
+  if (entry.count >= RATE_LIMIT) return true
+
+  entry.count++
+  return false
+}
+
+// Purge stale entries every 10 minutes so the Map doesn't grow unbounded
+setInterval(() => {
+  const cutoff = Date.now() - WINDOW_MS
+  for (const [ip, entry] of ipHits) {
+    if (entry.windowStart < cutoff) ipHits.delete(ip)
+  }
+}, 10 * 60_000)
+// ──────────────────────────────────────────────────────────────────────────
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 
 function readBackendEnvServiceKey(): string | null {
@@ -57,6 +88,7 @@ const supabase = createClient(supabaseUrl, supabaseClientKey, {
 })
 
 const CERTIFICATE_SELECT_FIELDS = `
+  id,
   certificate_id,
   qr_payload,
   issued_date,
@@ -64,6 +96,7 @@ const CERTIFICATE_SELECT_FIELDS = `
   vaccines_completed,
   status,
   issued_by_facility_id,
+  last_verified_at,
   branches!issued_by_facility_id ( name, region )
 `
 
@@ -184,6 +217,18 @@ function normalizeLookupValue(rawValue: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+    req.headers.get('x-real-ip') ||
+    'unknown'
+
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { found: false, error: 'Too many verification requests. Please wait a minute and try again.' },
+      { status: 429 },
+    )
+  }
+
   const id = req.nextUrl.searchParams.get('id')
   const token = req.nextUrl.searchParams.get('token')
 
@@ -292,6 +337,12 @@ export async function GET(req: NextRequest) {
 
   const isRevoked = cert.status === 'revoked' || cert.status === 'expired'
   const branch = Array.isArray(cert.branches) ? cert.branches[0] : cert.branches
+  const nowIso = new Date().toISOString()
+
+  // Stamp last_verified_at on every successful scan
+  if (!isRevoked && cert.id) {
+    await supabase.from('certificates').update({ last_verified_at: nowIso }).eq('id', cert.id)
+  }
 
   return NextResponse.json({
     found: true,
@@ -304,5 +355,6 @@ export async function GET(req: NextRequest) {
     issuedBy: branch?.name ?? '',
     region: branch?.region ?? '',
     status: cert.status,
+    lastVerifiedAt: isRevoked ? null : nowIso,
   })
 }

@@ -18,10 +18,12 @@ import {
   ClipboardList,
   Compass,
   Gauge,
+  Info,
   Layers,
   Loader2,
   MessageSquareWarning,
   Package,
+  Pencil,
   Radio,
   RefreshCw,
   Search,
@@ -65,6 +67,8 @@ import {
   searchBranchChildren,
   registerStaff,
   updateStaffStatus,
+  markAefiReviewed,
+  adjustStock,
   type AlertItem,
   type BranchDashboardData,
   type BranchChildManagementQueues,
@@ -202,10 +206,19 @@ export default function BranchDashboardPage() {
   const [resettingStockVaccineId, setResettingStockVaccineId] = useState<string | null>(null)
   const [resetStockModalOpen, setResetStockModalOpen] = useState(false)
   const [resetStockTarget, setResetStockTarget] = useState<StockAlert | null>(null)
+  const [adjustStockModalOpen, setAdjustStockModalOpen] = useState(false)
+  const [adjustStockTarget, setAdjustStockTarget] = useState<StockAlert | null>(null)
+  const [adjustStockForm, setAdjustStockForm] = useState({ newQuantity: "", reason: "", notes: "" })
+  const [isAdjustingStock, setIsAdjustingStock] = useState(false)
+  const [adjustStockError, setAdjustStockError] = useState<string | null>(null)
 
   // Stock warning modal — auto-opens on load when vaccines are expired or out of stock
   const [stockWarningModalOpen, setStockWarningModalOpen] = useState(false)
   const [stockWarningAcknowledged, setStockWarningAcknowledged] = useState(false)
+
+  // AEFI login alert modal — auto-opens on load when there are unreviewed AEFI events
+  const [aefiLoginAlertOpen, setAefiLoginAlertOpen] = useState(false)
+  const [aefiLoginAlertAcknowledged, setAefiLoginAlertAcknowledged] = useState(false)
 
   // Logout state
   const [isLoggingOut, setIsLoggingOut] = useState(false)
@@ -220,6 +233,7 @@ export default function BranchDashboardPage() {
   const [overdueFilterEnd, setOverdueFilterEnd] = useState<Date | undefined>(undefined)
   const [selectedOverdueItem, setSelectedOverdueItem] = useState<AlertItem | null>(null)
   const [aefiModalOpen, setAefiModalOpen] = useState(false)
+  const [dropoutInfoOpen, setDropoutInfoOpen] = useState(false)
   const [aefiFilterStart, setAefiFilterStart] = useState<Date | undefined>(undefined)
   const [aefiFilterEnd, setAefiFilterEnd] = useState<Date | undefined>(undefined)
   const [selectedAefiItem, setSelectedAefiItem] = useState<AlertItem | null>(null)
@@ -322,6 +336,13 @@ export default function BranchDashboardPage() {
     if (hasCritical) setStockWarningModalOpen(true)
   }, [dashData, stockWarningAcknowledged])
 
+  // Auto-open AEFI alert modal once per mount when there are unreviewed AEFI events
+  useEffect(() => {
+    if (!dashData || aefiLoginAlertAcknowledged) return
+    const hasNew = (dashData.aefiEvents ?? []).some((e: any) => e.status === 'New')
+    if (hasNew) setAefiLoginAlertOpen(true)
+  }, [dashData, aefiLoginAlertAcknowledged])
+
   useEffect(() => {
     if (childLookupModalOpen) return
 
@@ -405,6 +426,28 @@ export default function BranchDashboardPage() {
 
   const activeChildQueueCopy = CHILD_QUEUE_COPY[childQueueTab]
 
+  const handleOpenAefiDetail = async (event: AlertItem) => {
+    setSelectedAefiItem(event)
+    if (event.status === "New") {
+      try {
+        await markAefiReviewed(event.id)
+        // Optimistically update local state so the badge changes immediately
+        setDashData((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            aefiEvents: prev.aefiEvents.map((e) =>
+              e.id === event.id ? { ...e, status: "Under review" } : e
+            ),
+          }
+        })
+        setSelectedAefiItem({ ...event, status: "Under review" })
+      } catch {
+        // Non-critical — detail still opens, badge stays New until next refresh
+      }
+    }
+  }
+
   const handleOpenStockModal = async () => {
     setStockModalOpen(true)
     setStockFormError(null)
@@ -464,6 +507,45 @@ export default function BranchDashboardPage() {
     if (!canResetAlertStock(alert)) return
     setResetStockTarget(alert)
     setResetStockModalOpen(true)
+  }
+
+  const handleOpenAdjustStockModal = (alert: StockAlert) => {
+    setAdjustStockTarget(alert)
+    setAdjustStockForm({ newQuantity: String(alert.remaining), reason: "", notes: "" })
+    setAdjustStockError(null)
+    setAdjustStockModalOpen(true)
+  }
+
+  const handleAdjustStockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!adjustStockTarget) return
+    const newQty = parseInt(adjustStockForm.newQuantity, 10)
+    if (isNaN(newQty) || newQty < 0) {
+      setAdjustStockError("Please enter a valid quantity (0 or more).")
+      return
+    }
+    if (!adjustStockForm.reason) {
+      setAdjustStockError("Please select a reason for this adjustment.")
+      return
+    }
+    setIsAdjustingStock(true)
+    setAdjustStockError(null)
+    try {
+      await adjustStock({
+        vaccineId: adjustStockTarget.vaccineId,
+        newQuantity: newQty,
+        reason: adjustStockForm.reason,
+        notes: adjustStockForm.notes || undefined,
+      })
+      toast.success(`Stock adjusted: ${adjustStockTarget.vaccine} updated to ${newQty} doses.`)
+      setAdjustStockModalOpen(false)
+      setAdjustStockTarget(null)
+      loadDashboard()
+    } catch (err: unknown) {
+      setAdjustStockError(err instanceof Error ? err.message : "Failed to adjust stock. Please try again.")
+    } finally {
+      setIsAdjustingStock(false)
+    }
   }
 
   const handleResetExpiringAndRestock = async (alert: StockAlert) => {
@@ -952,6 +1034,88 @@ export default function BranchDashboardPage() {
         </Card>
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <ShieldCheck className="h-5 w-5 text-primary" /> Vaccine stock alerts
+          </CardTitle>
+          <CardDescription>Cold chain and outreach stock levels · sorted by urgency</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {(dashData?.stockAlerts ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground col-span-4">No stock data yet. Run the seed-stock-inventory.sql script in Supabase to populate demo data.</p>
+          ) : (dashData?.stockAlerts ?? []).map((alert) => {
+            const statusConfig: Record<string, { label: string; badgeVariant: "destructive" | "secondary" | "outline"; barColor: string }> = {
+              expired:        { label: "Expired",      badgeVariant: "destructive", barColor: "bg-rose-800" },
+              "out-of-stock": { label: "Out of stock", badgeVariant: "destructive", barColor: "bg-destructive" },
+              critical:       { label: "Critical",     badgeVariant: "destructive", barColor: "bg-rose-500" },
+              low:            { label: "Low",          badgeVariant: "secondary",   barColor: "bg-amber-500" },
+              moderate:       { label: "Moderate",     badgeVariant: "secondary",   barColor: "bg-sky-500" },
+              adequate:       { label: "Adequate",     badgeVariant: "outline",     barColor: "bg-emerald-500" },
+            }
+            const cfg = statusConfig[alert.status] ?? statusConfig.adequate
+            const expiryWarning = alert.daysToExpiry <= 90
+            const canReset = canResetAlertStock(alert)
+            const resetInProgress = resettingStockVaccineId === alert.vaccineId
+            return (
+              <div key={alert.vaccineId} className="rounded-lg border border-border bg-background p-4 flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground leading-tight">{alert.vaccine}</p>
+                  <Badge variant={cfg.badgeVariant} className="shrink-0 text-xs">{cfg.label}</Badge>
+                </div>
+                <p className="text-2xl font-bold text-foreground">
+                  {alert.remaining.toLocaleString()}
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">doses</span>
+                </p>
+                {/* Stock level bar — max anchored at 500 for visual comparison */}
+                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${cfg.barColor}`}
+                    style={{ width: `${Math.min(100, (alert.remaining / 500) * 100)}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  <p className={`text-xs ${expiryWarning ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
+                    Exp: {alert.expiryDate} {expiryWarning && `(${alert.daysToExpiry}d)`}
+                  </p>
+                </div>
+                <div className="flex items-center justify-end gap-2 mt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="group h-8 w-8 p-0 transition-all duration-300 hover:border-primary hover:bg-primary/10 hover:shadow-md"
+                    aria-label="Adjust stock quantity"
+                    title="Adjust stock quantity"
+                    onClick={() => handleOpenAdjustStockModal(alert)}
+                  >
+                    <Pencil className="h-3.5 w-3.5 transition-all duration-300 group-hover:-rotate-12 group-hover:scale-125 group-hover:text-primary group-hover:drop-shadow-sm" />
+                  </Button>
+                  {canReset ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="group h-8 w-8 p-0"
+                      disabled={resetInProgress}
+                      aria-label="Reset expiring stock and restock"
+                      title="Reset expiring stock and restock"
+                      onClick={() => handleOpenResetStockModal(alert)}
+                    >
+                      {resetInProgress ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5 transition-transform duration-300 group-hover:rotate-180" />
+                      )}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            )
+          })}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 xl:grid-cols-[1.2fr,1fr]">
         <Card className="flex flex-col">
           <CardHeader>
@@ -1005,75 +1169,6 @@ export default function BranchDashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <ShieldCheck className="h-5 w-5 text-primary" /> Vaccine stock alerts
-          </CardTitle>
-          <CardDescription>Cold chain and outreach stock levels · sorted by urgency</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {(dashData?.stockAlerts ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground col-span-4">No stock data yet. Run the seed-stock-inventory.sql script in Supabase to populate demo data.</p>
-          ) : (dashData?.stockAlerts ?? []).map((alert) => {
-            const statusConfig: Record<string, { label: string; badgeVariant: "destructive" | "secondary" | "outline"; barColor: string }> = {
-              expired:        { label: "Expired",      badgeVariant: "destructive", barColor: "bg-rose-800" },
-              "out-of-stock": { label: "Out of stock", badgeVariant: "destructive", barColor: "bg-destructive" },
-              critical:       { label: "Critical",     badgeVariant: "destructive", barColor: "bg-rose-500" },
-              low:            { label: "Low",          badgeVariant: "secondary",   barColor: "bg-amber-500" },
-              moderate:       { label: "Moderate",     badgeVariant: "secondary",   barColor: "bg-sky-500" },
-              adequate:       { label: "Adequate",     badgeVariant: "outline",     barColor: "bg-emerald-500" },
-            }
-            const cfg = statusConfig[alert.status] ?? statusConfig.adequate
-            const expiryWarning = alert.daysToExpiry <= 90
-            const canReset = canResetAlertStock(alert)
-            const resetInProgress = resettingStockVaccineId === alert.vaccineId
-            return (
-              <div key={alert.vaccineId} className="rounded-lg border border-border bg-background p-4 flex flex-col gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground leading-tight">{alert.vaccine}</p>
-                  <Badge variant={cfg.badgeVariant} className="shrink-0 text-xs">{cfg.label}</Badge>
-                </div>
-                <p className="text-2xl font-bold text-foreground">
-                  {alert.remaining.toLocaleString()}
-                  <span className="ml-1 text-sm font-normal text-muted-foreground">doses</span>
-                </p>
-                {/* Stock level bar — max anchored at 500 for visual comparison */}
-                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${cfg.barColor}`}
-                    style={{ width: `${Math.min(100, (alert.remaining / 500) * 100)}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between mt-1">
-                  <p className={`text-xs ${expiryWarning ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
-                    Exp: {alert.expiryDate} {expiryWarning && `(${alert.daysToExpiry}d)`}
-                  </p>
-                </div>
-                {canReset ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="group mt-1 h-8 w-8 self-end p-0"
-                    disabled={resetInProgress}
-                    aria-label="Reset expiring stock and restock"
-                    title="Reset expiring stock and restock"
-                    onClick={() => handleOpenResetStockModal(alert)}
-                  >
-                    {resetInProgress ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3.5 w-3.5 transition-transform duration-300 group-hover:rotate-180" />
-                    )}
-                  </Button>
-                ) : null}
-              </div>
-            )
-          })}
-        </CardContent>
-      </Card>
     </div>
   )
 
@@ -1171,7 +1266,7 @@ export default function BranchDashboardPage() {
                 type="button"
                 className="w-full rounded-lg border border-border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-primary/5"
                 onClick={() => {
-                  setSelectedAefiItem(event)
+                  handleOpenAefiDetail(event)
                   setAefiModalOpen(true)
                 }}
               >
@@ -1346,10 +1441,22 @@ export default function BranchDashboardPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Layers className="h-5 w-5 text-primary" /> Dropout analysis (Dose 1 vs Dose 3)
-          </CardTitle>
-          <CardDescription>Track follow-up needs for incomplete vaccination series.</CardDescription>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Layers className="h-5 w-5 text-primary" /> Dropout analysis (Dose 1 vs Dose 3)
+              </CardTitle>
+              <CardDescription>Track follow-up needs for incomplete vaccination series.</CardDescription>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDropoutInfoOpen(true)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition hover:border-primary hover:text-primary"
+              aria-label="What is this?"
+            >
+              <Info className="h-4 w-4" />
+            </button>
+          </div>
         </CardHeader>
         <CardContent className="h-[320px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -1951,7 +2058,106 @@ export default function BranchDashboardPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Urgent Stock Warning Modal ─────────────────────────────────────── */}
+      {/* ── Dropout Analysis Explainer ───────────────────────────────────────── */}
+      <Dialog open={dropoutInfoOpen} onOpenChange={setDropoutInfoOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Layers className="h-5 w-5 text-primary" /> Dropout Analysis — What does this mean?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <p>
+              This chart compares how many children received <span className="font-semibold text-foreground">Dose 1</span> of a vaccine series against how many completed <span className="font-semibold text-foreground">Dose 3</span> — for Penta, OPV, and PCV vaccines.
+            </p>
+            <p>
+              The <span className="font-semibold text-foreground">gap between the two bars</span> represents <span className="font-semibold text-foreground">dropouts</span> — children who started a vaccine series but never finished it. These children are partially protected and remain at risk.
+            </p>
+            <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-1">
+              <p className="font-medium text-foreground">Example</p>
+              <p>120 children received Penta Dose 1 but only 80 completed Penta Dose 3. That means <span className="font-semibold text-foreground">40 children dropped out</span> and need a follow-up visit from a CHW.</p>
+            </div>
+            <p>
+              This is one of the key metrics used by <span className="font-semibold text-foreground">Ghana Health Service</span> and the <span className="font-semibold text-foreground">WHO</span> to measure how well an immunisation programme is performing. A large gap signals that CHW outreach or supply chain issues are interrupting vaccine series midway.
+            </p>
+            <p>
+              Use this chart during your branch review meetings to identify which vaccines have the highest dropout and direct CHWs to follow up with those families.
+            </p>
+          </div>
+          <DialogFooter className="pt-2">
+            <Button onClick={() => setDropoutInfoOpen(false)} className="w-full">Got it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── AEFI Login Alert Modal ───────────────────────────────────────────── */}
+      <Dialog
+        open={aefiLoginAlertOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAefiLoginAlertOpen(false)
+            setAefiLoginAlertAcknowledged(true)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <div className="flex flex-col items-center gap-3 pb-2 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/40">
+                <BellRing className="h-9 w-9 text-amber-600 dark:text-amber-400" />
+              </div>
+              <DialogTitle className="text-xl font-bold text-amber-700 dark:text-amber-400">
+                Unreviewed AEFI Reports
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                The following adverse events have been reported and require your <span className="font-semibold text-foreground">review and follow-up</span>.
+              </p>
+            </div>
+          </DialogHeader>
+
+          <div className="max-h-72 space-y-3 overflow-y-auto py-1">
+            {(dashData?.aefiEvents ?? [])
+              .filter((e: any) => e.status === 'New')
+              .map((event: any) => (
+                <div
+                  key={event.id}
+                  className="rounded-xl border border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 p-4"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-foreground">{event.child}</p>
+                    <Badge variant="destructive" className="shrink-0 text-xs">New</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{event.detail}</p>
+                  <p className="mt-2 text-xs text-muted-foreground/70">{event.timestamp}</p>
+                </div>
+              ))}
+          </div>
+
+          <DialogFooter className="flex flex-col gap-2 pt-2 sm:flex-col">
+            <Button
+              className="w-full gap-2 py-5 text-base font-semibold bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => {
+                setAefiLoginAlertOpen(false)
+                setAefiLoginAlertAcknowledged(true)
+                setAefiModalOpen(true)
+              }}
+            >
+              <BellRing className="h-5 w-5" /> Review AEFI reports now
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setAefiLoginAlertOpen(false)
+                setAefiLoginAlertAcknowledged(true)
+              }}
+            >
+              Dismiss — I will review later
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={stockWarningModalOpen}
         onOpenChange={(open) => {
@@ -2103,26 +2309,30 @@ export default function BranchDashboardPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="stock-rcvd">Date received *</Label>
-                <Input
-                  id="stock-rcvd"
-                  type="date"
-                  value={stockForm.receivedDate}
-                  onChange={(e) => setStockForm((f) => ({ ...f, receivedDate: e.target.value }))}
-                  required
+                <Label>Date received *</Label>
+                <DatePicker
+                  date={stockForm.receivedDate ? new Date(stockForm.receivedDate) : undefined}
+                  onDateChange={(d) => setStockForm((f) => ({
+                    ...f,
+                    receivedDate: d ? d.toISOString().split("T")[0] : "",
+                  }))}
+                  placeholder="Pick received date"
+                  maxDate={new Date()}
                 />
               </div>
             </div>
 
             {/* Expiry date */}
             <div className="space-y-1">
-              <Label htmlFor="stock-exp">Expiry date *</Label>
-              <Input
-                id="stock-exp"
-                type="date"
-                value={stockForm.expiryDate}
-                onChange={(e) => setStockForm((f) => ({ ...f, expiryDate: e.target.value }))}
-                required
+              <Label>Expiry date *</Label>
+              <DatePicker
+                date={stockForm.expiryDate ? new Date(stockForm.expiryDate) : undefined}
+                onDateChange={(d) => setStockForm((f) => ({
+                  ...f,
+                  expiryDate: d ? d.toISOString().split("T")[0] : "",
+                }))}
+                placeholder="Pick expiry date"
+                minDate={new Date()}
               />
             </div>
 
@@ -2192,6 +2402,92 @@ export default function BranchDashboardPage() {
               {resettingStockVaccineId ? "Resetting..." : "Confirm reset"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Stock Adjustment Modal ──────────────────────────────────────── */}
+      <Dialog
+        open={adjustStockModalOpen}
+        onOpenChange={(open) => {
+          if (!isAdjustingStock) {
+            setAdjustStockModalOpen(open)
+            if (!open) { setAdjustStockTarget(null); setAdjustStockError(null) }
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" /> Adjust stock quantity
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Record a change to the current stock level. A reason is required for the audit trail.
+            </p>
+          </DialogHeader>
+          <form onSubmit={handleAdjustStockSubmit} className="space-y-4">
+            <div className="space-y-1">
+              <Label>Vaccine</Label>
+              <Input value={adjustStockTarget?.vaccine ?? ""} readOnly className="bg-muted cursor-not-allowed" />
+            </div>
+            <div className="space-y-1">
+              <Label>Current quantity on hand</Label>
+              <Input value={`${adjustStockTarget?.remaining ?? 0} doses`} readOnly className="bg-muted cursor-not-allowed" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="newQuantity">New quantity <span className="text-destructive">*</span></Label>
+              <Input
+                id="newQuantity"
+                type="number"
+                min="0"
+                required
+                placeholder="Enter corrected quantity"
+                value={adjustStockForm.newQuantity}
+                onChange={(e) => setAdjustStockForm((f) => ({ ...f, newQuantity: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="adjustReason">Reason <span className="text-destructive">*</span></Label>
+              <select
+                id="adjustReason"
+                required
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                value={adjustStockForm.reason}
+                onChange={(e) => setAdjustStockForm((f) => ({ ...f, reason: e.target.value }))}
+              >
+                <option value="">Select a reason</option>
+                <option value="wastage">Wastage (damaged, cold-chain failure, discarded)</option>
+                <option value="physical_count">Physical count correction (stocktake mismatch)</option>
+                <option value="transfer_out">Transfer out (sent to another facility)</option>
+                <option value="correction">Stock correction (wrong quantity logged)</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="adjustNotes">Notes (optional)</Label>
+              <Input
+                id="adjustNotes"
+                placeholder="e.g. 12 vials found damaged after cold chain power cut"
+                value={adjustStockForm.notes}
+                onChange={(e) => setAdjustStockForm((f) => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+            {adjustStockError && (
+              <p className="text-sm text-destructive">{adjustStockError}</p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isAdjustingStock}
+                onClick={() => { setAdjustStockModalOpen(false); setAdjustStockTarget(null); setAdjustStockError(null) }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isAdjustingStock} className="gap-2">
+                {isAdjustingStock ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                {isAdjustingStock ? "Saving..." : "Save adjustment"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -2438,7 +2734,7 @@ export default function BranchDashboardPage() {
                     key={event.id}
                     type="button"
                     className="w-full rounded-lg border border-border bg-background p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
-                    onClick={() => setSelectedAefiItem(event)}
+                    onClick={() => handleOpenAefiDetail(event)}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-semibold text-foreground">{event.child}</p>

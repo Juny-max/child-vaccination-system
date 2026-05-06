@@ -179,6 +179,23 @@ export class BranchManagerController {
   }
 
   /**
+   * POST /api/branch-manager/stock/adjust
+   * Adjust the quantity of an existing vaccine stock with a mandatory reason.
+   */
+  @Post('stock/adjust')
+  async adjustStock(
+    @CurrentUser() user: any,
+    @Body() dto: { vaccineId: string; newQuantity: number; reason: string; notes?: string },
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+    return this.branchManagerService.adjustStock(user.branchId, user.id, dto);
+  }
+
+  /**
    * POST /api/branch-manager/staff
    * Register a new staff member (nurse or CHW) at this branch.
     * Returns email delivery status and a one-time temporary password only if delivery fails.
@@ -342,6 +359,23 @@ export class BranchManagerController {
       user.branchId,
       catchmentAreaId,
     );
+  }
+
+  /**
+   * PATCH /api/branch-manager/aefi/:id/review
+   * Mark an AEFI report as under-review when the branch manager opens it.
+   */
+  @Patch('aefi/:id/review')
+  async markAefiReviewed(
+    @CurrentUser() user: any,
+    @Param('id', new ParseUUIDPipe()) aefiId: string,
+  ) {
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'Your account is not assigned to a branch. Contact your HQ admin.',
+      );
+    }
+    return this.branchManagerService.markAefiReviewed(aefiId, user.branchId as string);
   }
 
   /**

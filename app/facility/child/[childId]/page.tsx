@@ -3,8 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { QRCodeCanvas } from "qrcode.react"
-import { jsPDF } from "jspdf"
 import {
   AlertCircle,
   ArrowLeft,
@@ -46,9 +44,7 @@ import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
 import { supabase } from "@/lib/supabase"
 import * as offlineSync from "@/lib/offline-vaccination-sync"
-import { getVaccineSite, getSiteDescription } from "@/lib/ghana-epi-schedule"
 import { toast } from "sonner"
-import crypto from "crypto"
 
 type VaccineStatus = "overdue" | "dueToday" | "upcoming" | "completed"
 
@@ -133,38 +129,20 @@ const sampleChildren: Record<string, ChildRecord> = {
   },
 }
 
-// Ghana EPI Schedule Sample Data
 const defaultSchedule: VaccineEntry[] = [
-  // Birth (0 weeks)
-  { id: "BCG", vaccine: "BCG", scheduledDate: "2025-07-18", status: "completed", administeredDate: "2025-07-18", batchNumber: "BCG-44721" },
-  { id: "OPV-0", vaccine: "OPV", scheduledDate: "2025-07-18", status: "completed", administeredDate: "2025-07-18", batchNumber: "OPV-55019" },
-  { id: "HEPB-0", vaccine: "Hepatitis B", scheduledDate: "2025-07-18", status: "completed", administeredDate: "2025-07-18" },
-
-  // 6 weeks
-  { id: "OPV-1", vaccine: "OPV", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29" },
-  { id: "PENTA-1", vaccine: "Pentavalent", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29", batchNumber: "PEN-33011" },
-  { id: "PCV-1", vaccine: "PCV", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29" },
-  { id: "ROTA-1", vaccine: "Rotavirus", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29" },
-  { id: "HEPB-1", vaccine: "Hepatitis B", scheduledDate: "2025-08-29", status: "completed", administeredDate: "2025-08-29" },
-
-  // 10 weeks
-  { id: "OPV-2", vaccine: "OPV", scheduledDate: "2025-09-26", status: "completed", administeredDate: "2025-09-26" },
-  { id: "PENTA-2", vaccine: "Pentavalent", scheduledDate: "2025-09-26", status: "completed", administeredDate: "2025-09-26" },
-  { id: "PCV-2", vaccine: "PCV", scheduledDate: "2025-09-26", status: "completed", administeredDate: "2025-09-26" },
-  { id: "ROTA-2", vaccine: "Rotavirus", scheduledDate: "2025-09-26", status: "completed", administeredDate: "2025-09-26" },
-
-  // 14 weeks
-  { id: "OPV-3", vaccine: "OPV", scheduledDate: "2025-10-24", status: "dueToday", notes: "Prepare vaccine and review cold chain log." },
-  { id: "PENTA-3", vaccine: "Pentavalent", scheduledDate: "2025-10-24", status: "dueToday" },
-  { id: "PCV-3", vaccine: "PCV", scheduledDate: "2025-10-24", status: "dueToday" },
-
-  // 9 months
-  { id: "MEASLES-1", vaccine: "Measles-Rubella", scheduledDate: "2026-04-18", status: "upcoming" },
-  { id: "YF", vaccine: "Yellow Fever", scheduledDate: "2026-04-18", status: "upcoming" },
-
-  // 18 months
-  { id: "MEASLES-2", vaccine: "Measles-Rubella", scheduledDate: "2026-01-18", status: "overdue", notes: "Schedule appointment urgently" },
-  { id: "MENA", vaccine: "Meningitis A", scheduledDate: "2026-01-18", status: "overdue" },
+  { id: "BCG", vaccine: "BCG", scheduledDate: "2025-07-20", status: "completed", administeredDate: "2025-07-20", batchNumber: "BCG-44721" },
+  { id: "OPV-0", vaccine: "OPV 0", scheduledDate: "2025-07-20", status: "completed", administeredDate: "2025-07-20", batchNumber: "OPV-55019" },
+  { id: "PENTA-1", vaccine: "Pentavalent 1", scheduledDate: "2025-08-18", status: "completed", administeredDate: "2025-08-18", batchNumber: "PEN-33011" },
+  { id: "PCV-1", vaccine: "Pneumococcal 1", scheduledDate: "2025-08-18", status: "completed", administeredDate: "2025-08-18" },
+  { id: "ROTA-1", vaccine: "Rotavirus 1", scheduledDate: "2025-08-18", status: "completed", administeredDate: "2025-08-18" },
+  { id: "PENTA-2", vaccine: "Pentavalent 2", scheduledDate: "2025-09-18", status: "completed", administeredDate: "2025-09-18" },
+  { id: "PCV-2", vaccine: "Pneumococcal 2", scheduledDate: "2025-09-18", status: "completed", administeredDate: "2025-09-18" },
+  { id: "ROTA-2", vaccine: "Rotavirus 2", scheduledDate: "2025-09-18", status: "completed", administeredDate: "2025-09-18" },
+  { id: "PENTA-3", vaccine: "Pentavalent 3", scheduledDate: "2025-10-18", status: "dueToday", notes: "Prepare vaccine and review cold chain log." },
+  { id: "PCV-3", vaccine: "Pneumococcal 3", scheduledDate: "2025-10-18", status: "dueToday" },
+  { id: "ROTA-3", vaccine: "Rotavirus 3", scheduledDate: "2025-10-18", status: "overdue", notes: "Child missed last clinic day." },
+  { id: "MEASLES-1", vaccine: "Measles-Rubella 1", scheduledDate: "2025-12-18", status: "upcoming" },
+  { id: "YF", vaccine: "Yellow Fever", scheduledDate: "2025-12-18", status: "upcoming" },
 ]
 
 type AnthropometricMeasurement = {
@@ -279,26 +257,6 @@ const initialAdministerState: AdministerFormState = {
   aefiNotes: "",
 }
 
-// Certificate security helper functions
-const generateCertificateSerialNumber = (): string => {
-  const year = new Date().getFullYear().toString().slice(-2)
-  const month = String(new Date().getMonth() + 1).padStart(2, "0")
-  const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase()
-  return `GH-VAC-${year}${month}-${randomPart}`
-}
-
-const generateCertificateHash = (data: string): string => {
-  if (typeof window === "undefined") return ""
-  // Browser-safe hash using substring of data
-  let hash = 0
-  for (let i = 0; i < data.length; i++) {
-    const char = data.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash // Convert to 32-bit integer
-  }
-  return Math.abs(hash).toString(16).padStart(8, "0").toUpperCase()
-}
-
 export default function ChildPatientChartPage() {
   const router = useRouter()
   const params = useParams<{ childId: string }>()
@@ -310,7 +268,6 @@ export default function ChildPatientChartPage() {
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
   const [selectedDose, setSelectedDose] = useState<VaccineEntry | null>(null)
   const [administerForm, setAdministerForm] = useState<AdministerFormState>(initialAdministerState)
-  const [siteAutoFilled, setSiteAutoFilled] = useState(false)
   const [measurementForm, setMeasurementForm] = useState<MeasurementFormState>(() => createEmptyMeasurementForm())
   const [measurementErrors, setMeasurementErrors] = useState<MeasurementFormErrors>({})
   const [measurementStatus, setMeasurementStatus] = useState<string | null>(null)
@@ -325,6 +282,7 @@ export default function ChildPatientChartPage() {
   const [isSavingVaccine, setIsSavingVaccine] = useState(false)
   const [isLoadingStock, setIsLoadingStock] = useState(false)
   const [stockFromInventory, setStockFromInventory] = useState(false)
+  const [noStockAvailable, setNoStockAvailable] = useState(false)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [isOnline, setIsOnline] = useState(true)
   
@@ -641,10 +599,7 @@ export default function ChildPatientChartPage() {
 
   const schedule = useMemo<VaccineEntry[]>(() => {
     const entries: VaccineEntry[] = []
-
-    // Get set of administered vaccine names for quick lookup
-    const administeredVaccines = new Set(vaccinationHistory.map((vax) => vax.vaccineName))
-
+    
     // Add completed vaccinations from history
     vaccinationHistory.forEach((vax) => {
       entries.push({
@@ -658,20 +613,15 @@ export default function ChildPatientChartPage() {
         notes: vax.notes || undefined,
       })
     })
-
-    // Add scheduled vaccinations (excluding already administered ones)
+    
+    // Add scheduled vaccinations
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-
+    
     scheduledVaccines.forEach((vax) => {
-      // Skip if this vaccine has already been administered
-      if (administeredVaccines.has(vax.vaccineName)) {
-        return
-      }
-
       const dueDate = new Date(vax.dueDate)
       dueDate.setHours(0, 0, 0, 0)
-
+      
       let status: VaccineStatus
       if (vax.isOverdue) {
         status = "overdue"
@@ -680,7 +630,7 @@ export default function ChildPatientChartPage() {
       } else {
         status = "upcoming"
       }
-
+      
       entries.push({
         id: `scheduled-${vax.vaccineName}-${vax.doseNumber}-${vax.dueDate}`,
         vaccine: vax.vaccineName,
@@ -690,7 +640,7 @@ export default function ChildPatientChartPage() {
         notes: vax.isOverdue ? "Overdue - administer as soon as possible" : undefined,
       })
     })
-
+    
     return entries
   }, [vaccinationHistory, scheduledVaccines])
 
@@ -703,192 +653,7 @@ export default function ChildPatientChartPage() {
     }
   }, [schedule])
 
-  const certificateQRRef = useRef<HTMLCanvasElement>(null)
-
-  const certificateContent = useMemo(() => {
-    const serialNumber = generateCertificateSerialNumber()
-    const certificateData = `${serialNumber}|${childId}|${childRecord.name}|${groupedSchedule.completed.length}`
-    const certificateHash = generateCertificateHash(certificateData)
-    const expiryDate = new Date()
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1)
-
-    return { serialNumber, certificateHash, expiryDate }
-  }, [childId, childRecord.name, groupedSchedule.completed])
-
-  // Create certificate when modal is shown and vaccinations are complete
-  useEffect(() => {
-    const createCertificateIfNeeded = async () => {
-      if (!showCertificateModal || certificateCreated || isCreatingCertificate || !childId || !childProfile) return
-
-      // Only create if all vaccinations are complete
-      if (groupedSchedule.overdue.length > 0 ||
-          groupedSchedule.dueToday.length > 0 ||
-          groupedSchedule.upcoming.length > 0) {
-        return
-      }
-
-      setIsCreatingCertificate(true)
-      try {
-        const response = await fetch('/api/facility/certificates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            childId,
-            certificateSerialNumber: certificateContent.serialNumber,
-            vaccinationsCompleted: groupedSchedule.completed.length,
-          }),
-        })
-
-        if (response.ok) {
-          setCertificateCreated(true)
-        } else {
-          const error = await response.json()
-          console.error("Failed to create certificate:", error)
-        }
-      } catch (error) {
-        console.error("Failed to create certificate:", error)
-        // Don't fail the UI — certificate display still works
-      } finally {
-        setIsCreatingCertificate(false)
-      }
-    }
-
-    createCertificateIfNeeded()
-  }, [showCertificateModal, certificateCreated, isCreatingCertificate, childId, childProfile, groupedSchedule, certificateContent.serialNumber])
-
   const latestMeasurement = measurements[0] ?? null
-
-  const handleDownloadCertificatePdf = () => {
-    try {
-      const doc = new jsPDF({ unit: "pt", format: "a4" })
-      const pageWidth = doc.internal.pageSize.getWidth()
-      const pageHeight = doc.internal.pageSize.getHeight()
-      const margin = 40
-      const contentWidth = pageWidth - margin * 2
-      const printableCvccId = childProfile?.childId || childRecord.id || childId
-      const issuedDate = new Date()
-
-      let qrDataUrl = ""
-      if (certificateQRRef.current) {
-        qrDataUrl = certificateQRRef.current.toDataURL("image/png")
-      }
-
-      doc.setFillColor(5, 150, 105)
-      doc.rect(0, 0, pageWidth, 70, "F")
-      doc.setTextColor(255, 255, 255)
-      doc.setFont("helvetica", "bold")
-      doc.setFontSize(20)
-      doc.text("Vaccination Certificate", margin, 42)
-      doc.setFontSize(11)
-      doc.text("Ghana Child Vaccination Completion Certificate", margin, 60)
-
-      doc.setTextColor(15, 23, 42)
-      doc.setFontSize(10)
-      doc.setFont("helvetica", "normal")
-
-      const infoTop = 90
-      doc.setDrawColor(16, 185, 129)
-      doc.setFillColor(240, 253, 244)
-      doc.roundedRect(margin, infoTop, contentWidth, 110, 8, 8, "FD")
-
-      doc.setFont("helvetica", "bold")
-      doc.setTextColor(5, 150, 105)
-      doc.text("Child", margin + 16, infoTop + 24)
-      doc.text("CVCC ID", margin + 16, infoTop + 60)
-      doc.text("DOB", margin + 240, infoTop + 24)
-      doc.text("Gender", margin + 240, infoTop + 60)
-
-      doc.setFont("helvetica", "bold")
-      doc.setTextColor(15, 23, 42)
-      doc.setFontSize(13)
-      doc.text(childRecord.name, margin + 16, infoTop + 42)
-      doc.setFontSize(12)
-      doc.text(printableCvccId, margin + 16, infoTop + 78)
-      doc.text(new Date(childRecord.dateOfBirth).toLocaleDateString("en-GB"), margin + 240, infoTop + 42)
-      doc.text(childRecord.gender, margin + 240, infoTop + 78)
-
-      const securityTop = infoTop + 130
-      doc.setDrawColor(59, 130, 246)
-      doc.setFillColor(239, 246, 255)
-      doc.roundedRect(margin, securityTop, contentWidth, 90, 8, 8, "FD")
-
-      doc.setFontSize(10)
-      doc.setFont("helvetica", "bold")
-      doc.setTextColor(30, 64, 175)
-      doc.text("Serial", margin + 16, securityTop + 24)
-      doc.text("Valid Until", margin + 260, securityTop + 24)
-      doc.text("Hash", margin + 16, securityTop + 54)
-      doc.text("Issued", margin + 260, securityTop + 54)
-
-      doc.setFont("courier", "bold")
-      doc.setTextColor(15, 23, 42)
-      doc.text(certificateContent.serialNumber, margin + 16, securityTop + 38)
-      doc.text(certificateContent.expiryDate.toLocaleDateString("en-GB"), margin + 260, securityTop + 38)
-      doc.text(certificateContent.certificateHash, margin + 16, securityTop + 68)
-      doc.text(issuedDate.toLocaleDateString("en-GB"), margin + 260, securityTop + 68)
-
-      const qrSize = 96
-      const qrX = pageWidth - margin - qrSize
-      const qrY = securityTop + 110
-      if (qrDataUrl) {
-        doc.setDrawColor(16, 185, 129)
-        doc.roundedRect(qrX - 8, qrY - 8, qrSize + 16, qrSize + 16, 8, 8)
-        doc.addImage(qrDataUrl, "PNG", qrX, qrY, qrSize, qrSize)
-      }
-
-      const vaccinesTop = qrY + 8
-      doc.setFont("helvetica", "bold")
-      doc.setFontSize(12)
-      doc.setTextColor(5, 150, 105)
-      doc.text(`Completed Vaccinations (${groupedSchedule.completed.length})`, margin, vaccinesTop)
-
-      doc.setFont("helvetica", "normal")
-      doc.setFontSize(10)
-      doc.setTextColor(15, 23, 42)
-      const listTop = vaccinesTop + 16
-      const listHeight = pageHeight - listTop - 110
-      const rowHeight = 16
-      const rowsPerColumn = Math.max(1, Math.floor(listHeight / rowHeight))
-      const columns = 2
-      const maxRows = rowsPerColumn * columns
-      const vaccineEntries = groupedSchedule.completed.map((vax) =>
-        `${vax.vaccine} • ${vax.administeredDate || vax.scheduledDate}`
-      )
-      const visible = vaccineEntries.slice(0, maxRows)
-      const overflow = vaccineEntries.length - visible.length
-
-      visible.forEach((entry, index) => {
-        const column = Math.floor(index / rowsPerColumn)
-        const row = index % rowsPerColumn
-        const x = margin + column * (contentWidth / columns)
-        const y = listTop + row * rowHeight
-        doc.text(`• ${entry}`, x, y)
-      })
-
-      if (overflow > 0) {
-        const x = margin + (columns - 1) * (contentWidth / columns)
-        const y = listTop + (rowsPerColumn - 1) * rowHeight
-        doc.setFont("helvetica", "italic")
-        doc.setTextColor(100, 116, 139)
-        doc.text(`+ ${overflow} more`, x, y)
-      }
-
-      const footerTop = pageHeight - 70
-      doc.setFillColor(15, 23, 42)
-      doc.roundedRect(margin, footerTop, contentWidth, 50, 8, 8, "F")
-      doc.setTextColor(226, 232, 240)
-      doc.setFont("helvetica", "bold")
-      doc.setFontSize(10)
-      doc.text("CERTIFICATE OF VACCINATION COMPLETION", margin + 16, footerTop + 20)
-      doc.setFont("helvetica", "normal")
-      doc.text(`Generated: ${issuedDate.toLocaleDateString("en-GB")} • Valid 1 Year`, margin + 16, footerTop + 36)
-
-      doc.save(`${certificateContent.serialNumber}.pdf`)
-    } catch (error) {
-      console.error("Failed to generate certificate PDF:", error)
-      toast.error("Failed to download certificate PDF. Please try again.")
-    }
-  }
 
   const handleMeasurementChange = <Field extends keyof MeasurementFormState>(
     field: Field,
@@ -1007,28 +772,18 @@ export default function ChildPatientChartPage() {
     setVaccineModalGroup(null)
     setSelectedDose(entry)
     setStockFromInventory(false)
-
-    // Get the dose number for this vaccine (how many times has it been given already)
-    const administeredCount = vaccinationHistory.filter(
-      (vax) => vax.vaccineName === entry.vaccine
-    ).length
-    const doseNumber = administeredCount + 1
-
-    // Auto-fill injection site based on vaccine and dose number
-    const autoSite = getVaccineSite(entry.vaccine, doseNumber) || ""
-
     setAdministerForm({
       batchNumber: entry.batchNumber ?? "",
       dateAdministered: new Date().toISOString().split("T")[0],
       expiryDate: "",
-      site: autoSite,
+      site: "",
       administeredBy: userName || "Facility Nurse",
       aefiFlag: false,
       aefiNotes: "",
     })
-    setSiteAutoFilled(!!autoSite)
 
     // Auto-fill batch number and expiry date from stock inventory
+    setNoStockAvailable(false)
     const facilityId = childProfile?.facilityId
     if (facilityId && entry.vaccine) {
       setIsLoadingStock(true)
@@ -1041,9 +796,11 @@ export default function ChildPatientChartPage() {
             expiryDate: stock.expiryDate,
           }))
           setStockFromInventory(true)
+        } else {
+          setNoStockAvailable(true)
         }
       } catch {
-        // Leave fields empty — nurse fills them in manually
+        setNoStockAvailable(true)
       } finally {
         setIsLoadingStock(false)
       }
@@ -1053,15 +810,12 @@ export default function ChildPatientChartPage() {
   const closeAdministerModal = () => {
     setSelectedDose(null)
     setAdministerForm(initialAdministerState)
-    setSiteAutoFilled(false)
+    setStockFromInventory(false)
+    setNoStockAvailable(false)
   }
 
   const handleAdministerChange = (field: keyof AdministerFormState, value: string | boolean) => {
     setAdministerForm((previous) => ({ ...previous, [field]: value }))
-    // Mark site as manually changed if user modifies it
-    if (field === "site") {
-      setSiteAutoFilled(false)
-    }
   }
 
   const handleAdministerSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1475,7 +1229,7 @@ export default function ChildPatientChartPage() {
                 {pendingSyncCount} pending sync
               </Badge>
             )}
-            <div className="flex flex-col items-end gap-1">
+            <div className="flex flex-col items-end">
               <span className="text-sm text-muted-foreground">{userName}</span>
               <span className="text-xs text-muted-foreground/80">Facility Nurse</span>
             </div>
@@ -1486,7 +1240,7 @@ export default function ChildPatientChartPage() {
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
         {isLoadingChild ? (
           <Card>
-            <CardContent className="py-8 text-center">
+            <CardContent className="py-12 text-center">
               <p className="text-sm text-muted-foreground">Loading child profile...</p>
             </CardContent>
           </Card>
@@ -1581,7 +1335,7 @@ export default function ChildPatientChartPage() {
                     }}
                   />
                 </div>
-                <div className="flex-1 space-y-2">
+                <div className="flex-1 space-y-1">
                   <p className="text-base font-semibold text-foreground">{childRecord.name}</p>
                   <p className="text-sm text-muted-foreground">Date of Birth: {childRecord.dateOfBirth ? formatDOB(childRecord.dateOfBirth) : "Pending"}</p>
                   <p className="text-sm text-muted-foreground">Age: {childRecord.age}</p>
@@ -1590,14 +1344,6 @@ export default function ChildPatientChartPage() {
                       <ShieldAlert className="h-3 w-3" /> {childRecord.criticalNotes}
                     </div>
                   ) : null}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => setShowChildDetailsModal(true)}
-                  >
-                    More Details
-                  </Button>
                 </div>
               </div>
 
@@ -1708,7 +1454,7 @@ export default function ChildPatientChartPage() {
                       <Thermometer className="h-4 w-4 text-primary" /> {formatTemperature(latestMeasurement.temperatureC)}
                     </span>
                   </div>
-                </div>
+                ) : null}
               </div>
 
               <form className="grid gap-4 md:grid-cols-3" onSubmit={handleMeasurementSubmit}>
@@ -1902,9 +1648,9 @@ export default function ChildPatientChartPage() {
                   </div>
                 )}
               </div>
-            </div>
-          </section>
-        )}
+            </CardContent>
+          </Card>
+        </section>
 
         <section className="mt-8 grid gap-6 lg:grid-cols-2">
           <Card>
@@ -2093,20 +1839,24 @@ export default function ChildPatientChartPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="batchNumber" className="flex items-center gap-2">
-                    Batch / lot number
+                    Batch number
                     {isLoadingStock && <span className="text-xs text-muted-foreground animate-pulse">Loading…</span>}
                     {stockFromInventory && !isLoadingStock && (
                       <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">From inventory</span>
+                    )}
+                    {noStockAvailable && !isLoadingStock && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">No stock logged</span>
                     )}
                   </Label>
                   <Input
                     id="batchNumber"
                     required
-                    placeholder={isLoadingStock ? "Fetching…" : "e.g. PEN-44192"}
+                    placeholder={isLoadingStock ? "Fetching…" : noStockAvailable ? "Branch manager has not logged this vaccine" : "e.g. PEN-44192"}
                     value={administerForm.batchNumber}
-                    readOnly={stockFromInventory}
-                    className={stockFromInventory ? "bg-muted cursor-not-allowed" : ""}
-                    onChange={(event) => !stockFromInventory && handleAdministerChange("batchNumber", event.target.value)}
+                    readOnly={stockFromInventory || noStockAvailable}
+                    disabled={noStockAvailable}
+                    className={(stockFromInventory || noStockAvailable) ? "bg-muted cursor-not-allowed" : ""}
+                    onChange={(event) => !stockFromInventory && !noStockAvailable && handleAdministerChange("batchNumber", event.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -2115,12 +1865,23 @@ export default function ChildPatientChartPage() {
                     {stockFromInventory && !isLoadingStock && (
                       <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">From inventory</span>
                     )}
+                    {noStockAvailable && !isLoadingStock && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">No stock logged</span>
+                    )}
                   </Label>
                   {stockFromInventory ? (
                     <Input
                       id="expiryDate"
                       value={administerForm.expiryDate}
                       readOnly
+                      className="bg-muted cursor-not-allowed"
+                    />
+                  ) : noStockAvailable ? (
+                    <Input
+                      id="expiryDate"
+                      placeholder="Branch manager has not logged this vaccine"
+                      readOnly
+                      disabled
                       className="bg-muted cursor-not-allowed"
                     />
                   ) : (
@@ -2133,7 +1894,7 @@ export default function ChildPatientChartPage() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="site">Site of injection (Ghana EPI standard)</Label>
+                  <Label htmlFor="site">Site of injection</Label>
                   <select
                     id="site"
                     required
@@ -2142,17 +1903,14 @@ export default function ChildPatientChartPage() {
                     onChange={(event) => handleAdministerChange("site", event.target.value)}
                   >
                     <option value="">Select site</option>
-                    <option value="left-arm-upper">Left upper arm</option>
-                    <option value="right-arm-upper">Right upper arm</option>
-                    <option value="left-thigh">Left upper thigh</option>
-                    <option value="right-thigh">Right upper thigh</option>
-                    <option value="oral">Oral (by mouth)</option>
+                    <option value="left-thigh">Left thigh</option>
+                    <option value="right-thigh">Right thigh</option>
+                    <option value="left-arm-upper">Left arm (upper)</option>
+                    <option value="right-arm-upper">Right arm (upper)</option>
+                    <option value="oral">Oral</option>
+                    <option value="intranasal">Intranasal</option>
+                    <option value="other">Other</option>
                   </select>
-                  {siteAutoFilled && (
-                    <p className="text-xs text-green-600 dark:text-green-400">
-                      ✓ Auto-filled per Ghana EPI guidelines: {getSiteDescription(administerForm.site as any)}
-                    </p>
-                  )}
                 </div>
               </div>
 

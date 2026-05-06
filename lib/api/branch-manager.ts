@@ -472,6 +472,33 @@ export async function deleteBranchCatchmentArea(
 }
 
 /**
+ * Adjust vaccine stock quantity with a mandatory reason for the audit trail.
+ */
+export async function adjustStock(payload: {
+  vaccineId: string;
+  newQuantity: number;
+  reason: string;
+  notes?: string;
+}): Promise<{ previousTotal: number; newTotal: number; reason: string }> {
+  return apiRequest('/branch-manager/stock/adjust', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Mark an AEFI report as under-review when the branch manager opens it.
+ */
+export async function markAefiReviewed(
+  aefiId: string,
+): Promise<{ id: string; status: string }> {
+  return apiRequest<{ id: string; status: string }>(
+    `/branch-manager/aefi/${aefiId}/review`,
+    { method: 'PATCH' },
+  );
+}
+
+/**
  * Assign a CHW to a catchment area.
  */
 export async function assignCatchmentAreaChw(

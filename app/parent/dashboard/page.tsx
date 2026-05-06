@@ -114,7 +114,7 @@ export default function ParentDashboardOverview() {
         { label: "Certificate ID", value: latestCertificate.certificateId },
         { label: "Child", value: `${latestCertificate.childName} (${latestCertificate.childId})` },
         { label: "Issued", value: latestCertificate.issuedDate || "N/A" },
-        { label: "Facility", value: latestCertificate.issuedBy || "N/A" },
+        { label: "Facility", value: latestCertificate.issuedByFacility || latestCertificate.issuedBy || "N/A" },
       ]
     : []
 
@@ -403,7 +403,7 @@ export default function ParentDashboardOverview() {
                     )}
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">
-                    Public Health Authorities can scan this QR directly from your device to confirm authenticity.
+                    Show this QR to schools, clinics or any institution to verify your child's vaccination.
                   </p>
                 </div>
               </CardContent>

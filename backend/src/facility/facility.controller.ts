@@ -280,4 +280,14 @@ export class FacilityController {
     if (!vaccine || !facilityId) return null;
     return this.facilityService.getVaccineStockInfo(vaccine, facilityId);
   }
+
+  /**
+   * POST /api/facility/certificates/backfill
+   * Generates missing certificates for children who completed all mandatory
+   * vaccines but never got a certificate record (e.g. registered before auto-issue).
+   */
+  @Post('certificates/backfill')
+  async backfillCertificates(@Request() req: any) {
+    return this.facilityService.backfillMissingCertificates(req.user.id, req.user.branchId);
+  }
 }

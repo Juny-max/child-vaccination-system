@@ -591,74 +591,66 @@ export class ChwService {
       return [];
     }
 
-    const { data: guardians, error: guardiansError } = await this.db.supabase
-      .from('guardians')
+    // Query children directly by their own catchment_area_id so that transferred
+    // children (whose guardian catchment may differ) are still visible.
+    const { data: children, error: childrenError } = await this.db.supabase
+      .from('children')
       .select(`
         id,
+        cvcc_id,
+        qr_code_payload,
         full_name,
-        phone_primary,
-        community,
-        city,
+        date_of_birth,
+        gender,
+        primary_facility_id,
         catchment_area_id,
         child_guardian (
           is_primary,
-          children (
+          guardians (
             id,
-            cvcc_id,
-            qr_code_payload,
             full_name,
-            date_of_birth,
-            gender,
-            primary_facility_id
+            phone_primary,
+            community,
+            city
           )
         )
       `)
-      .in('catchment_area_id', catchmentIds);
+      .in('catchment_area_id', catchmentIds)
+      .eq('is_active', true);
 
-    if (guardiansError) {
-      throw new BadRequestException(guardiansError.message);
+    if (childrenError) {
+      throw new BadRequestException(childrenError.message);
     }
 
-    this.logger.debug(`[CHW getAssignedChildren] Found ${(guardians || []).length} guardians`);
+    this.logger.debug(`[CHW getAssignedChildren] Found ${(children || []).length} children`);
 
-    const deduped = new Map<string, AssignedChild>();
+    const result: AssignedChild[] = (children || []).map((child: any) => {
+      const links: any[] = Array.isArray(child.child_guardian) ? child.child_guardian : [];
+      const primaryLink = links.find((l: any) => l.is_primary && l.guardians) || links[0];
+      const guardian = primaryLink?.guardians || null;
 
-    (guardians || []).forEach((guardian: any) => {
-      const links = Array.isArray(guardian.child_guardian)
-        ? guardian.child_guardian
-        : [];
-
-      links.forEach((link: any) => {
-        const children = this.toChildArray(link?.children);
-        children.forEach((child: any) => {
-          if (!child?.id) return;
-
-          if (!deduped.has(child.id) || link.is_primary) {
-            deduped.set(child.id, {
-              id: child.id,
-              cvccId: child.cvcc_id,
-              qrPayload: child.qr_code_payload || undefined,
-              fullName: child.full_name,
-              dateOfBirth: child.date_of_birth,
-              gender: child.gender,
-              primaryFacilityId: child.primary_facility_id || undefined,
-              guardianName: guardian.full_name || undefined,
-              guardianPhone: guardian.phone_primary || undefined,
-              village:
-                guardian.community ||
-                catchmentMap.get(guardian.catchment_area_id) ||
-                guardian.city ||
-                undefined,
-              catchmentAreaId: guardian.catchment_area_id,
-            });
-          }
-        });
-      });
+      return {
+        id: child.id,
+        cvccId: child.cvcc_id,
+        qrPayload: child.qr_code_payload || undefined,
+        fullName: child.full_name,
+        dateOfBirth: child.date_of_birth,
+        gender: child.gender,
+        primaryFacilityId: child.primary_facility_id || undefined,
+        guardianName: guardian?.full_name || undefined,
+        guardianPhone: guardian?.phone_primary || undefined,
+        village:
+          guardian?.community ||
+          catchmentMap.get(child.catchment_area_id) ||
+          guardian?.city ||
+          undefined,
+        catchmentAreaId: child.catchment_area_id,
+      };
     });
 
-    this.logger.debug(`[CHW getAssignedChildren] Found ${deduped.size} unique children`);
+    this.logger.debug(`[CHW getAssignedChildren] Returning ${result.length} children`);
 
-    return Array.from(deduped.values());
+    return result;
   }
 
   async getDashboardSummary(chwUserId: string) {
