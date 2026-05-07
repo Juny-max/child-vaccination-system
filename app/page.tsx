@@ -247,7 +247,7 @@ export default function Home() {
                     <Syringe className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium uppercase text-muted-foreground">Live session</p>
+                    <p className="text-sm font-medium uppercase text-foreground">Today's focus</p>
                     <p className="text-lg font-semibold">Care spotlight • Child wellness</p>
                   </div>
                 </div>
