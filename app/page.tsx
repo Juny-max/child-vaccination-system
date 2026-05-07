@@ -196,7 +196,7 @@ export default function Home() {
 
         <div className="relative mx-auto flex min-h-[85vh] max-w-7xl flex-col items-center justify-center gap-12 px-4 py-20 text-center sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-16 lg:px-8 lg:text-left">
           <div className="max-w-2xl space-y-8 text-center lg:text-left">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-primary dark:border-white/40 dark:bg-white/10 dark:text-white">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-sm font-semibold uppercase tracking-[0.3em] text-primary dark:border-white/40 dark:bg-white/10 dark:text-white">
               Protecting every child
             </span>
             <h1 className="text-balance text-4xl font-semibold leading-tight sm:text-5xl md:text-6xl">
@@ -247,20 +247,20 @@ export default function Home() {
                     <Syringe className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium uppercase text-foreground">Today's focus</p>
-                    <p className="text-lg font-semibold">Care spotlight • Child wellness</p>
+                    <p className="text-base font-medium uppercase text-foreground">Today's focus</p>
+                    <p className="text-xl font-semibold">Care spotlight • Child wellness</p>
                   </div>
                 </div>
                 <div className="rounded-2xl border border-border/60 bg-background/70 p-4 text-sm shadow-sm">
                   <p className="font-semibold text-primary">Why routine vaccines matter</p>
                   <div className="mt-2 grid grid-cols-2 gap-3 text-muted-foreground">
                     <div>
-                      <p className="text-xs uppercase">Stronger immunity</p>
-                      <p className="text-sm font-medium text-foreground">Build protection early</p>
+                      <p className="text-sm uppercase">Stronger immunity</p>
+                      <p className="text-base font-medium text-foreground">Build protection early</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase">Healthier communities</p>
-                      <p className="text-sm font-medium text-foreground">Prevent disease spread</p>
+                      <p className="text-sm uppercase">Healthier communities</p>
+                      <p className="text-base font-medium text-foreground">Prevent disease spread</p>
                     </div>
                   </div>
                 </div>
@@ -274,7 +274,7 @@ export default function Home() {
         <div className="absolute inset-0 bg-linear-to-b from-primary/10 via-transparent to-transparent dark:from-primary/5" />
         <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-sm font-semibold uppercase tracking-[0.3em] text-primary">
               National pulse
             </span>
             <h2 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">A clear view of Ghana&apos;s vaccination network</h2>
@@ -288,9 +288,9 @@ export default function Home() {
                 key={metric.label}
                 className="rounded-3xl border border-primary/20 bg-background/70 p-6 shadow-lg backdrop-blur-xl transition hover:border-primary/40"
               >
-                <p className="text-xs uppercase tracking-[0.3em] text-primary/80">{metric.label}</p>
+                <p className="text-sm uppercase tracking-[0.3em] text-primary/80">{metric.label}</p>
                 <p className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">{metric.value}</p>
-                <p className="mt-2 text-sm text-foreground/75">{metric.detail}</p>
+                <p className="mt-2 text-base text-foreground/75">{metric.detail}</p>
               </div>
             ))}
           </div>
@@ -312,7 +312,7 @@ export default function Home() {
 
         <div className="relative mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:px-8">
           <div className="rounded-[2.25rem] border border-primary/20 bg-background/80 p-8 shadow-xl backdrop-blur-xl sm:p-10">
-            <span className={`${playfulHeadingFont.className} inline-flex items-center rounded-full border border-primary/35 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-primary`}>
+            <span className={`${playfulHeadingFont.className} inline-flex items-center rounded-full border border-primary/35 bg-primary/10 px-4 py-1 text-sm font-semibold uppercase tracking-[0.22em] text-primary`}>
               Childhood care
             </span>
             <h2 className={`${playfulHeadingFont.className} mt-6 text-balance text-3xl font-semibold leading-tight text-foreground sm:text-4xl`}>
@@ -321,7 +321,7 @@ export default function Home() {
             <p className="mt-4 text-base text-foreground/80 sm:text-lg">
               Routine vaccination keeps children safer as they learn, play, and discover the world around them.
             </p>
-            <p className="mt-4 max-w-xl text-sm leading-relaxed text-foreground/70 sm:text-base">
+            <p className="mt-4 max-w-xl text-base leading-relaxed text-foreground/70">
               Every timely dose builds stronger immunity, helps families avoid preventable illness, and supports healthier communities where children can grow with confidence.
             </p>
             <div className="mt-8">
@@ -364,7 +364,7 @@ export default function Home() {
                           className="object-cover"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent" />
-                        <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-white/35 bg-background/70 px-3 py-2 text-xs font-medium text-foreground/80 backdrop-blur-md">
+                        <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-white/35 bg-background/70 px-3 py-2 text-sm font-medium text-foreground/80 backdrop-blur-md">
                           {slide.caption}
                         </div>
                       </div>
@@ -413,8 +413,8 @@ export default function Home() {
                 <div className="absolute inset-x-6 bottom-6">
                   <div className="rounded-3xl border border-white/15 bg-background/75 p-6 shadow-xl backdrop-blur-2xl dark:bg-background/70">
                     <h3 className="text-2xl font-semibold text-foreground">{story.title}</h3>
-                    <p className="mt-3 text-sm text-foreground/80">{story.description}</p>
-                    <ul className="mt-5 space-y-2 text-sm text-foreground/75">
+                    <p className="mt-3 text-base text-foreground/80">{story.description}</p>
+                    <ul className="mt-5 space-y-2 text-base text-foreground/75">
                       {story.highlights.map((item) => (
                         <li key={item} className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-primary" />
@@ -445,7 +445,7 @@ export default function Home() {
               <p className="mt-4 text-base text-foreground/80">
                 Every certificate carries secure QR validation so parents, schools and clinicians trust the record instantly.
               </p>
-              <ul className="mt-6 space-y-2 text-sm text-foreground/75">
+              <ul className="mt-6 space-y-2 text-base text-foreground/75">
                 {certificateBenefits.map((benefit) => (
                   <li key={benefit} className="flex items-start gap-2">
                     <Check className="mt-0.5 h-4 w-4 text-primary" />
@@ -481,8 +481,8 @@ export default function Home() {
                 <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
                   <pillar.icon className="h-5 w-5" />
                 </div>
-                <h3 className="text-xl font-semibold text-foreground">{pillar.title}</h3>
-                <p className="mt-3 text-sm text-foreground/75">{pillar.description}</p>
+                <h3 className="text-2xl font-semibold text-foreground">{pillar.title}</h3>
+                <p className="mt-3 text-base text-foreground/75">{pillar.description}</p>
               </div>
             ))}
           </div>
