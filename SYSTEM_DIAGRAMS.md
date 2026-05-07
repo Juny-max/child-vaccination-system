@@ -423,19 +423,20 @@ flowchart LR
 ## 7. Authentication & Authorization Flow
 
 ```mermaid
-flowchart TD
-  A[User submits email + password] --> B[POST /auth/login]
-  B --> C{Credentials valid?}
-  C -->|No| D[Return auth error]
-  C -->|Yes| E[Check active account + role]
-  E --> F[Generate JWT + response user role]
-  F --> G[Client stores token + role]
-  G --> H[Request protected endpoint]
-  H --> I[JwtAuthGuard validates token]
-  I --> J[RolesGuard checks role access]
-  J --> K{Authorized?}
-  K -->|No| L[403 Forbidden]
-  K -->|Yes| M[Controller + service execute]
+activity
+  start
+  :User enters email + password|
+  :Submit login form|
+  if (Credentials Valid?) then (No)
+    :Show error message|
+    :User retries|
+  else (Yes)
+  endif
+  :System validates user status + role|
+  :Issue access token|
+  :User successfully logged in|
+  :Route to appropriate dashboard\n(based on role)|
+  stop
 ```
 
 ---
@@ -473,19 +474,26 @@ activity
 ## 9. Notification Flow
 
 ```mermaid
-flowchart TD
-  A[Cron scheduler runs] --> B[Find due/overdue children\n+ missed appointments]
-  B --> C[Build SMS/Email notification payload]
-  C --> D[Send via SmsService / EmailService]
-  D --> E{Delivery result}
-  E -->|Success| F[notifications status: sent/delivered]
-  E -->|Failure| G[notifications status: failed\n+ retry_count++]
-
-  G --> H{Retry path}
-  H -->|Automatic scheduled retry| I[Next scheduler cycle\nattempts again]
-  H -->|Manual retry| J[HQ Admin:\n/hq-admin/notifications/:id/retry]
-  I --> D
-  J --> D
+activity
+  start
+  :Scheduler checks for due vaccinations\nand missed appointments|
+  if (Found?) then (Yes)
+  else (No)
+    :No action needed|
+  endif
+  :Build SMS/Email notification message|
+  :Send notification to guardian/parent|
+  if (Delivery Success?) then (Yes)
+    :Mark notification as delivered|
+  else (Failed)
+    :Mark notification as failed|
+    :Add to retry queue|
+  endif
+  if (Manual Retry Needed?) then (Yes)
+    :HQ Admin can manually resend|
+  else (No)
+  endif
+  stop
 ```
 
 ---
