@@ -196,7 +196,7 @@ export default function Home() {
 
         <div className="relative mx-auto flex min-h-[85vh] max-w-7xl flex-col items-center justify-center gap-12 px-4 py-20 text-center sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-16 lg:px-8 lg:text-left">
           <div className="max-w-2xl space-y-8 text-center lg:text-left">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-primary dark:border-white/40 dark:bg-white/10 dark:text-white">
               Protecting every child
             </span>
             <h1 className="text-balance text-4xl font-semibold leading-tight sm:text-5xl md:text-6xl">
