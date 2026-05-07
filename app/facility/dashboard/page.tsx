@@ -23,6 +23,7 @@ import {
   QrCode,
   Search,
   Shield,
+  SlidersHorizontal,
   Stethoscope,
   Syringe,
   User,
@@ -77,6 +78,9 @@ export default function FacilityDashboardPage() {
   const [followUpsModalOpen, setFollowUpsModalOpen] = useState(false)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [pendingAppointmentRequestsCount, setPendingAppointmentRequestsCount] = useState(0)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [filterStatus, setFilterStatus] = useState<"all" | "Complete" | "In Progress" | "Overdue">("all")
+  const [filterGender, setFilterGender] = useState<"all" | "Male" | "Female">("all")
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -172,37 +176,30 @@ export default function FacilityDashboardPage() {
     }
   }, [])
 
-  const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     const trimmed = searchTerm.trim()
-    
-    if (!trimmed || trimmed.length < 2) {
+    if (trimmed.length < 2) {
       setSearchResults([])
-      setSystemMessage("Type at least 2 characters to search (child name, phone number, or CVCC ID).")
       return
     }
-
-    setIsSearching(true)
-    setSystemMessage(null)
-
-    try {
-      const results = await facilityApi.searchChildren(trimmed)
-      setSearchResults(results)
-
-      if (results.length === 0) {
-        setShowErrorModal(true)
-      } else {
-        setSystemMessage(`${results.length} result${results.length > 1 ? "s" : ""} ready. Select a child to open their chart.`)
+    debounceRef.current = setTimeout(async () => {
+      setIsSearching(true)
+      try {
+        const results = await facilityApi.searchChildren(trimmed)
+        setSearchResults(results)
+        if (results.length === 0) setShowErrorModal(true)
+      } catch {
+        setShowSearchFailedModal(true)
+        setSearchResults([])
+      } finally {
+        setIsSearching(false)
       }
-    } catch (error) {
-      console.error('Search failed:', error)
-      setSystemMessage(null)
-      setShowSearchFailedModal(true)
-      setSearchResults([])
-    } finally {
-      setIsSearching(false)
+    }, 350)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }
+  }, [searchTerm])
 
   const startCamera = async () => {
     if (cameraState === "active" || cameraState === "starting") return
@@ -422,6 +419,14 @@ export default function FacilityDashboardPage() {
     [recentMissedAppointments],
   )
 
+  const filteredResults = useMemo(() => {
+    return searchResults.filter((r) => {
+      if (filterStatus !== "all" && r.vaccinationStatus !== filterStatus) return false
+      if (filterGender !== "all" && r.gender !== filterGender) return false
+      return true
+    })
+  }, [searchResults, filterStatus, filterGender])
+
   const handleLogout = () => {
     setIsLoggingOut(true)
     localStorage.removeItem("userRole")
@@ -481,37 +486,75 @@ export default function FacilityDashboardPage() {
           <Card className="flex-1 border-primary/40">
             <CardHeader className="space-y-2">
               <CardTitle className="text-lg">Patient lookup</CardTitle>
-              <CardDescription>Search by child name, CVCC ID, or guardian phone number.</CardDescription>
+              <CardDescription>Type a child name, CVCC ID, or guardian phone number — results appear as you type.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <form className="flex flex-col gap-3" onSubmit={handleSearch}>
+              <div className="space-y-3">
                 <Label htmlFor="search" className="text-sm font-medium">
                   Who are you attending to?
                 </Label>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="search"
-                      type="search"
-                      placeholder="e.g. Child Mensah, +233245001100, CH-2025-001"
-                      value={searchTerm}
-                      onChange={(event) => setSearchTerm(event.target.value)}
-                      className="h-14 rounded-lg border-primary/30 pl-11 text-base"
-                    />
-                  </div>
-                  <Button type="submit" disabled={isSearching} className="h-14 rounded-lg px-6 text-base">
-                    {isSearching ? (
-                      <>
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                        Searching...
-                      </>
-                    ) : (
-                      'Find child'
-                    )}
-                  </Button>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="search"
+                    type="text"
+                    placeholder="e.g. Child Mensah, +233245001100, CH-2025-001"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="h-14 rounded-lg border-primary/30 pl-11 pr-11 text-base"
+                    autoComplete="off"
+                  />
+                  {isSearching ? (
+                    <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-muted-foreground" />
+                  ) : searchTerm ? (
+                    <button
+                      type="button"
+                      onClick={() => { setSearchTerm(""); setSearchResults([]); }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="Clear search"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
                 </div>
-              </form>
+
+                {searchTerm.length >= 2 && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <SlidersHorizontal className="h-3.5 w-3.5" /> Filters:
+                    </span>
+                    {(["all", "Overdue", "In Progress", "Complete"] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setFilterStatus(s)}
+                        className={
+                          filterStatus === s
+                            ? "rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+                            : "rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80"
+                        }
+                      >
+                        {s === "all" ? "All statuses" : s}
+                      </button>
+                    ))}
+                    <span className="select-none text-muted-foreground/40">·</span>
+                    {(["all", "Male", "Female"] as const).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setFilterGender(g)}
+                        className={
+                          filterGender === g
+                            ? "rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+                            : "rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80"
+                        }
+                      >
+                        {g === "all" ? "All genders" : g}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div className="space-y-3">
                 {isSearching ? (
@@ -525,11 +568,16 @@ export default function FacilityDashboardPage() {
                     </div>
                     <p className="text-sm text-muted-foreground">Searching for child...</p>
                   </div>
-                ) : searchResults.length > 0 ? (
+                ) : filteredResults.length > 0 ? (
                   <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Matching records</p>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      {filteredResults.length} matching record{filteredResults.length !== 1 ? "s" : ""}
+                      {(filterStatus !== "all" || filterGender !== "all") && searchResults.length !== filteredResults.length ? (
+                        <span className="ml-1 normal-case text-primary">· filtered from {searchResults.length}</span>
+                      ) : null}
+                    </p>
                     <div className="grid gap-2">
-                      {searchResults.map((result, index) => (
+                      {filteredResults.map((result, index) => (
                         <div
                           key={`${result.id}-${index}`}
                           className="flex flex-col gap-3 rounded-lg border border-border bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -538,15 +586,15 @@ export default function FacilityDashboardPage() {
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-semibold text-foreground">{result.name}</p>
                               <Badge variant={
-                                result.vaccinationStatus === 'Complete' ? 'default' : 
-                                result.vaccinationStatus === 'Overdue' ? 'destructive' : 
+                                result.vaccinationStatus === 'Complete' ? 'default' :
+                                result.vaccinationStatus === 'Overdue' ? 'destructive' :
                                 'secondary'
                               }>
                                 {result.vaccinationStatus}
                               </Badge>
                             </div>
                             <p className="text-xs text-muted-foreground">Guardian: {result.guardianName} • {result.guardianPhone}</p>
-                            <p className="text-xs text-muted-foreground font-mono">{result.childId} • {result.age}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{result.childId} • {result.age} • {result.gender}</p>
                             {result.lastVisit && (
                               <p className="text-xs text-muted-foreground">Last visit: {result.lastVisit}</p>
                             )}
@@ -582,8 +630,12 @@ export default function FacilityDashboardPage() {
                       ))}
                     </div>
                   </div>
+                ) : searchResults.length > 0 && filteredResults.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No results match the active filters. Try changing or clearing the filters.</p>
+                ) : searchTerm.length >= 2 && !isSearching ? (
+                  <p className="text-xs text-muted-foreground">No matching children found. Try a different name, ID, or phone number.</p>
                 ) : (
-                  <p className="text-xs text-muted-foreground">Search results will appear here once a match is found.</p>
+                  <p className="text-xs text-muted-foreground">Search results will appear here as you type.</p>
                 )}
               </div>
             </CardContent>
