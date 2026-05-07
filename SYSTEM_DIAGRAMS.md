@@ -443,23 +443,29 @@ flowchart TD
 ## 8. Offline Sync Flow (CHW)
 
 ```mermaid
-flowchart TD
-  A[CHW captures registration/vaccination offline] --> B[Save in local device store]
-  B --> C{Data type}
-  C -->|Offline registration payload| D[Queue for POST /chw/offline-registrations]
-  C -->|Vaccination batch payload| E[Queue for POST /chw/vaccinations/sync]
-
-  D --> F{Network available?}
-  E --> F
-  F -->|No| G[Keep pending locally]
-  G --> F
-  F -->|Yes| H[Send queued payload to backend]
-
-  H --> I{Sync success?}
-  I -->|Yes| J[Mark local item as synced]
-  I -->|No conflict/error| K[Record conflict/failure]
-  K --> L[sync_conflicts for review]
-  L --> M[Resolve conflict + apply final state]
+activity
+  start
+  :CHW captures registration/vaccination offline|
+  :Save in local device store|
+  if (Data Type) then (Registration)
+    :Queue for POST /chw/offline-registrations|
+  else (Vaccination)
+    :Queue for POST /chw/vaccinations/sync|
+  endif
+  if (Network Available?) then (No)
+    :Keep pending locally|
+    note right: Wait for connectivity
+  else (Yes)
+  endif
+  :Send queued payload to backend|
+  if (Sync Success?) then (Yes)
+    :Mark local item as synced|
+  else (Conflict/Error)
+    :Record conflict/failure|
+    :Add to sync_conflicts for review|
+    :Resolve conflict + apply final state|
+  endif
+  stop
 ```
 
 ---
