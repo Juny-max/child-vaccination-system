@@ -2466,16 +2466,18 @@ export class BranchManagerService {
       throw new BadRequestException({ message: 'Region is required', code: 'REGION_REQUIRED' });
     }
 
-    // Resolve manager name from userId if provided
+    // Resolve manager name and email from userId if provided
     let managerName = dto.manager?.trim() || 'Unassigned';
+    let managerEmail: string | null = null;
     if (dto.managerId) {
       const { data: managerUser } = await db
         .from('users')
-        .select('id, full_name, role, branch_id')
+        .select('id, full_name, email, role, branch_id')
         .eq('id', dto.managerId)
         .maybeSingle();
       if (managerUser?.role === 'branch-manager') {
         managerName = managerUser.full_name ?? 'Unassigned';
+        managerEmail = managerUser.email ?? null;
       }
     }
 
@@ -2508,8 +2510,27 @@ export class BranchManagerService {
     if (normalizedCatchments.length) {
       await this.replaceCatchmentsForBranch(createdBranch.id, createdBranch.code, normalizedCatchments);
     }
+
+    // Send branch assignment notification email to the manager (non-blocking)
+    let emailSent = false;
+    if (dto.managerId && managerEmail) {
+      const emailDispatch = await this.emailService.sendBranchAssignmentEmail(
+        { email: managerEmail, name: managerName },
+        {
+          name: createdBranch.name,
+          district: createdBranch.district,
+          region: createdBranch.region,
+          code: createdBranch.code,
+        },
+      );
+      emailSent = emailDispatch.success;
+      if (!emailDispatch.success) {
+        this.logger.warn(`Branch created but assignment email failed for ${managerEmail}: ${emailDispatch.errorMessage}`);
+      }
+    }
+
     const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === createdBranch.id));
-    return fullBranch;
+    return { ...fullBranch, emailSent };
   }
 
   async updateHqBranch(code: string, dto: UpdateHqBranchDto) {
