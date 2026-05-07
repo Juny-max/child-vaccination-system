@@ -44,6 +44,7 @@ import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
 import { supabase } from "@/lib/supabase"
 import * as offlineSync from "@/lib/offline-vaccination-sync"
+import { isVaccineCutoffExpired } from "@/lib/vaccine-cutoffs"
 import { toast } from "sonner"
 
 type VaccineStatus = "overdue" | "dueToday" | "upcoming" | "completed"
@@ -784,7 +785,7 @@ export default function ChildPatientChartPage() {
 
     // Auto-fill batch number and expiry date from stock inventory
     setNoStockAvailable(false)
-    const facilityId = childProfile?.facilityId
+    const facilityId = localStorage.getItem("branchId") || childProfile?.facilityId
     if (facilityId && entry.vaccine) {
       setIsLoadingStock(true)
       try {
@@ -1123,6 +1124,7 @@ export default function ChildPatientChartPage() {
     const daysUntil = entry.status === "upcoming"
       ? Math.max(1, Math.ceil((new Date(entry.scheduledDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
       : 0
+    const cutoffExpired = entry.status === "overdue" && isVaccineCutoffExpired(entry.vaccine, childProfile?.dateOfBirth)
 
     return (
       <div key={entry.id} className="rounded-lg border border-border bg-background/80 p-4">
@@ -1133,6 +1135,11 @@ export default function ChildPatientChartPage() {
               {entry.status === "completed" ? `Administered: ${entry.administeredDate}` : `Due: ${formatDate(entry.scheduledDate)}`}
             </p>
             {entry.notes ? <p className="mt-1.5 text-xs text-muted-foreground">{entry.notes}</p> : null}
+            {cutoffExpired && (
+              <p className="mt-1 text-xs font-medium text-muted-foreground">
+                Administration window closed — this dose can no longer be given.
+              </p>
+            )}
           </div>
 
           {entry.status === "completed" ? (
@@ -1147,6 +1154,10 @@ export default function ChildPatientChartPage() {
                 <p className="text-[10px] text-primary/60">{formatDate(entry.scheduledDate)}</p>
               </div>
             </div>
+          ) : cutoffExpired ? (
+            <Badge variant="outline" className="w-fit shrink-0 border-muted-foreground/40 text-muted-foreground gap-1">
+              Window Expired
+            </Badge>
           ) : (
             <Button
               size="sm"

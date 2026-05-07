@@ -58,7 +58,7 @@ export class BranchManagerController {
     const branchId = user.branchId;
     if (!branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.getDashboardData(branchId);
@@ -75,7 +75,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
 
@@ -93,7 +93,7 @@ export class BranchManagerController {
   async getChildManagementQueues(@CurrentUser() user: any) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
 
@@ -111,7 +111,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
 
@@ -130,7 +130,7 @@ export class BranchManagerController {
   async getVaccines(@CurrentUser() user: any) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.getVaccines();
@@ -148,7 +148,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.logStockDelivery(
@@ -169,7 +169,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.resetExpiringStock(
@@ -189,7 +189,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.adjustStock(user.branchId, user.id, dto);
@@ -207,7 +207,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.registerStaff(user.branchId, dto);
@@ -227,7 +227,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.getStaffList(user.branchId, {
@@ -249,7 +249,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.updateStaff(staffId, user.branchId, dto);
@@ -267,7 +267,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.updateStaffStatus(
@@ -288,7 +288,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
 
@@ -306,7 +306,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
 
@@ -329,7 +329,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
 
@@ -351,7 +351,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
 
@@ -372,7 +372,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
     return this.branchManagerService.markAefiReviewed(aefiId, user.branchId as string);
@@ -390,7 +390,7 @@ export class BranchManagerController {
   ) {
     if (!user.branchId) {
       throw new ForbiddenException(
-        'Your account is not assigned to a branch. Contact your HQ admin.',
+        'Your account is not assigned to a branch. Contact your admin.',
       );
     }
 

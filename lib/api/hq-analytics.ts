@@ -23,6 +23,12 @@ export interface HqOverviewStats {
   totalChws: number;
   chwSyncPercentage: number;
   nationalCoverageRate: number;
+  usersByRole?: {
+    branchManagers: number;
+    nurses: number;
+    chws: number;
+    parents: number;
+  };
 }
 
 export interface GetHqAnalyticsParams {

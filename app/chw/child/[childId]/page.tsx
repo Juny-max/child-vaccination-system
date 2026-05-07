@@ -22,6 +22,7 @@ import * as chwStorage from "@/lib/chw-offline-storage"
 import { getChwChildChart, syncChwVaccinations, type ChwChildChart } from "@/lib/api/chw"
 import { getChildById, getChildChart, saveChildChart } from "@/lib/chw-offline/db"
 import { useNetworkStatus } from "@/lib/hooks/use-network-status"
+import { isVaccineCutoffExpired } from "@/lib/vaccine-cutoffs"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { NetworkStatusIndicator } from "@/components/chw/network-status-indicator"
@@ -39,6 +40,7 @@ type ChildSnapshot = {
   id: string
   name: string
   age: string
+  dateOfBirth?: string
   motherName: string
   motherPhone: string
   village: string
@@ -142,6 +144,7 @@ export default function ChwChildChartPage() {
     id: chart.id,
     name: chart.name,
     age: chart.age,
+    dateOfBirth: chart.dateOfBirth,
     motherName: chart.motherName,
     motherPhone: chart.motherPhone,
     village: chart.village,
@@ -501,22 +504,36 @@ export default function ChwChildChartPage() {
                 <p className="text-sm text-muted-foreground">No outstanding doses.</p>
               ) : (
                 <>
-                  {outstandingPreview.map((dose) => (
-                    <div key={dose.id} className="rounded-lg border border-border bg-background/80 p-4">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">{dose.name}</p>
-                          <p className="text-xs text-muted-foreground">Due: {dose.scheduledDate}</p>
+                  {outstandingPreview.map((dose) => {
+                    const cutoffExpired = dose.status === "overdue" && isVaccineCutoffExpired(dose.name, childSnapshot?.dateOfBirth)
+                    return (
+                      <div key={dose.id} className="rounded-lg border border-border bg-background/80 p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{dose.name}</p>
+                            <p className="text-xs text-muted-foreground">Due: {dose.scheduledDate}</p>
+                            {cutoffExpired && (
+                              <p className="mt-1 text-xs font-medium text-muted-foreground">
+                                Administration window closed — this dose can no longer be given.
+                              </p>
+                            )}
+                          </div>
+                          <Badge variant={dose.status === "overdue" ? "destructive" : "secondary"} className="text-xs">
+                            {dose.status === "overdue" ? "Overdue" : "Due"}
+                          </Badge>
                         </div>
-                        <Badge variant={dose.status === "overdue" ? "destructive" : "secondary"} className="text-xs">
-                          {dose.status === "overdue" ? "Overdue" : "Due"}
-                        </Badge>
+                        {cutoffExpired ? (
+                          <Badge variant="outline" className="mt-3 border-muted-foreground/40 text-muted-foreground">
+                            Window Expired
+                          </Badge>
+                        ) : (
+                          <Button size="sm" className="mt-3 gap-2" onClick={() => openAdministerModal(dose)}>
+                            <Syringe className="h-4 w-4" /> Administer vaccine
+                          </Button>
+                        )}
                       </div>
-                      <Button size="sm" className="mt-3 gap-2" onClick={() => openAdministerModal(dose)}>
-                        <Syringe className="h-4 w-4" /> Administer vaccine
-                      </Button>
-                    </div>
-                  ))}
+                    )
+                  })}
                   <Button
                     variant="outline"
                     size="sm"
@@ -599,22 +616,36 @@ export default function ChwChildChartPage() {
                 childSnapshot.outstandingVaccines.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No outstanding doses offline.</p>
                 ) : (
-                  childSnapshot.outstandingVaccines.map((dose) => (
-                    <div key={dose.id} className="rounded-lg border border-border bg-background/80 p-4">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">{dose.name}</p>
-                          <p className="text-xs text-muted-foreground">Due: {dose.scheduledDate}</p>
+                  childSnapshot.outstandingVaccines.map((dose) => {
+                    const cutoffExpired = dose.status === "overdue" && isVaccineCutoffExpired(dose.name, childSnapshot.dateOfBirth)
+                    return (
+                      <div key={dose.id} className="rounded-lg border border-border bg-background/80 p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{dose.name}</p>
+                            <p className="text-xs text-muted-foreground">Due: {dose.scheduledDate}</p>
+                            {cutoffExpired && (
+                              <p className="mt-1 text-xs font-medium text-muted-foreground">
+                                Administration window closed — this dose can no longer be given.
+                              </p>
+                            )}
+                          </div>
+                          <Badge variant={dose.status === "overdue" ? "destructive" : "secondary"} className="text-xs">
+                            {dose.status === "overdue" ? "Overdue" : "Due"}
+                          </Badge>
                         </div>
-                        <Badge variant={dose.status === "overdue" ? "destructive" : "secondary"} className="text-xs">
-                          {dose.status === "overdue" ? "Overdue" : "Due"}
-                        </Badge>
+                        {cutoffExpired ? (
+                          <Badge variant="outline" className="mt-3 border-muted-foreground/40 text-muted-foreground">
+                            Window Expired
+                          </Badge>
+                        ) : (
+                          <Button size="sm" className="mt-3 gap-2" onClick={() => openAdministerModal(dose)}>
+                            <Syringe className="h-4 w-4" /> Administer vaccine
+                          </Button>
+                        )}
                       </div>
-                      <Button size="sm" className="mt-3 gap-2" onClick={() => openAdministerModal(dose)}>
-                        <Syringe className="h-4 w-4" /> Administer vaccine
-                      </Button>
-                    </div>
-                  ))
+                    )
+                  })
                 )
               ) : childSnapshot.history.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No history downloaded.</p>

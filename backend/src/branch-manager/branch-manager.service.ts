@@ -2182,6 +2182,17 @@ export class BranchManagerService {
       }
     }
 
+    // Fetch active user counts broken down by role in one query
+    const { data: roleRows } = await db
+      .from('users')
+      .select('role')
+      .eq('status', 'active');
+
+    const roleCounts: Record<string, number> = {};
+    for (const row of roleRows ?? []) {
+      roleCounts[row.role] = (roleCounts[row.role] ?? 0) + 1;
+    }
+
     return {
       totalBranches: branchCount ?? 0,
       totalUsers: userCount ?? 0,
@@ -2190,6 +2201,12 @@ export class BranchManagerService {
       totalChws: totalChwCount ?? 0,
       chwSyncPercentage,
       nationalCoverageRate,
+      usersByRole: {
+        branchManagers: roleCounts['branch-manager'] ?? 0,
+        nurses: roleCounts['facility-nurse'] ?? 0,
+        chws: roleCounts['chw'] ?? 0,
+        parents: roleCounts['parent'] ?? 0,
+      },
     };
   }
 
@@ -2841,7 +2858,7 @@ export class BranchManagerService {
 
     const { data, error } = await db
       .from('users')
-      .select('id, full_name, email, role, status, branch_id')
+      .select('id, full_name, email, role, status, branch_id, must_change_password, last_login_at')
       .in('role', ['hq-admin', 'branch-manager', 'facility-nurse', 'chw', 'parent'])
       .order('full_name', { ascending: true });
 
@@ -2885,6 +2902,8 @@ export class BranchManagerService {
       role: this.toDisplayRole(user.role),
       branch: user.branch_id ? branchMap.get(user.branch_id)?.name : undefined,
       status: user.status === 'inactive' ? 'inactive' : 'active',
+      mustChangePassword: user.must_change_password ?? true,
+      lastLoginAt: user.last_login_at ?? null,
     }));
   }
 
