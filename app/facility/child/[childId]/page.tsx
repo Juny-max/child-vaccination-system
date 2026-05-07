@@ -1124,6 +1124,10 @@ export default function ChildPatientChartPage() {
     const daysUntil = entry.status === "upcoming"
       ? Math.max(1, Math.ceil((new Date(entry.scheduledDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
       : 0
+    const weeksUntil = Math.ceil(daysUntil / 7)
+    const upcomingLabel = daysUntil < 7
+      ? `${daysUntil} day${daysUntil !== 1 ? "s" : ""}`
+      : `${weeksUntil} week${weeksUntil !== 1 ? "s" : ""}`
     const cutoffExpired = entry.status === "overdue" && isVaccineCutoffExpired(entry.vaccine, childProfile?.dateOfBirth)
 
     return (
@@ -1149,7 +1153,7 @@ export default function ChildPatientChartPage() {
               <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
               <div className="leading-tight">
                 <p className="text-xs font-semibold text-primary">
-                  In {daysUntil} day{daysUntil !== 1 ? "s" : ""}
+                  In {upcomingLabel}
                 </p>
                 <p className="text-[10px] text-primary/60">{formatDate(entry.scheduledDate)}</p>
               </div>
