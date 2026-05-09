@@ -927,11 +927,11 @@ export default function FacilityDashboardPage() {
           <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-lg border border-border bg-background/70 p-4">
               <p className="text-sm font-semibold text-foreground">Review vaccine fridge log</p>
-              <p className="mt-1 text-xs text-muted-foreground">Confirm morning temperature check and chart in the cold chain book.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Confirm morning temperature check and update the digital cold chain log.</p>
             </div>
             <div className="rounded-lg border border-border bg-background/70 p-4">
               <p className="text-sm font-semibold text-foreground">Prepare consent cards</p>
-              <p className="mt-1 text-xs text-muted-foreground">Lay out maternal health record books and ensure ink pads are available.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Review maternal digital health records and ensure consent tools are ready.</p>
             </div>
             <div className="rounded-lg border border-border bg-background/70 p-4">
               <p className="text-sm font-semibold text-foreground">Sync digital registers</p>

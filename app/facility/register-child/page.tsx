@@ -427,7 +427,7 @@ export default function RegisterChildPage() {
           <CardHeader className="space-y-2">
             <CardTitle>Child details</CardTitle>
             <CardDescription>
-              Enter the details recorded on the Ghana Child Health Record Book birth page. These drive the automated vaccine schedule.
+              Enter the details from the child's digital health record. These drive the automated vaccine schedule.
             </CardDescription>
           </CardHeader>
           <CardContent>

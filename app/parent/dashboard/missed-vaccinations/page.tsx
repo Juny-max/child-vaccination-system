@@ -142,7 +142,7 @@ export default function MissedVaccinationsPage() {
                 </div>
                 <div className="space-y-2 text-sm text-muted-foreground">
                   <p>• Ensure your child is not running a fever before the make-up dose.</p>
-                  <p>• Bring the child health record booklet for updates.</p>
+                  <p>• Have the child's digital health record ready for updates.</p>
                   <p>• Notify staff if your child had a reaction to previous doses.</p>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -362,7 +362,7 @@ export default function MissedVaccinationsPage() {
             title="Prepare your child"
             description="Ensure your child is well rested, hydrated, and has eaten lightly."
           />
-          <Step number="03" title="Bring documentation" description="Carry the health record booklet and any recent lab results." />
+          <Step number="03" title="Prepare records" description="Have the child's digital health record and any recent lab results ready." />
           <Step
             number="04"
             title="Monitor after the shot"

@@ -991,7 +991,7 @@ export default function ChildPatientChartPage() {
       }))
       
       setMeasurements(transformed)
-      setMeasurementStatus("Growth monitoring saved. Update the Child Health Record Book and growth chart.")
+      setMeasurementStatus("Growth monitoring saved. Update the child's digital health record and growth chart.")
       resetMeasurementForm()
     } catch (error) {
       console.error("Failed to save measurement:", error)
