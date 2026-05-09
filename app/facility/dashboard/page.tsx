@@ -647,7 +647,7 @@ export default function FacilityDashboardPage() {
                 <CardTitle className="flex items-center gap-2 text-base">
                   <QrCode className="h-5 w-5 text-primary" /> Scan QR code
                 </CardTitle>
-                <CardDescription>Fastest look-up using the CVCC passbook or digital certificate.</CardDescription>
+                <CardDescription>Fastest look-up using the CVCC ID or digital certificate.</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <Button 
@@ -1098,7 +1098,7 @@ export default function FacilityDashboardPage() {
             </div>
           </DialogHeader>
           <DialogDescription className="text-center text-base py-4">
-            No matching child found. Confirm spelling or scan the QR code on the health passbook.
+            No matching child found. Confirm the spelling or scan the QR code on the digital certificate.
           </DialogDescription>
           <div className="flex justify-center pt-2">
             <Button onClick={() => setShowErrorModal(false)} className="w-full sm:w-auto px-8">
