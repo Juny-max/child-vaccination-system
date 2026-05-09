@@ -1502,7 +1502,7 @@ export default function ChildPatientChartPage() {
             <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />
             <div>
               <p className="text-sm font-semibold text-foreground">Opening today&apos;s clinic</p>
-              <p className="text-xs text-muted-foreground">This can take a moment if the hosted backend is waking up.</p>
+              <p className="text-xs text-muted-foreground">This may take a moment while we prepare the clinic dashboard.</p>
             </div>
           </div>
         </div>
