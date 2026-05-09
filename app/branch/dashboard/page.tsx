@@ -16,7 +16,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ClipboardList,
-  Compass,
   Gauge,
   Info,
   Layers,
@@ -89,7 +88,8 @@ const SECTIONS = [
   { id: "actions", label: "Action Centre", icon: AlertTriangle },
   { id: "staff", label: "Staff Supervision", icon: Users },
   { id: "analytics", label: "Coverage Analytics", icon: BarChart3 },
-  { id: "catchment", label: "Catchment Command", icon: Compass },
+  // TODO: Re-enable Catchment Command after the upgraded version ships.
+  // { id: "catchment", label: "Catchment Command", icon: Compass },
   { id: "modules", label: "Key Modules", icon: ClipboardList },
 ] as const
 

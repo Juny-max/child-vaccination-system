@@ -169,7 +169,7 @@ export default function MissedVaccinationsPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-lg">Schedule make-up dose</DialogTitle>
             <p className="text-sm text-muted-foreground">
@@ -178,141 +178,134 @@ export default function MissedVaccinationsPage() {
           </DialogHeader>
 
           {selectedVaccine ? (
-            <form className="space-y-5" onSubmit={handleSubmit}>
-              <div className="rounded-lg border border-border bg-background/80 p-4 text-sm text-muted-foreground">
-                {isCHWRecommended ? (
-                  <p>
-                    Your child is {monthsOld} months old, so a community health worker (CHW) home visit is allowed for make-up doses.
-                    Choose the option that best suits your family.
-                  </p>
-                ) : (
-                  <p>
-                    CHW home visits are reserved for infants under 24 months or special cases. Our records recommend a facility visit
-                    for this request.
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-foreground">Visit preference</p>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <label className="flex flex-1 items-center gap-3 rounded-lg border border-border bg-background px-3 py-2 text-sm hover:border-primary/40">
-                    <input
-                      type="radio"
-                      name="visit-preference"
-                      value="facility"
-                      checked={visitPreference === "facility"}
-                      onChange={() => setVisitPreference("facility")}
-                      className="size-4"
-                    />
-                    <div>
-                      <p className="font-medium text-foreground">Facility visit</p>
-                      <p className="text-xs text-muted-foreground">Arrive at the clinic for the make-up dose.</p>
-                    </div>
-                  </label>
-                  <label
-                    className={`flex flex-1 items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
-                      isCHWRecommended ? "border-border bg-background hover:border-primary/40" : "border-border/60 bg-muted"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="visit-preference"
-                      value="chw"
-                      checked={visitPreference === "chw"}
-                      onChange={() => setVisitPreference("chw")}
-                      className="size-4"
-                      disabled={!isCHWRecommended}
-                    />
-                    <div>
-                      <p className="font-medium text-foreground">Request CHW home visit</p>
-                      <p className="text-xs text-muted-foreground">
-                        {isCHWRecommended
-                          ? "A CHW will be dispatched with the vaccine cold-box to your home."
-                          : "Available for infants under 24 months or special medical cases."}
-                      </p>
-                    </div>
-                  </label>
+            <form className="mt-4 flex min-h-0 flex-1 flex-col gap-4" onSubmit={handleSubmit}>
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+                <div className="rounded-lg border border-border bg-background/80 p-4 text-sm text-muted-foreground">
+                  {isCHWRecommended ? (
+                    <p>
+                      Your child is {monthsOld} months old, so a community health worker (CHW) home visit is allowed for make-up doses.
+                      Choose the option that best suits your family.
+                    </p>
+                  ) : (
+                    <p>
+                      CHW home visits are reserved for infants under 24 months or special cases. Our records recommend a facility visit
+                      for this request.
+                    </p>
+                  )}
                 </div>
-              </div>
 
-              {visitPreference === "facility" ? (
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground" htmlFor="facility">
-                    Facility
-                  </label>
-                  <select
-                    id="facility"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    value={preferredFacility}
-                    onChange={(event) => setPreferredFacility(event.target.value)}
-                  >
-                    <option value={primaryChild?.facilityName}>{primaryChild?.facilityName || "Primary Facility"}</option>
-                    <option value="Korle Bu Teaching Hospital">Korle Bu Teaching Hospital</option>
-                    <option value="Ga Central Mobile Outreach Clinic">Ga Central Mobile Outreach Clinic</option>
-                  </select>
+                  <p className="text-sm font-semibold text-foreground">Visit preference</p>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <label className="flex flex-1 items-center gap-3 rounded-lg border border-border bg-background px-3 py-2 text-sm hover:border-primary/40">
+                      <input
+                        type="radio"
+                        name="visit-preference"
+                        value="facility"
+                        checked={visitPreference === "facility"}
+                        onChange={() => setVisitPreference("facility")}
+                        className="size-4"
+                      />
+                      <div>
+                        <p className="font-medium text-foreground">Facility visit</p>
+                        <p className="text-xs text-muted-foreground">Arrive at the clinic for the make-up dose.</p>
+                      </div>
+                    </label>
+                    <label
+                      className={`flex flex-1 items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                        isCHWRecommended ? "border-border bg-background hover:border-primary/40" : "border-border/60 bg-muted"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="visit-preference"
+                        value="chw"
+                        checked={visitPreference === "chw"}
+                        onChange={() => setVisitPreference("chw")}
+                        className="size-4"
+                        disabled={!isCHWRecommended}
+                      />
+                      <div>
+                        <p className="font-medium text-foreground">Request CHW home visit</p>
+                        <p className="text-xs text-muted-foreground">
+                          {isCHWRecommended
+                            ? "A CHW will be dispatched with the vaccine cold-box to your home."
+                            : "Available for infants under 24 months or special medical cases."}
+                        </p>
+                      </div>
+                    </label>
+                  </div>
                 </div>
-              ) : null}
 
-              <div className="grid gap-4 sm:grid-cols-2">
+                {visitPreference === "facility" ? (
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground" htmlFor="facility">
+                      Facility
+                    </label>
+                    <select
+                      id="facility"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      value={preferredFacility}
+                      onChange={(event) => setPreferredFacility(event.target.value)}
+                    >
+                      <option value={primaryChild?.facilityName}>{primaryChild?.facilityName || "Primary Facility"}</option>
+                      <option value="Korle Bu Teaching Hospital">Korle Bu Teaching Hospital</option>
+                      <option value="Ga Central Mobile Outreach Clinic">Ga Central Mobile Outreach Clinic</option>
+                    </select>
+                  </div>
+                ) : null}
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">
+                      Preferred date
+                    </label>
+                    <DatePicker
+                      date={preferredDate}
+                      onDateChange={setPreferredDate}
+                      placeholder="Pick a date"
+                      minDate={new Date()}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">
+                      Preferred time
+                    </label>
+                    <TimePicker
+                      time={preferredTime}
+                      onTimeChange={setPreferredTime}
+                      placeholder="Select time"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">
-                    Preferred date
+                  <label className="text-sm font-semibold text-foreground" htmlFor="contactNumber">
+                    Reachable phone number
                   </label>
-                  <DatePicker
-                    date={preferredDate}
-                    onDateChange={setPreferredDate}
-                    placeholder="Pick a date"
-                    minDate={new Date()}
+                  <Input
+                    id="contactNumber"
+                    type="tel"
+                    placeholder="e.g. +233 24 123 4567"
+                    required
+                    value={contactNumber}
+                    onChange={(event) => setContactNumber(event.target.value)}
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">
-                    Preferred time
+                  <label className="text-sm font-semibold text-foreground" htmlFor="reason">
+                    Notes for the nurse
                   </label>
-                  <TimePicker
-                    time={preferredTime}
-                    onTimeChange={setPreferredTime}
-                    placeholder="Select time"
+                  <textarea
+                    id="reason"
+                    rows={3}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    placeholder="Share any recent symptoms or logistics concerns"
+                    value={reason}
+                    onChange={(event) => setReason(event.target.value)}
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground" htmlFor="contactNumber">
-                  Reachable phone number
-                </label>
-                <Input
-                  id="contactNumber"
-                  type="tel"
-                  placeholder="e.g. +233 24 123 4567"
-                  required
-                  value={contactNumber}
-                  onChange={(event) => setContactNumber(event.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground" htmlFor="reason">
-                  Notes for the nurse
-                </label>
-                <textarea
-                  id="reason"
-                  rows={3}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  placeholder="Share any recent symptoms or logistics concerns"
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                />
-              </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button type="submit" className="gap-2" disabled={isSubmitting}>
-                  <CalendarDays className="size-4" /> {isSubmitting ? "Submitting..." : "Submit request"}
-                </Button>
-                <Button type="button" variant="ghost" onClick={() => setSelectedVaccine(null)} disabled={isSubmitting}>
-                  Cancel
-                </Button>
               </div>
 
               {error ? (
@@ -321,6 +314,14 @@ export default function MissedVaccinationsPage() {
                 </div>
               ) : null}
 
+              <div className="flex flex-col gap-2 sm:flex-row shrink-0">
+                <Button type="submit" className="gap-2" disabled={isSubmitting}>
+                  <CalendarDays className="size-4" /> {isSubmitting ? "Submitting..." : "Submit request"}
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setSelectedVaccine(null)} disabled={isSubmitting}>
+                  Cancel
+                </Button>
+              </div>
             </form>
           ) : null}
         </DialogContent>

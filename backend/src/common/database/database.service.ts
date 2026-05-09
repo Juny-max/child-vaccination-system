@@ -206,7 +206,8 @@ export class DatabaseService implements OnModuleInit {
           id,
           code,
           name,
-          description
+          description,
+          site_category
         )
       `)
       .order('sort_order');
@@ -231,7 +232,13 @@ export class DatabaseService implements OnModuleInit {
 
     return schedules
       ?.filter((s) => {
-        const vaccine = s.vaccine as unknown as { id: string; code: string; name: string; description: string } | null;
+        const vaccine = s.vaccine as unknown as {
+          id: string;
+          code: string;
+          name: string;
+          description: string;
+          site_category: string | null;
+        } | null;
         const key = `${vaccine?.id}-${s.dose_number}`;
         return !completedSet.has(key);
       })

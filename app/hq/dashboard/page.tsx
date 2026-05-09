@@ -111,6 +111,15 @@ const SECTIONS = [
 const HQ_REVIEW_QUEUE_STORAGE_KEY = "hqReviewQueue"
 const HQ_NOTIFICATION_TEMPLATES_STORAGE_KEY = "hqNotificationTemplates"
 
+const VACCINE_SITE_CATEGORIES = [
+  { value: "oral", label: "Oral" },
+  { value: "injection-thigh", label: "Injection (thigh)" },
+  { value: "injection-arm", label: "Injection (upper arm)" },
+  { value: "intradermal", label: "Intradermal" },
+  { value: "intranasal", label: "Intranasal" },
+  { value: "other", label: "Other" },
+] as const
+
 
 type SectionId = (typeof SECTIONS)[number]["id"]
 
@@ -141,6 +150,7 @@ type VaccineConfig = {
   schedule: string
   dueDays: number
   status: "active" | "archived"
+  siteCategory?: string | null
 }
 
 type NotificationTemplate = {
@@ -487,6 +497,7 @@ export default function HqDashboardPage() {
   const [vaccineForm, setVaccineForm] = useState({
     name: "",
     weeks: "",
+    siteCategory: "",
   })
   const [editingVaccineId, setEditingVaccineId] = useState<string | null>(null)
   const [analyticsFilters, setAnalyticsFilters] = useState({
@@ -1709,7 +1720,10 @@ export default function HqDashboardPage() {
   const handleAddVaccine = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const weeksValue = Number.parseInt(vaccineForm.weeks, 10)
-    if (!vaccineForm.name.trim() || Number.isNaN(weeksValue) || weeksValue < 0) return
+    if (!vaccineForm.name.trim() || !vaccineForm.siteCategory || Number.isNaN(weeksValue) || weeksValue < 0) {
+      setSystemMessage("Please complete the vaccine name, timing, and site category.")
+      return
+    }
     const parsedDays = weeksValue * 7
     const scheduleName = weeksValue === 0 ? "At birth" : `Week ${weeksValue}`
 
@@ -1718,6 +1732,7 @@ export default function HqDashboardPage() {
       if (editingVaccineId) {
         await updateHqVaccine(editingVaccineId, {
           name: vaccineForm.name.trim(),
+          siteCategory: vaccineForm.siteCategory,
         })
 
         const updatedName = vaccineForm.name.trim()
@@ -1731,7 +1746,7 @@ export default function HqDashboardPage() {
         setSystemMessage(`Schedule for "${updatedName}" updated.`)
         appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
         setEditingVaccineId(null)
-        setVaccineForm({ name: "", weeks: "" })
+        setVaccineForm({ name: "", weeks: "", siteCategory: "" })
         return
       }
 
@@ -1745,6 +1760,7 @@ export default function HqDashboardPage() {
       const newVaccine = await createHqVaccine({
         name: vaccineForm.name.trim(),
         code: generatedCode,
+        siteCategory: vaccineForm.siteCategory,
       })
 
       const vaccineId = (newVaccine as any).id
@@ -1764,10 +1780,11 @@ export default function HqDashboardPage() {
         id: generatedCode,
         schedule: scheduleName,
         dueDays: parsedDays,
+        siteCategory: vaccineForm.siteCategory,
       }
 
       setVaccines((previous) => [vaccineWithSchedule as any, ...previous])
-      setVaccineForm({ name: "", weeks: "" })
+      setVaccineForm({ name: "", weeks: "", siteCategory: "" })
       setSystemMessage(`Vaccine "${newVaccine.name}" added to national catalogue.`)
       appendAuditLog({ action: `Added vaccine ${newVaccine.name} to master registry`, category: "Schedule" })
     } catch (error) {
@@ -2268,7 +2285,7 @@ export default function HqDashboardPage() {
 
   const cancelVaccineEditing = () => {
     setEditingVaccineId(null)
-    setVaccineForm({ name: "", weeks: "" })
+    setVaccineForm({ name: "", weeks: "", siteCategory: "" })
     setSystemMessage("Vaccine schedule editing cancelled.")
   }
 
@@ -3928,6 +3945,24 @@ export default function HqDashboardPage() {
               />
               <p className="text-xs text-muted-foreground">Enter 0 for vaccines given at birth (e.g. BCG, OPV-0)</p>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="vaccineSiteCategory">Site category</Label>
+              <select
+                id="vaccineSiteCategory"
+                required
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                value={vaccineForm.siteCategory}
+                onChange={(event) => setVaccineForm((prev) => ({ ...prev, siteCategory: event.target.value }))}
+              >
+                <option value="">Select site category</option>
+                {VACCINE_SITE_CATEGORIES.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">Used to auto-fill site of administration during vaccination.</p>
+            </div>
             <div className="md:col-span-2 flex justify-end">
               <Button type="submit" className="gap-2" disabled={isAddingVaccine}>
                 {isAddingVaccine
@@ -3977,6 +4012,9 @@ export default function HqDashboardPage() {
           ) : (
             vaccines.map((vaccine) => {
               const isArchived = vaccine.status === "archived"
+              const siteCategoryLabel =
+                VACCINE_SITE_CATEGORIES.find((category) => category.value === vaccine.siteCategory)?.label ||
+                "Other"
               return (
                 <div key={vaccine.id} className="rounded-lg border border-border bg-background p-4">
                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -3990,6 +4028,7 @@ export default function HqDashboardPage() {
                       <Badge variant="secondary">
                         {vaccine.dueDays === 0 ? "At birth" : `Week ${Math.round(vaccine.dueDays / 7)}`}
                       </Badge>
+                      <Badge variant="outline">{siteCategoryLabel}</Badge>
                       <Badge variant={isArchived ? "outline" : "secondary"}>{isArchived ? "Archived" : "Active"}</Badge>
                     </div>
                   </div>

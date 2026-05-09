@@ -4014,7 +4014,7 @@ export class BranchManagerService {
     const db = this.databaseService.supabase;
     const { data, error } = await db
       .from('vaccines')
-      .select('id, code, name, description, manufacturer, status, created_at, updated_at')
+      .select('id, code, name, description, manufacturer, site_category, status, created_at, updated_at')
       .order('name', { ascending: true });
     if (error) {
       this.logger.error('Failed to fetch vaccine catalogue', error);
@@ -4047,6 +4047,7 @@ export class BranchManagerService {
         id: v.id,
         code: v.code,
         name: v.name,
+        siteCategory: v.site_category,
         schedule: firstSchedule?.schedule_name || v.description || 'Standard schedule',
         dueDays: firstSchedule?.due_days_from_birth ?? 0,
         status: v.status,
@@ -4058,6 +4059,7 @@ export class BranchManagerService {
   async createHqVaccine(dto: {
     code: string;
     name: string;
+    siteCategory: string;
     description?: string;
     manufacturer?: string;
   }) {
@@ -4069,6 +4071,7 @@ export class BranchManagerService {
         name: dto.name.trim(),
         description: dto.description?.trim() || null,
         manufacturer: dto.manufacturer?.trim() || null,
+        site_category: dto.siteCategory,
         status: 'active',
       })
       .select()
@@ -4083,13 +4086,14 @@ export class BranchManagerService {
 
   async updateHqVaccine(
     vaccineId: string,
-    dto: { name?: string; description?: string; manufacturer?: string; status?: string },
+    dto: { name?: string; description?: string; manufacturer?: string; status?: string; siteCategory?: string },
   ) {
     const db = this.databaseService.supabase;
     const payload: Record<string, any> = {};
     if (dto.name !== undefined) payload.name = dto.name.trim();
     if (dto.description !== undefined) payload.description = dto.description.trim() || null;
     if (dto.manufacturer !== undefined) payload.manufacturer = dto.manufacturer.trim() || null;
+    if (dto.siteCategory !== undefined) payload.site_category = dto.siteCategory;
     if (dto.status !== undefined) payload.status = dto.status;
 
     if (Object.keys(payload).length === 0) throw new BadRequestException('No fields to update');

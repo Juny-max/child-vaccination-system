@@ -7,6 +7,7 @@ import {
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { DatabaseService } from '../common/database/database.service';
 import { SmsService } from '../common/sms.service';
+import { formatAppointmentDate, formatAppointmentTime } from '../common/appointment-format';
 import { EmailService } from '../common/email.service';
 import {
   ChildProfileDto,
@@ -403,10 +404,10 @@ export class ParentService {
       }
 
       const childName = await this.getChildNameById(appointment.child_id);
-      const timeLabel = appointment.scheduled_time
-        ? ` at ${String(appointment.scheduled_time).slice(0, 5)}`
-        : '';
-      const smsMessage = `CVCC: Your appointment for ${childName} on ${appointment.scheduled_date}${timeLabel} was marked as MISSED because attendance was not recorded. Please rebook from your dashboard or contact your facility.`;
+      const dateLabel = formatAppointmentDate(appointment.scheduled_date);
+      const timeLabel = formatAppointmentTime(appointment.scheduled_time);
+      const timeSuffix = timeLabel ? ` at ${timeLabel}` : '';
+      const smsMessage = `CVCC: Your appointment for ${childName} on ${dateLabel}${timeSuffix} was marked as MISSED because attendance was not recorded. Please rebook from your dashboard or contact your facility.`;
 
       try {
         await this.smsService.sendSms(smsTargetPhone, smsMessage);

@@ -340,6 +340,7 @@ export class ScheduledVaccineDto {
   isOverdue: boolean;
   daysOverdue: number;
   isMandatory: boolean;
+  siteCategory?: string | null;
 }
 
 /**
@@ -454,6 +455,7 @@ export class TodayAppointmentDto {
   vaccine: string;
   contact: string;
   status: string;
+  visitPreference?: 'facility' | 'chw';
 }
 
 /**

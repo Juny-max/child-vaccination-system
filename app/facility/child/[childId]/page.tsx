@@ -24,6 +24,15 @@ import {
   Thermometer,
   X,
 } from "lucide-react"
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import {
@@ -58,6 +67,203 @@ type VaccineEntry = {
   notes?: string
   batchNumber?: string
   administeredDate?: string
+  siteCategory?: VaccineSiteCategory | null
+}
+
+type VaccineSiteCategory =
+  | "oral"
+  | "injection-thigh"
+  | "injection-arm"
+  | "intradermal"
+  | "intranasal"
+  | "other"
+
+type VaccineSiteOption = {
+  value: string
+  label: string
+}
+
+type VaccineSitePreset = {
+  category: VaccineSiteCategory
+  defaultSite: string
+  routeLabel: string
+  note?: string
+  hideSelect?: boolean
+}
+
+const FULL_SITE_OPTIONS: VaccineSiteOption[] = [
+  { value: "left-thigh", label: "Left thigh" },
+  { value: "right-thigh", label: "Right thigh" },
+  { value: "left-arm-upper", label: "Left arm (upper)" },
+  { value: "right-arm-upper", label: "Right arm (upper)" },
+  { value: "oral", label: "Oral" },
+  { value: "intradermal", label: "Intradermal" },
+  { value: "intranasal", label: "Intranasal" },
+  { value: "other", label: "Other" },
+]
+
+const SITE_OPTIONS_BY_CATEGORY: Record<VaccineSiteCategory, VaccineSiteOption[]> = {
+  "injection-thigh": [
+    { value: "left-thigh", label: "Left thigh" },
+    { value: "right-thigh", label: "Right thigh" },
+  ],
+  "injection-arm": [
+    { value: "left-arm-upper", label: "Left arm (upper)" },
+    { value: "right-arm-upper", label: "Right arm (upper)" },
+  ],
+  oral: [{ value: "oral", label: "Oral" }],
+  intradermal: [
+    { value: "left-arm-upper", label: "Left arm (upper)" },
+    { value: "right-arm-upper", label: "Right arm (upper)" },
+  ],
+  intranasal: [{ value: "intranasal", label: "Intranasal" }],
+  other: FULL_SITE_OPTIONS,
+}
+
+const VACCINE_SITE_PRESETS: Record<string, VaccineSitePreset> = {
+  bcg: {
+    category: "intradermal",
+    defaultSite: "left-arm-upper",
+    routeLabel: "Intradermal (ID)",
+    note: "Ensure a wheal (small bump) is formed.",
+  },
+  "opv-0": {
+    category: "oral",
+    defaultSite: "oral",
+    routeLabel: "Oral",
+    note: "Mouth (2 drops).",
+    hideSelect: true,
+  },
+  "opv-1": {
+    category: "oral",
+    defaultSite: "oral",
+    routeLabel: "Oral",
+    note: "Mouth (2 drops).",
+    hideSelect: true,
+  },
+  "opv-2": {
+    category: "oral",
+    defaultSite: "oral",
+    routeLabel: "Oral",
+    note: "Mouth (2 drops).",
+    hideSelect: true,
+  },
+  "opv-3": {
+    category: "oral",
+    defaultSite: "oral",
+    routeLabel: "Oral",
+    note: "Mouth (2 drops).",
+    hideSelect: true,
+  },
+  "pentavalent-1": {
+    category: "injection-thigh",
+    defaultSite: "left-thigh",
+    routeLabel: "Intramuscular (IM)",
+  },
+  "pentavalent-2": {
+    category: "injection-thigh",
+    defaultSite: "left-thigh",
+    routeLabel: "Intramuscular (IM)",
+  },
+  "pentavalent-3": {
+    category: "injection-thigh",
+    defaultSite: "left-thigh",
+    routeLabel: "Intramuscular (IM)",
+  },
+  "pcv-1": {
+    category: "injection-thigh",
+    defaultSite: "right-thigh",
+    routeLabel: "Intramuscular (IM)",
+  },
+  "pcv-2": {
+    category: "injection-thigh",
+    defaultSite: "right-thigh",
+    routeLabel: "Intramuscular (IM)",
+  },
+  "pcv-3": {
+    category: "injection-thigh",
+    defaultSite: "right-thigh",
+    routeLabel: "Intramuscular (IM)",
+  },
+  "rotavirus-1": {
+    category: "oral",
+    defaultSite: "oral",
+    routeLabel: "Oral",
+    note: "Mouth (liquid dose).",
+    hideSelect: true,
+  },
+  "rotavirus-2": {
+    category: "oral",
+    defaultSite: "oral",
+    routeLabel: "Oral",
+    note: "Mouth (liquid dose).",
+    hideSelect: true,
+  },
+  "measles-rubella-1": {
+    category: "injection-arm",
+    defaultSite: "right-arm-upper",
+    routeLabel: "Subcutaneous (SC)",
+  },
+  "measles-rubella-2": {
+    category: "injection-arm",
+    defaultSite: "right-arm-upper",
+    routeLabel: "Subcutaneous (SC)",
+  },
+  "yellow-fever": {
+    category: "injection-arm",
+    defaultSite: "left-arm-upper",
+    routeLabel: "Subcutaneous (SC)",
+  },
+  "meningococcal-a": {
+    category: "injection-arm",
+    defaultSite: "left-arm-upper",
+    routeLabel: "Intramuscular (IM)",
+  },
+}
+
+const normalizeVaccineName = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+
+const getSiteOptionsForCategory = (category?: string | null) => {
+  if (!category || category === "other") {
+    return FULL_SITE_OPTIONS
+  }
+
+  return SITE_OPTIONS_BY_CATEGORY[category as VaccineSiteCategory] ?? FULL_SITE_OPTIONS
+}
+
+const getAutoSiteValue = (category?: string | null) => {
+  if (category === "oral" || category === "intranasal") {
+    return category
+  }
+  if (category === "intradermal") {
+    return "left-arm-upper"
+  }
+  return ""
+}
+
+const isAutoSiteCategory = (category?: string | null) =>
+  category === "oral" || category === "intranasal"
+
+const getVaccineSitePreset = (vaccineName?: string, category?: string | null): VaccineSitePreset | null => {
+  if (vaccineName) {
+    const preset = VACCINE_SITE_PRESETS[normalizeVaccineName(vaccineName)]
+    if (preset) return preset
+  }
+
+  if (!category) return null
+
+  return {
+    category: category as VaccineSiteCategory,
+    defaultSite: getAutoSiteValue(category),
+    routeLabel: "",
+    hideSelect: category === "oral" || category === "intranasal",
+  }
 }
 
 type ChildRecord = {
@@ -639,6 +845,7 @@ export default function ChildPatientChartPage() {
         scheduledDate: vax.dueDate,
         status,
         notes: vax.isOverdue ? "Overdue - administer as soon as possible" : undefined,
+        siteCategory: vax.siteCategory ?? null,
       })
     })
     
@@ -654,7 +861,27 @@ export default function ChildPatientChartPage() {
     }
   }, [schedule])
 
+  const selectedSitePreset = useMemo(
+    () => getVaccineSitePreset(selectedDose?.vaccine, selectedDose?.siteCategory),
+    [selectedDose?.vaccine, selectedDose?.siteCategory],
+  )
+  const selectedSiteCategory = selectedSitePreset?.category ?? selectedDose?.siteCategory ?? null
+  const siteOptions = getSiteOptionsForCategory(selectedSiteCategory)
+  const isSiteLocked = isAutoSiteCategory(selectedSiteCategory)
+
   const latestMeasurement = measurements[0] ?? null
+
+  const measurementTrend = useMemo(() => {
+    return [...measurements]
+      .filter((measurement) => Boolean(measurement.date))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map((measurement) => ({
+        date: measurement.date,
+        label: formatDate(measurement.date),
+        weightKg: measurement.weightKg ?? null,
+        lengthCm: measurement.lengthCm ?? null,
+      }))
+  }, [measurements])
 
   const handleMeasurementChange = <Field extends keyof MeasurementFormState>(
     field: Field,
@@ -773,11 +1000,13 @@ export default function ChildPatientChartPage() {
     setVaccineModalGroup(null)
     setSelectedDose(entry)
     setStockFromInventory(false)
+    const preset = getVaccineSitePreset(entry.vaccine, entry.siteCategory)
+    const autoSite = preset?.defaultSite ?? getAutoSiteValue(entry.siteCategory ?? null)
     setAdministerForm({
       batchNumber: entry.batchNumber ?? "",
       dateAdministered: new Date().toISOString().split("T")[0],
       expiryDate: "",
-      site: "",
+      site: autoSite,
       administeredBy: userName || "Facility Nurse",
       aefiFlag: false,
       aefiNotes: "",
@@ -1472,6 +1701,117 @@ export default function ChildPatientChartPage() {
                 ) : null}
               </div>
 
+              <div className="rounded-lg border border-border bg-muted/20 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Growth chart</p>
+                    <p className="text-xs text-muted-foreground">Each dot is a clinic visit. The line shows change over time.</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {measurementTrend.length} point{measurementTrend.length === 1 ? "" : "s"}
+                  </Badge>
+                </div>
+                {latestMeasurement ? (
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full border border-border bg-background px-3 py-1 text-muted-foreground">
+                      Latest: {formatDate(latestMeasurement.date)}
+                    </span>
+                    <span className="rounded-full border border-border bg-background px-3 py-1 text-foreground">
+                      Weight: {formatMeasurement(latestMeasurement.weightKg, 2)} kg
+                    </span>
+                    <span className="rounded-full border border-border bg-background px-3 py-1 text-foreground">
+                      Length: {formatMeasurement(latestMeasurement.lengthCm)} cm
+                    </span>
+                  </div>
+                ) : null}
+                {measurementTrend.length === 0 ? (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Record at least one measurement to plot the growth chart.
+                  </p>
+                ) : (
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-lg border border-border bg-background p-3">
+                      <p className="text-xs font-semibold text-muted-foreground">Weight (kg)</p>
+                      <div className="mt-2 h-48 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={measurementTrend} margin={{ left: 0, right: 12, top: 8, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                            <XAxis
+                              dataKey="label"
+                              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis
+                              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                              domain={[0, "auto"]}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: "hsl(var(--background))",
+                                border: "1px solid hsl(var(--border))",
+                                borderRadius: "8px",
+                              }}
+                              formatter={(value: number | string) => {
+                                const numeric = typeof value === "number" ? value : Number.parseFloat(String(value))
+                                if (Number.isNaN(numeric)) return ["—", "Weight"]
+                                return [`${numeric.toFixed(2)} kg`, "Weight"]
+                              }}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="weightKg"
+                              stroke="#2563eb"
+                              strokeWidth={2}
+                              dot={{ r: 3 }}
+                              connectNulls
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background p-3">
+                      <p className="text-xs font-semibold text-muted-foreground">Length/Height (cm)</p>
+                      <div className="mt-2 h-48 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={measurementTrend} margin={{ left: 0, right: 12, top: 8, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                            <XAxis
+                              dataKey="label"
+                              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis
+                              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                              domain={[0, "auto"]}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: "hsl(var(--background))",
+                                border: "1px solid hsl(var(--border))",
+                                borderRadius: "8px",
+                              }}
+                              formatter={(value: number | string) => {
+                                const numeric = typeof value === "number" ? value : Number.parseFloat(String(value))
+                                if (Number.isNaN(numeric)) return ["—", "Length/Height"]
+                                return [`${numeric.toFixed(1)} cm`, "Length/Height"]
+                              }}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="lengthCm"
+                              stroke="#10b981"
+                              strokeWidth={2}
+                              dot={{ r: 3 }}
+                              connectNulls
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <form className="grid gap-4 md:grid-cols-3" onSubmit={handleMeasurementSubmit}>
                 <div className="space-y-2">
                   <Label htmlFor="measurement-date">Measurement date</Label>
@@ -1909,23 +2249,40 @@ export default function ChildPatientChartPage() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="site">Site of injection</Label>
-                  <select
-                    id="site"
-                    required
-                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    value={administerForm.site}
-                    onChange={(event) => handleAdministerChange("site", event.target.value)}
-                  >
-                    <option value="">Select site</option>
-                    <option value="left-thigh">Left thigh</option>
-                    <option value="right-thigh">Right thigh</option>
-                    <option value="left-arm-upper">Left arm (upper)</option>
-                    <option value="right-arm-upper">Right arm (upper)</option>
-                    <option value="oral">Oral</option>
-                    <option value="intranasal">Intranasal</option>
-                    <option value="other">Other</option>
-                  </select>
+                  <Label htmlFor="site">Site of administration</Label>
+                  {selectedSitePreset?.hideSelect ? (
+                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                      Administration: {selectedSitePreset.routeLabel || "Oral"}
+                      {selectedSitePreset.note ? ` · ${selectedSitePreset.note}` : ""}
+                    </div>
+                  ) : (
+                    <select
+                      id="site"
+                      required
+                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      value={administerForm.site}
+                      onChange={(event) => handleAdministerChange("site", event.target.value)}
+                      disabled={isSiteLocked}
+                    >
+                      <option value="">Select site</option>
+                      {siteOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {selectedSitePreset?.routeLabel && !selectedSitePreset.hideSelect ? (
+                    <p className="text-xs text-muted-foreground">Route: {selectedSitePreset.routeLabel}</p>
+                  ) : null}
+                  {selectedSitePreset?.note && !selectedSitePreset.hideSelect ? (
+                    <p className="text-xs text-muted-foreground">{selectedSitePreset.note}</p>
+                  ) : null}
+                  {isSiteLocked && !selectedSitePreset?.hideSelect ? (
+                    <p className="text-xs text-muted-foreground">
+                      Site auto-selected based on vaccine category.
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
@@ -2314,7 +2671,9 @@ export default function ChildPatientChartPage() {
                   </div>
                   <div className="rounded-lg border border-border bg-muted/30 p-3">
                     <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Last Clinic Visit</p>
-                    <p className="mt-0.5 text-sm font-medium text-foreground">{childRecord.lastVisit}</p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">
+                      {childRecord.lastVisit ? formatShortDate(childRecord.lastVisit) : "Pending"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -2567,6 +2926,21 @@ function formatDOB(dateString: string) {
   const dd = String(date.getDate()).padStart(2, "0")
   const mm = String(date.getMonth() + 1).padStart(2, "0")
   const yy = String(date.getFullYear()).slice(-2)
+  return `${dd}-${mm}-${yy}`
+}
+
+function formatShortDate(dateString: string) {
+  if (!dateString) return "Pending"
+  const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (match) {
+    const [, year, month, day] = match
+    return `${day}-${month}-${year.slice(-2)}`
+  }
+  const parsed = new Date(dateString)
+  if (Number.isNaN(parsed.getTime())) return dateString
+  const dd = String(parsed.getDate()).padStart(2, "0")
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0")
+  const yy = String(parsed.getFullYear()).slice(-2)
   return `${dd}-${mm}-${yy}`
 }
 

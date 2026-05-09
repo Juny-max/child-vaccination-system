@@ -7,6 +7,7 @@ export interface HqVaccine {
   schedule: string;
   dueDays: number;
   status: 'active' | 'archived';
+  siteCategory?: string | null;
 }
 
 export interface CreateHqVaccinePayload {
@@ -14,6 +15,7 @@ export interface CreateHqVaccinePayload {
   schedule?: string;
   dueDays?: number;
   code: string;
+  siteCategory: string;
   description?: string;
   manufacturer?: string;
 }
@@ -25,6 +27,7 @@ export interface UpdateHqVaccinePayload {
   description?: string;
   manufacturer?: string;
   status?: string;
+  siteCategory?: string;
 }
 
 export interface HqSchedule {
