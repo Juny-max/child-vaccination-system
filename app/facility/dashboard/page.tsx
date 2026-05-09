@@ -836,7 +836,7 @@ export default function FacilityDashboardPage() {
                         </Button>
                       )}
                       <Button variant="secondary" size="sm" asChild>
-                        <Link href="/facility/dashboard/appointments">Manage requests</Link>
+                        <Link href="/facility/dashboard/appointments/missed">View follow-up queue</Link>
                       </Button>
                     </div>
                   </div>
