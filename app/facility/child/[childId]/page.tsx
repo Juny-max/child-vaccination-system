@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import {
   AlertCircle,
@@ -478,6 +477,7 @@ export default function ChildPatientChartPage() {
   const [measurementForm, setMeasurementForm] = useState<MeasurementFormState>(() => createEmptyMeasurementForm())
   const [measurementErrors, setMeasurementErrors] = useState<MeasurementFormErrors>({})
   const [measurementStatus, setMeasurementStatus] = useState<string | null>(null)
+  const [isReturningToClinic, setIsReturningToClinic] = useState(false)
   
   // State for fetched data
   const [isLoadingChild, setIsLoadingChild] = useState(true)
@@ -894,6 +894,11 @@ export default function ChildPatientChartPage() {
         return rest
       })
     }
+  }
+
+  const handleReturnToClinic = () => {
+    setIsReturningToClinic(true)
+    router.push("/facility/dashboard")
   }
 
   const resetMeasurementForm = () => {
@@ -1449,10 +1454,20 @@ export default function ChildPatientChartPage() {
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" className="gap-2" asChild>
-              <Link href="/facility/dashboard">
-                <ArrowLeft className="h-4 w-4" /> Today&apos;s clinic
-              </Link>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2"
+              onClick={handleReturnToClinic}
+              disabled={isReturningToClinic}
+              aria-busy={isReturningToClinic}
+            >
+              {isReturningToClinic ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowLeft className="h-4 w-4" />
+              )}
+              {isReturningToClinic ? "Opening clinic..." : "Today's clinic"}
             </Button>
             <div>
               <p className="text-sm text-muted-foreground">Child patient chart</p>
@@ -1480,6 +1495,18 @@ export default function ChildPatientChartPage() {
           </div>
         </div>
       </header>
+
+      {isReturningToClinic ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 px-4 backdrop-blur-sm">
+          <div className="flex w-full max-w-sm items-center gap-3 rounded-lg border border-border bg-background p-4 shadow-lg">
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Opening today&apos;s clinic</p>
+              <p className="text-xs text-muted-foreground">This can take a moment if the hosted backend is waking up.</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
         {isLoadingChild ? (
