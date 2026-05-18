@@ -1,35 +1,41 @@
 flowchart LR
-  Parent["👤 Parent / Guardian"]
-  Nurse["👩‍⚕️ Facility Nurse"]
-  CHW["🏃 Community Health Worker"]
-  BM["🏥 Branch Manager"]
-  HQ["🏛️ HQ Admin"]
-  Public["🌐 Public User"]
-  SMS["📱 SMS Gateway\n(Hubtel)"]
-  Email["📧 Email Service\n(Brevo)"]
-  Gemini["🤖 AI Chatbot\n(Google Gemini)"]
-
-  subgraph CVCC["CVCC System"]
-    System(["Child Vaccination\nCommand Center"])
+  subgraph Actors["🌐 External Entities"]
+    Guardian["👤 Guardian<br/>(Parent)"]
+    Staff["👨‍⚕️ Clinic Staff<br/>(Nurse/CHW)"]
+    Manager["🏢 Manager<br/>(BM/HQ)"]
+    PublicUser["🌍 Public<br/>User"]
+    SMSGateway["📱 SMS<br/>Gateway"]
+    EmailSvc["📧 Email<br/>Service"]
   end
 
-  Parent -->|"Login, view child records\ndownload certificate"| System
-  Nurse -->|"Register child, record vaccination\nschedule appointment"| System
-  CHW -->|"Register child offline\nrecord household visit"| System
-  BM -->|"View KPIs, approve CHW visits\nmanage branch staff"| System
-  HQ -->|"Manage users, branches, vaccines\nview audit logs"| System
-  Public -->|"Enter certificate ID or scan QR"| System
+  subgraph System["🏥 CVCC System"]
+    MainProcess["Child Vaccination<br/>Command Center<br/><br/>● Registration<br/>● Vaccination Tracking<br/>● Scheduling<br/>● Notifications<br/>● Reporting"]
+  end
 
-  System -->|"Child records, certificates\nappointment schedule"| Parent
-  System -->|"Vaccination history, schedules\nregistration confirmation"| Nurse
-  System -->|"Sync confirmation, CVCC ID\nQR code"| CHW
-  System -->|"Branch analytics, staff list\nvisit logs"| BM
-  System -->|"System reports, audit trail\nuser management"| HQ
-  System -->|"Certificate validity result\nchild name and vaccines"| Public
+  subgraph Data["💾 Data Storage"]
+    DataStore["Central Database<br/><br/>● Users & Roles<br/>● Children<br/>● Vaccines<br/>● Records<br/>● Certificates<br/>● Logs"]
+  end
 
-  System -->|"Appointment reminders\noverdue alerts"| SMS
-  SMS -->|"Delivery status"| System
-  System -->|"Staff invites\npassword resets"| Email
-  Email -->|"Delivery status"| System
-  System -->|"User query"| Gemini
-  Gemini -->|"AI response"| System
+  Guardian -->|"Credentials,<br/>Requests"| MainProcess
+  Staff -->|"Registration,<br/>Vaccination Data"| MainProcess
+  Manager -->|"Requests,<br/>Reports"| MainProcess
+  PublicUser -->|"Certificate<br/>Verification"| MainProcess
+
+  MainProcess -->|"Child Records,<br/>Certificates"| Guardian
+  MainProcess -->|"Schedules,<br/>History"| Staff
+  MainProcess -->|"Analytics,<br/>Reports"| Manager
+  MainProcess -->|"Verification<br/>Results"| PublicUser
+
+  MainProcess <-->|"Read/Write<br/>All Data"| DataStore
+
+  MainProcess -->|"Appointment<br/>Reminders"| SMSGateway
+  MainProcess -->|"Staff Invites,<br/>Password Resets"| EmailSvc
+  SMSGateway -->|"Delivery<br/>Status"| MainProcess
+  EmailSvc -->|"Delivery<br/>Status"| MainProcess
+
+  classDef actor fill:#f0f4ff,stroke:#5a67d8,stroke-width:2px,color:#1a202c
+  classDef process fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#1a202c
+  classDef datastore fill:#f7fafc,stroke:#2d3748,stroke-width:2px,color:#1a202c
+  class Guardian,Staff,Manager,PublicUser,SMSGateway,EmailSvc actor
+  class MainProcess process
+  class DataStore datastore

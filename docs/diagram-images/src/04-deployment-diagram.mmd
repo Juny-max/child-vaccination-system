@@ -1,29 +1,40 @@
 flowchart LR
-  subgraph Client
-    U[User Device\nBrowser]
+  subgraph Client["💻 Client Layer<br/>(Browser/Mobile)"]
+    U["User Device<br/>Web Browser"]
   end
 
-  subgraph Frontend
-    FE[Next.js App\nVercel]
+  subgraph Frontend["🎨 Frontend<br/>(Next.js on Vercel)"]
+    FE["Next.js 16<br/>React 19<br/>5 Role Dashboards"]
   end
 
-  subgraph Backend
-    API[NestJS API\nRender]
+  subgraph Backend["🔧 Backend<br/>(NestJS on Render)"]
+    API["NestJS API<br/>Port 3001<br/>Authentication<br/>Business Logic"]
   end
 
-  subgraph Data
-    DB[(Supabase\nPostgreSQL)]
+  subgraph Data["💾 Data Layer<br/>(Supabase PostgreSQL)"]
+    DB["PostgreSQL<br/>21 Tables<br/>Real-time Subscriptions"]
   end
 
-  subgraph External Services
-    SMS[Hubtel SMS]
-    Email[Brevo SMTP]
-    Maps[OpenStreetMap Tiles]
+  subgraph External["🌐 External Services"]
+    SMS["📱 Hubtel<br/>SMS Gateway"]
+    Email["📧 Brevo<br/>SMTP"]
+    Maps["🗺️ OpenStreetMap<br/>Tiles"]
   end
 
-  U --> FE
-  FE --> API
-  API --> DB
-  API --> SMS
-  API --> Email
-  FE --> Maps
+  U -->|"HTTPS"| FE
+  FE -->|"HTTP/REST"| API
+  API -->|"SQL Queries"| DB
+  API -->|"Send SMS"| SMS
+  API -->|"Send Email"| Email
+  FE -->|"Load Tiles"| Maps
+
+  classDef clientStyle fill:#f0f4ff,stroke:#5a67d8,stroke-width:2px
+  classDef frontendStyle fill:#fff5f5,stroke:#e53e3e,stroke-width:2px
+  classDef backendStyle fill:#f7fafc,stroke:#2d3748,stroke-width:2px
+  classDef dataStyle fill:#fffaf0,stroke:#c05621,stroke-width:2px
+  classDef externalStyle fill:#f5f3ff,stroke:#7c3aed,stroke-width:2px
+  class U clientStyle
+  class FE frontendStyle
+  class API backendStyle
+  class DB dataStyle
+  class SMS,Email,Maps externalStyle

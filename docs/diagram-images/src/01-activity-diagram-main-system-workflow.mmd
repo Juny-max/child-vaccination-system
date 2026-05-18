@@ -1,26 +1,28 @@
 flowchart TD
-  A([Start]) --> B[Open login page]
-  B --> C[Enter credentials]
-  C --> D{Valid?}
-  D -- No --> E[Show error] --> B
-  D -- Yes --> F[Identify role]
-  F --> G{Role}
-  G -- Parent --> H[Open parent dashboard]
-  G -- Nurse --> I[Open facility dashboard]
-  G -- CHW --> J[Open CHW dashboard]
-  G -- Branch Manager --> BM[Open branch dashboard]
-  G -- HQ Admin --> HQ[Open HQ dashboard]
-  H --> K[View child records or certificate]
-  I --> L[Register child or record vaccination]
-  J --> M[Record visit or vaccination]
-  BM --> BM2[View KPIs, approve CHW visits, manage staff]
-  HQ --> HQ2[Manage users, branches, vaccines, audit logs]
-  M --> N[Save locally if offline]
-  N --> O[Sync when online]
-  K --> P[Save updates]
+  A(["🔵 Start"]) --> B["1️⃣ Open Login<br/>Page"]
+  B --> C["2️⃣ Enter<br/>Credentials"]
+  C --> D{"Valid<br/>Credentials?"}
+  D -->|❌ No| E["❌ Show<br/>Error Message"] --> B
+  D -->|✅ Yes| F["🔍 Identify<br/>User Role"]
+  F --> G{"Which<br/>Role?"}
+  G -->|👤 Parent| H["📊 Load Parent<br/>Dashboard"]
+  G -->|👩‍⚕️ Nurse| I["🏥 Load Facility<br/>Dashboard"]
+  G -->|🏃 CHW| J["📱 Load CHW<br/>Dashboard"]
+  G -->|🏥 Branch Mgr| BM["🏢 Load Branch<br/>Dashboard"]
+  G -->|🏛️ HQ Admin| HQ["📈 Load HQ<br/>Dashboard"]
+  
+  H --> K["📋 View Child<br/>Records &<br/>Certificates"]
+  I --> L["🆕 Register Child<br/>or Record<br/>Vaccination"]
+  J --> M["✅ Record Visit<br/>or Vaccination"]
+  BM --> BM2["📊 View KPIs<br/>Approve Visits<br/>Manage Staff"]
+  HQ --> HQ2["👥 Manage Users<br/>Branches, Vaccines<br/>& Audit Logs"]
+  
+  M --> N["💾 Save Locally<br/>if Offline"]
+  N --> O["🌐 Sync When<br/>Online"]
+  K --> P["✅ Update<br/>Complete"]
   L --> P
   O --> P
   BM2 --> P
   HQ2 --> P
-  P --> Q[Send notification if needed]
-  Q --> R([End])
+  P --> Q["📩 Send<br/>Notification<br/>if Needed"]
+  Q --> R(["🔵 End"])

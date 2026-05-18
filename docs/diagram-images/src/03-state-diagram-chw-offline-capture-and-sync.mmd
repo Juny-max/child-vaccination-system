@@ -1,10 +1,10 @@
 stateDiagram-v2
   [*] --> Online
-  Online --> Offline: network lost
-  Offline --> Recording: capture visit
-  Recording --> PendingSync: saved locally
-  PendingSync --> Syncing: network restored
-  Syncing --> Synced: upload success
-  Syncing --> SyncFailed: error
-  SyncFailed --> PendingSync: retry
-  Synced --> Online
+  Online --> Offline: 📡 Network Lost
+  Offline --> Recording: 📋 Capture Visit<br/>or Vaccination
+  Recording --> PendingSync: 💾 Save to<br/>Local Storage
+  PendingSync --> Syncing: 🌐 Network<br/>Restored
+  Syncing --> Synced: ✅ Upload<br/>Success
+  Syncing --> SyncFailed: ❌ Upload<br/>Error
+  SyncFailed --> PendingSync: 🔄 Retry<br/>Sync
+  Synced --> Online: ✓ Sync<br/>Complete

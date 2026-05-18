@@ -1,46 +1,42 @@
 flowchart TB
-  subgraph Actors[Actors]
+  subgraph Actors["👥 System Actors"]
     direction LR
-    Parent[Parent]
-    Nurse[Facility Nurse]
-    CHW[CHW]
-    BM[Branch Manager]
-    HQA[HQ Admin]
-    Public[Public / Anyone]
+    Parent["👤 Parent/<br/>Guardian"]
+    Nurse["👩‍⚕️ Facility<br/>Nurse"]
+    CHW["🏃 CHW"]
+    BM["🏥 Branch<br/>Manager"]
+    HQA["🏛️ HQ Admin"]
+    Public["🌐 Public<br/>User"]
   end
 
-  subgraph CVCC[CVCC System]
+  subgraph CVCC["🏥 CVCC System"]
     direction TB
 
-    subgraph A[Access]
-      direction LR
-      UC1((Login))
+    subgraph A["🔐 Access & Authentication"]
+      UC1((Login &<br/>Authentication))
     end
 
-    subgraph C[Care Delivery]
-      direction LR
-      UC4((Register child))
-      UC5((Record vaccination))
-      UC6((Schedule appointment))
-      UC7((Offline capture))
-      UC8((Sync data))
+    subgraph C["💉 Care Delivery"]
+      UC4((Register<br/>Child))
+      UC5((Record<br/>Vaccination))
+      UC6((Schedule<br/>Appointment))
+      UC7((Offline Data<br/>Capture))
+      UC8((Sync Data<br/>to Cloud))
     end
 
-    subgraph M[Branch and HQ Management]
-      direction LR
-      UC9((View branch KPIs))
-      UC10((Approve CHW visits))
-      UC11((Manage staff))
-      UC12((Manage users))
-      UC13((Manage branches))
-      UC14((View audit logs))
+    subgraph M["📊 Management"]
+      UC9((View Branch<br/>KPIs))
+      UC10((Approve CHW<br/>Visits))
+      UC11((Manage<br/>Staff))
+      UC12((Manage<br/>Users))
+      UC13((Manage<br/>Branches))
+      UC14((View Audit<br/>Logs))
     end
 
-    subgraph P[Parent and Public Services]
-      direction LR
-      UC2((View child records))
-      UC3((Download certificate))
-      UC15((Verify certificate))
+    subgraph P["📋 Public Services"]
+      UC2((View Child<br/>Records))
+      UC3((Download<br/>Certificate))
+      UC15((Verify<br/>Certificate))
     end
   end
 
@@ -69,7 +65,8 @@ flowchart TB
 
   Public --> UC15
 
-  classDef actor fill:#eef1ff,stroke:#6b6de3,color:#1f2440,stroke-width:1px
-  classDef usecase fill:#f6f8ff,stroke:#7b68ee,color:#20243a,stroke-width:1px
+  classDef actor fill:#f0f4ff,stroke:#5a67d8,color:#1a202c,stroke-width:2px
+  classDef usecase fill:#fff5f5,stroke:#e53e3e,color:#1a202c,stroke-width:2px
+  classDef subgraphStyle fill:#f7fafc,stroke:#2d3748,color:#1a202c,stroke-width:1px
   class Parent,Nurse,CHW,BM,HQA,Public actor
   class UC1,UC2,UC3,UC4,UC5,UC6,UC7,UC8,UC9,UC10,UC11,UC12,UC13,UC14,UC15 usecase

@@ -1,46 +1,46 @@
 flowchart TD
-  subgraph Client["Client Layer — Browser / Mobile"]
-    ReactUI["React UI\n5 Role Dashboards + Public /verify"]
-    IndexedDB["IndexedDB\nOffline Storage"]
-    ServiceWorker["Service Worker\nBackground Sync"]
+  subgraph Client["📱 Client Layer<br/>Browser & Mobile Web"]
+    ReactUI["React UI<br/>5 Role-Based<br/>Dashboards<br/>+ /verify Page"]
+    IndexedDB["💾 IndexedDB<br/>Offline<br/>Storage"]
+    ServiceWorker["⚙️ Service Worker<br/>Background<br/>Sync"]
   end
 
-  subgraph NextJS["Frontend — Next.js 16 on Vercel"]
-    AppRouter["App Router\n/app/** pages"]
-    NextAPIRoutes["Next.js API Routes\n/api/verify  /api/chatbot"]
-    AuthMiddleware["Auth Middleware\nJWT route protection"]
-    LibAPI["lib/api/ helpers\nauto-attach Bearer token"]
+  subgraph NextJS["🎨 Frontend Layer<br/>Next.js 16 on Vercel"]
+    AppRouter["📄 App Router<br/>/app/** pages<br/>20+ routes"]
+    NextAPIRoutes["🔌 API Routes<br/>/api/verify<br/>/api/chatbot"]
+    AuthMiddleware["🔐 Auth<br/>Middleware<br/>JWT Protection"]
+    LibAPI["📡 lib/api/<br/>helpers<br/>Bearer token"]
   end
 
-  subgraph NestJS["Backend — NestJS on Render (port 3001)"]
-    AuthMod["Auth Module\nJWT login, Guards, Roles"]
-    ParentMod["Parent Module"]
-    FacilityMod["Facility Module"]
-    CHWMod["CHW Module"]
-    BranchMod["Branch Manager Module"]
-    HQMod["HQ Admin Module"]
-    Common["Common Services\nEmail  SMS  Scheduler  Backup"]
+  subgraph NestJS["🔧 Backend Layer<br/>NestJS on Render<br/>Port 3001"]
+    AuthMod["🔐 Auth Module<br/>JWT, Guards<br/>Role-based"]
+    ParentMod["👤 Parent<br/>Module"]
+    FacilityMod["🏥 Facility<br/>Module"]
+    CHWMod["🏃 CHW<br/>Module"]
+    BranchMod["🏢 Branch<br/>Manager Module"]
+    HQMod["🏛️ HQ Admin<br/>Module"]
+    Common["🛠️ Common<br/>Services<br/>Email, SMS<br/>Scheduler<br/>Backup"]
   end
 
-  subgraph DataLayer["Data Layer — Supabase (PostgreSQL)"]
-    SupabaseDB[("21 Tables\nusers · children · vaccines\nvaccination_events · certificates\nappointments · visit_logs\naudit_logs · sync_queue ...")]
+  subgraph DataLayer["💾 Data Layer<br/>Supabase PostgreSQL"]
+    SupabaseDB["21 Tables<br/><br/>users, children<br/>vaccines, events<br/>certificates<br/>appointments<br/>audit_logs, etc."]
   end
 
-  subgraph External["External Services"]
-    Brevo["Brevo\nTransactional Email"]
-    Hubtel["Hubtel\nSMS Gateway"]
-    Gemini["Google Gemini\nAI Chatbot"]
+  subgraph External["🌐 External<br/>Services"]
+    Brevo["📧 Brevo<br/>Email"]
+    Hubtel["📱 Hubtel<br/>SMS"]
+    Gemini["🤖 Google<br/>Gemini<br/>AI Chatbot"]
   end
 
   ReactUI --> AppRouter
-  ReactUI <--> IndexedDB
-  ServiceWorker <--> IndexedDB
+  ReactUI <-->|"read/write"| IndexedDB
+  ServiceWorker <-->|"read/write"| IndexedDB
   AppRouter --> AuthMiddleware
   AppRouter --> LibAPI
   AppRouter --> NextAPIRoutes
   AuthMiddleware --> LibAPI
 
-  NextAPIRoutes -->|"Direct query\n(no auth needed)"| SupabaseDB
+  NextAPIRoutes -->|"Direct query"| SupabaseDB
   LibAPI --> AuthMod
 
   AuthMod --> ParentMod
@@ -59,3 +59,14 @@ flowchart TD
   Common --> Hubtel
   ServiceWorker --> AuthMod
   AppRouter --> Gemini
+
+  classDef clientStyle fill:#f0f4ff,stroke:#5a67d8,stroke-width:2px
+  classDef frontendStyle fill:#fff5f5,stroke:#e53e3e,stroke-width:2px
+  classDef backendStyle fill:#f7fafc,stroke:#2d3748,stroke-width:2px
+  classDef dataStyle fill:#fffaf0,stroke:#c05621,stroke-width:2px
+  classDef externalStyle fill:#f5f3ff,stroke:#7c3aed,stroke-width:2px
+  class ReactUI,IndexedDB,ServiceWorker clientStyle
+  class AppRouter,NextAPIRoutes,AuthMiddleware,LibAPI frontendStyle
+  class AuthMod,ParentMod,FacilityMod,CHWMod,BranchMod,HQMod,Common backendStyle
+  class SupabaseDB dataStyle
+  class Brevo,Hubtel,Gemini externalStyle
