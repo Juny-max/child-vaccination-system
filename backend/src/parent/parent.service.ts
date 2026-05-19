@@ -1131,15 +1131,15 @@ export class ParentService {
     const childSummaries: ChildSummaryDto[] = await Promise.all(
       children.map(async (child) => {
         try {
-          const history = await this.db.getVaccinationHistory(child.id);
           const upcoming = await this.db.getUpcomingVaccinations(
             child.id,
             child.dateOfBirth,
           );
           const certs = await this.db.getCertificates(child.id);
+          const vaccinationStatus = await this.db.getVaccinationCompletionStatus(child.id);
 
-          const completed = history?.length || 0;
-          const total = completed + (upcoming?.length || 0);
+          const total = vaccinationStatus.totalRequired;
+          const completed = Math.min(vaccinationStatus.completedCount, total);
           const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
 
           const nextVax = upcoming?.find((v: any) => !v.isOverdue);

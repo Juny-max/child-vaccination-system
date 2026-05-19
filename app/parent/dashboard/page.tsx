@@ -47,6 +47,30 @@ function getIssuedDateTimestamp(issuedDate?: string): number | null {
   return Number.isNaN(timestamp) ? null : timestamp
 }
 
+function getProgressTone(percentage: number): {
+  fill: string
+  badge: string
+} {
+  if (percentage >= 100) {
+    return {
+      fill: "bg-emerald-500",
+      badge: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    }
+  }
+
+  if (percentage >= 50) {
+    return {
+      fill: "bg-primary",
+      badge: "border-primary/30 bg-primary/10 text-primary",
+    }
+  }
+
+  return {
+    fill: "bg-amber-500",
+    badge: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  }
+}
+
 export default function ParentDashboardOverview() {
   const { userName, dashboard, appointments, certificates, missedVaccinations } = useParentDashboard()
 
@@ -261,23 +285,36 @@ export default function ParentDashboardOverview() {
           </CardHeader>
           <CardContent className="space-y-4">
             {childrenData.length > 0 ? (
-              childrenData.slice(0, 4).map((child) => (
-                <div
-                  key={child.id}
-                  className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3"
-                >
-                  <div>
-                    <p className="font-semibold">{child.name}</p>
-                    <p className="text-xs text-muted-foreground">{child.age}</p>
+              childrenData.slice(0, 4).map((child) => {
+                const percentage = Math.min(Math.max(child.vaccinationProgress.percentage, 0), 100)
+                const progressTone = getProgressTone(percentage)
+
+                return (
+                  <div
+                    key={child.id}
+                    className="rounded-lg border border-border bg-background px-4 py-3"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-semibold">{child.name}</p>
+                        <p className="text-xs text-muted-foreground">{child.age}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">{child.vaccinationProgress.completed}/{child.vaccinationProgress.total} vaccines</p>
+                        <Badge variant="outline" className={progressTone.badge}>
+                          {percentage}% complete
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={`h-full rounded-full transition-all ${progressTone.fill}`}
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">{child.vaccinationProgress.completed}/{child.vaccinationProgress.total} vaccines</p>
-                    <Badge variant={child.vaccinationProgress.percentage >= 80 ? "default" : child.vaccinationProgress.percentage >= 50 ? "secondary" : "outline"}>
-                      {child.vaccinationProgress.percentage}% complete
-                    </Badge>
-                  </div>
-                </div>
-              ))
+                )
+              })
             ) : (
               <p className="text-sm text-muted-foreground">No vaccination records found.</p>
             )}

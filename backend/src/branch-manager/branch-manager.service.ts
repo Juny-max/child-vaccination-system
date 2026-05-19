@@ -1354,7 +1354,8 @@ export class BranchManagerService {
 
       if (!child.dateOfBirth) return;
 
-      const dob = new Date(child.dateOfBirth);
+      const dateOfBirth = child.dateOfBirth;
+      const dob = new Date(dateOfBirth);
       const ageInDays = Math.floor(
         (today.getTime() - dob.getTime()) / (1000 * 60 * 60 * 24),
       );
@@ -1363,7 +1364,7 @@ export class BranchManagerService {
         { schedule: any; daysOverdue: number; dueDate: Date } | null
       >((current, schedule: any) => {
         const scheduleDueDays = getDueDaysFromSchedule(
-          child.dateOfBirth,
+          dateOfBirth,
           schedule.schedule_name,
           schedule.due_days_from_birth,
         );
@@ -1380,7 +1381,7 @@ export class BranchManagerService {
 
         const daysOverdue = ageInDays - scheduleDueDays;
         const dueDate = getDueDateFromSchedule(
-          child.dateOfBirth,
+          dateOfBirth,
           schedule.schedule_name,
           schedule.due_days_from_birth,
         );
