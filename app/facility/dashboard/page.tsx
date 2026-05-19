@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Html5Qrcode } from "html5-qrcode"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import {
@@ -52,6 +52,7 @@ type CameraState = "idle" | "starting" | "active" | "error"
 
 export default function FacilityDashboardPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const [userName, setUserName] = useState("")
   const [facilityInfo, setFacilityInfo] = useState<{ name: string; region: string; district: string } | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
@@ -438,6 +439,25 @@ export default function FacilityDashboardPage() {
     router.push("/")
   }
 
+  const navItems = [
+    { label: "Patient lookup", href: "/facility/dashboard", icon: Search },
+    { label: "Register mother", href: "/facility/register-mother", icon: User },
+    { label: "Register child", href: "/facility/register-child", icon: FilePlus2 },
+    {
+      label: "Appointment requests",
+      href: "/facility/dashboard/appointments",
+      icon: CalendarCheck,
+      badge: pendingAppointmentRequestsCount,
+    },
+    { label: "Missed follow-ups", href: "/facility/dashboard/appointments/missed", icon: AlertTriangle },
+    {
+      label: "Offline sync",
+      href: "/facility/offline-sync",
+      icon: Syringe,
+      badge: pendingSyncCount,
+    },
+  ]
+
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
@@ -468,22 +488,90 @@ export default function FacilityDashboardPage() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-        {systemMessage ? (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{systemMessage}</AlertDescription>
-          </Alert>
-        ) : null}
-        {cameraError ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{cameraError}</AlertDescription>
-          </Alert>
-        ) : null}
+      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <aside className="hidden lg:sticky lg:top-24 lg:flex lg:w-72 lg:flex-col lg:gap-4 lg:self-start">
+            <div className="rounded-2xl border border-border bg-background p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Clinic overview</p>
+              <p className="mt-2 text-sm text-foreground">Stay on top of today&apos;s priority tasks and requests.</p>
+              <div className="mt-3 rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                Offline sync pending: <span className="font-semibold text-foreground">{pendingSyncCount}</span> ·
+                Appointment requests: <span className="font-semibold text-foreground">{pendingAppointmentRequestsCount}</span>
+              </div>
+            </div>
+            <nav className="rounded-2xl border border-border bg-background p-3 shadow-sm">
+              <p className="px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick navigation</p>
+              <div className="mt-3 flex flex-col gap-1">
+                {navItems.map((item) => {
+                  const isActive =
+                    pathname === item.href ||
+                    (item.href !== "/facility/dashboard" && pathname.startsWith(item.href))
+                  const Icon = item.icon
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={
+                        isActive
+                          ? "flex items-center gap-3 rounded-xl bg-primary/10 px-3 py-2 text-sm font-semibold text-primary"
+                          : "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      }
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span className="flex-1">{item.label}</span>
+                      {item.badge && item.badge > 0 ? (
+                        <Badge variant="default" className="text-[10px]">
+                          {item.badge}
+                        </Badge>
+                      ) : null}
+                    </Link>
+                  )
+                })}
+              </div>
+            </nav>
+          </aside>
 
-        <section className="flex flex-col gap-6 lg:flex-row">
-          <Card className="flex-1 border-primary/40">
+          <main className="flex min-w-0 flex-1 flex-col gap-6">
+            <Card className="border border-border bg-background lg:hidden">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Quick navigation</CardTitle>
+                <CardDescription>Swipe to access key nurse workflows.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex gap-2 overflow-x-auto pb-2">
+                {navItems.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <Button key={item.href} asChild variant="outline" size="sm" className="gap-2">
+                      <Link href={item.href}>
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                        {item.badge && item.badge > 0 ? (
+                          <Badge variant="default" className="ml-1">
+                            {item.badge}
+                          </Badge>
+                        ) : null}
+                      </Link>
+                    </Button>
+                  )
+                })}
+              </CardContent>
+            </Card>
+
+            {systemMessage ? (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{systemMessage}</AlertDescription>
+              </Alert>
+            ) : null}
+            {cameraError ? (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{cameraError}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            <section className="flex flex-col gap-6">
+              <Card className="border-primary/40">
             <CardHeader className="space-y-2">
               <CardTitle className="text-lg">Patient lookup</CardTitle>
               <CardDescription>Type a child name, CVCC ID, or guardian phone number — results appear as you type.</CardDescription>
@@ -638,105 +726,74 @@ export default function FacilityDashboardPage() {
                   <p className="text-xs text-muted-foreground">Search results will appear here as you type.</p>
                 )}
               </div>
+
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+                <div className="flex items-center gap-2">
+                  <QrCode className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Scan QR</p>
+                    <p className="text-xs text-muted-foreground">Fast CVCC look-up.</p>
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-col gap-2">
+                  <Button
+                    className="h-8 gap-2 text-xs"
+                    variant="default"
+                    size="sm"
+                    onClick={startCamera}
+                    disabled={cameraState === "starting" || cameraState === "active"}
+                  >
+                    <Camera className="h-4 w-4" />
+                    {cameraState === "starting" ? "Starting camera..." : cameraState === "active" ? "Scanning..." : "Start scanning"}
+                  </Button>
+                  {(cameraState === "starting" || cameraState === "active") ? (
+                    <div className="space-y-2">
+                      <div
+                        id={scannerId}
+                        className="mx-auto aspect-[4/3] w-full max-w-sm overflow-hidden rounded-lg border-2 border-primary/50 bg-muted/20"
+                      />
+                      {cameraState === "active" && (
+                        <Button variant="outline" size="sm" onClick={stopCamera} className="h-8 w-full text-xs">
+                          Stop camera
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+                  {cameraState === "error" || cameraError ? (
+                    <div className="space-y-2">
+                      <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription className="text-xs">
+                          {cameraError || "Camera error occurred"}
+                        </AlertDescription>
+                      </Alert>
+                      <div className="rounded-md bg-muted p-3 text-xs space-y-1">
+                        <p className="font-semibold">Troubleshooting:</p>
+                        <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+                          <li>Check if another app is using your camera</li>
+                          <li>Click the camera icon in your browser&apos;s address bar and allow access</li>
+                          <li>Try refreshing the page (F5)</li>
+                          <li>Restart your browser if the issue persists</li>
+                        </ul>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { setCameraError(null); setCameraState("idle"); }}
+                        className="w-full"
+                      >
+                        Try again
+                      </Button>
+                    </div>
+                  ) : cameraState !== "active" ? (
+                    <p className="text-xs text-muted-foreground">
+                      Hold the QR in frame to open the child&apos;s record.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
             </CardContent>
           </Card>
-
-          <div className="flex w-full flex-col gap-4 lg:w-80">
-            <Card className="border-primary/40 bg-primary/5">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <QrCode className="h-5 w-5 text-primary" /> Scan QR code
-                </CardTitle>
-                <CardDescription>Fastest look-up using the CVCC ID or digital certificate.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <Button 
-                  className="gap-2" 
-                  variant="default" 
-                  onClick={startCamera} 
-                  disabled={cameraState === "starting" || cameraState === "active"}
-                >
-                  <Camera className="h-4 w-4" />
-                  {cameraState === "starting" ? "Starting camera..." : cameraState === "active" ? "Scanning..." : "Start scanning"}
-                </Button>
-                {(cameraState === "starting" || cameraState === "active") ? (
-                  <div className="space-y-2">
-                    <div id={scannerId} className="relative overflow-hidden rounded-lg border-2 border-primary/50" />
-                    {cameraState === "active" && (
-                      <Button variant="outline" size="sm" onClick={stopCamera} className="w-full">
-                        Stop camera
-                      </Button>
-                    )}
-                  </div>
-                ) : null}
-                {cameraState === "error" || cameraError ? (
-                  <div className="space-y-2">
-                    <Alert variant="destructive">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription className="text-xs">
-                        {cameraError || "Camera error occurred"}
-                      </AlertDescription>
-                    </Alert>
-                    <div className="rounded-md bg-muted p-3 text-xs space-y-1">
-                      <p className="font-semibold">Troubleshooting:</p>
-                      <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
-                        <li>Check if another app is using your camera</li>
-                        <li>Click the camera icon in your browser&apos;s address bar and allow access</li>
-                        <li>Try refreshing the page (F5)</li>
-                        <li>Restart your browser if the issue persists</li>
-                      </ul>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => { setCameraError(null); setCameraState("idle"); }} className="w-full">
-                      Try again
-                    </Button>
-                  </div>
-                ) : cameraState !== "active" ? (
-                  <p className="text-xs text-muted-foreground">
-                    Position the QR code within the frame. The system will decode and open the child&apos;s record automatically.
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Quick actions</CardTitle>
-                <CardDescription>Kick off common clinic workflows.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <Button asChild className="gap-2">
-                  <Link href="/facility/register-mother">
-                    <User className="h-4 w-4" /> Register new mother
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="gap-2">
-                  <Link href="/facility/register-child">
-                    <FilePlus2 className="h-4 w-4" /> Register new child
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="gap-2">
-                  <Link href="/facility/dashboard/appointments">
-                    <CalendarCheck className="h-4 w-4" />
-                    Review appointment requests
-                    {pendingAppointmentRequestsCount > 0 ? (
-                      <Badge variant="default" className="ml-auto">
-                        {pendingAppointmentRequestsCount}
-                      </Badge>
-                    ) : null}
-                  </Link>
-                </Button>
-                {pendingSyncCount > 0 && (
-                  <Button asChild variant="secondary" className="gap-2">
-                    <Link href="/facility/offline-sync">
-                      <Syringe className="h-4 w-4" /> 
-                      Offline sync 
-                      <Badge variant="default" className="ml-auto">{pendingSyncCount}</Badge>
-                    </Link>
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          </div>
         </section>
 
         <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-[3fr,2fr]">
@@ -820,23 +877,23 @@ export default function FacilityDashboardPage() {
                         Missed on {item.scheduledDate || "Unknown date"} at {item.scheduledTime} • {item.vaccine}
                       </p>
                     </div>
-                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                       <Badge variant="outline" className="border-amber-400/60 text-amber-700 dark:text-amber-300">
                         {item.daysSinceMissed} day{item.daysSinceMissed === 1 ? "" : "s"} ago
                       </Badge>
                       {item.contact && item.contact !== "N/A" ? (
-                        <Button variant="outline" size="sm" className="gap-2" asChild>
+                        <Button variant="outline" size="sm" className="h-7 gap-2 px-2 text-xs" asChild>
                           <Link href={`tel:${item.contact.replace(/\s+/g, "")}`}>
-                            <Phone className="h-4 w-4" /> Call guardian
+                            <Phone className="h-4 w-4" /> Call
                           </Link>
                         </Button>
                       ) : (
-                        <Button variant="outline" size="sm" className="gap-2" disabled>
+                        <Button variant="outline" size="sm" className="h-7 gap-2 px-2 text-xs" disabled>
                           <Phone className="h-4 w-4" /> No phone
                         </Button>
                       )}
-                      <Button variant="secondary" size="sm" asChild>
-                        <Link href="/facility/dashboard/appointments/missed">View follow-up queue</Link>
+                      <Button variant="secondary" size="sm" className="h-7 px-2 text-xs" asChild>
+                        <Link href="/facility/dashboard/appointments/missed">Open queue</Link>
                       </Button>
                     </div>
                   </div>
@@ -954,7 +1011,9 @@ export default function FacilityDashboardPage() {
             </Link>
           </Button>
         </div>
-      </main>
+          </main>
+        </div>
+      </div>
 
       {/* Guardian Contact Details Modal */}
       {contactDetail && (

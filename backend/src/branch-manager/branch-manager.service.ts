@@ -12,6 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { QrTokenService } from '../common/qr-token.service';
+import { getDueDateFromSchedule, getDueDaysFromSchedule } from '../common/schedule-date';
 import { CreateHqBranchDto, UpdateHqBranchDto } from './hq-branches.dto';
 import {
   CreateHqUserDto,
@@ -141,7 +142,7 @@ export class BranchManagerService {
         // National vaccination schedule (mandatory doses) for overdue computation
         db
           .from('vaccination_schedules')
-          .select('vaccine_id, dose_number, due_days_from_birth, vaccines(name)')
+          .select('vaccine_id, dose_number, schedule_name, due_days_from_birth, vaccines(name)')
           .eq('is_mandatory', true)
           .order('due_days_from_birth', { ascending: true }),
 
@@ -388,14 +389,21 @@ export class BranchManagerService {
         // Find worst (most overdue) missing dose for this child
         let worstOverdue: any = null;
         for (const schedule of (vaccinationSchedulesRows.data ?? [])) {
-          if (ageInDays > schedule.due_days_from_birth + GRACE_DAYS) {
+          const scheduleDueDays = getDueDaysFromSchedule(
+            child.date_of_birth,
+            schedule.schedule_name,
+            schedule.due_days_from_birth,
+          );
+          if (ageInDays > scheduleDueDays + GRACE_DAYS) {
             const exactKey = `${child.id}:${schedule.vaccine_id}:${schedule.dose_number}`;
             const looseKey = `${child.id}:${schedule.vaccine_id}`;
             if (!receivedExact.has(exactKey) && !receivedVaccine.has(looseKey)) {
-              const daysOverdue = ageInDays - schedule.due_days_from_birth;
+              const daysOverdue = ageInDays - scheduleDueDays;
               if (!worstOverdue || daysOverdue > worstOverdue.daysOverdue) {
-                const dueDate = new Date(
-                  dob.getTime() + schedule.due_days_from_birth * 24 * 60 * 60 * 1000,
+                const dueDate = getDueDateFromSchedule(
+                  child.date_of_birth,
+                  schedule.schedule_name,
+                  schedule.due_days_from_birth,
                 );
                 const dueDateStr = dueDate.toLocaleDateString('en-GH', {
                   day: 'numeric', month: 'short', year: 'numeric',
@@ -1074,7 +1082,7 @@ export class BranchManagerService {
           .eq('is_active', true),
         db
           .from('vaccination_schedules')
-          .select('vaccine_id, dose_number, due_days_from_birth, vaccines(name)')
+          .select('vaccine_id, dose_number, schedule_name, due_days_from_birth, vaccines(name)')
           .eq('is_mandatory', true)
           .order('due_days_from_birth', { ascending: true }),
         db
@@ -1354,7 +1362,12 @@ export class BranchManagerService {
       const mostOverdue = schedules.reduce<
         { schedule: any; daysOverdue: number; dueDate: Date } | null
       >((current, schedule: any) => {
-        if (ageInDays <= schedule.due_days_from_birth + GRACE_DAYS) {
+        const scheduleDueDays = getDueDaysFromSchedule(
+          child.dateOfBirth,
+          schedule.schedule_name,
+          schedule.due_days_from_birth,
+        );
+        if (ageInDays <= scheduleDueDays + GRACE_DAYS) {
           return current;
         }
 
@@ -1365,9 +1378,11 @@ export class BranchManagerService {
           return current;
         }
 
-        const daysOverdue = ageInDays - schedule.due_days_from_birth;
-        const dueDate = new Date(
-          dob.getTime() + schedule.due_days_from_birth * 24 * 60 * 60 * 1000,
+        const daysOverdue = ageInDays - scheduleDueDays;
+        const dueDate = getDueDateFromSchedule(
+          child.dateOfBirth,
+          schedule.schedule_name,
+          schedule.due_days_from_birth,
         );
 
         if (!current || daysOverdue > current.daysOverdue) {

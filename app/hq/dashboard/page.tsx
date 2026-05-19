@@ -117,8 +117,47 @@ const VACCINE_SITE_CATEGORIES = [
   { value: "injection-arm", label: "Injection (upper arm)" },
   { value: "intradermal", label: "Intradermal" },
   { value: "intranasal", label: "Intranasal" },
-  { value: "other", label: "Other" },
 ] as const
+
+const VACCINE_TIMING_UNITS = [
+  { value: "weeks", label: "Weeks" },
+  { value: "months", label: "Months" },
+  { value: "years", label: "Years" },
+] as const
+
+type VaccineTimingUnit = (typeof VACCINE_TIMING_UNITS)[number]["value"]
+
+const TIMING_UNIT_DAYS: Record<VaccineTimingUnit, number> = {
+  weeks: 7,
+  months: 30,
+  years: 365,
+}
+
+const TIMING_UNIT_LABEL: Record<VaccineTimingUnit, string> = {
+  weeks: "Week",
+  months: "Month",
+  years: "Year",
+}
+
+const resolveTimingUnit = (schedule?: string | null): VaccineTimingUnit => {
+  if (!schedule) return "weeks"
+  const normalized = schedule.trim().toLowerCase()
+  if (normalized.startsWith("month")) return "months"
+  if (normalized.startsWith("year")) return "years"
+  return "weeks"
+}
+
+const getScheduleLabel = (value: number, unit: VaccineTimingUnit) =>
+  value === 0 ? "At birth" : `${TIMING_UNIT_LABEL[unit]} ${value}`
+
+const getTimingValueFromDays = (days: number, unit: VaccineTimingUnit) =>
+  Math.round(days / TIMING_UNIT_DAYS[unit])
+
+const getTimingDays = (value: number, unit: VaccineTimingUnit) =>
+  value * TIMING_UNIT_DAYS[unit]
+
+const getScheduleDisplay = (schedule: string | null | undefined, dueDays: number) =>
+  schedule?.trim() || (dueDays === 0 ? "At birth" : `Week ${Math.round(dueDays / 7)}`)
 
 
 type SectionId = (typeof SECTIONS)[number]["id"]
@@ -497,6 +536,7 @@ export default function HqDashboardPage() {
   const [vaccineForm, setVaccineForm] = useState({
     name: "",
     weeks: "",
+    timingUnit: "weeks" as VaccineTimingUnit,
     siteCategory: "",
   })
   const [editingVaccineId, setEditingVaccineId] = useState<string | null>(null)
@@ -524,7 +564,10 @@ export default function HqDashboardPage() {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false)
   const [isVaccineEditModalOpen, setIsVaccineEditModalOpen] = useState(false)
   const [editingVaccine, setEditingVaccine] = useState<VaccineConfig | null>(null)
-  const [vaccineEditForm, setVaccineEditForm] = useState({ weeks: "" })
+  const [vaccineEditForm, setVaccineEditForm] = useState({
+    weeks: "",
+    timingUnit: "weeks" as VaccineTimingUnit,
+  })
   const [isVaccinesLoading, setIsVaccinesLoading] = useState(true)
   const [isVaccineSaving, setIsVaccineSaving] = useState(false)
   const [isAddingVaccine, setIsAddingVaccine] = useState(false)
@@ -1719,13 +1762,14 @@ export default function HqDashboardPage() {
 
   const handleAddVaccine = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const weeksValue = Number.parseInt(vaccineForm.weeks, 10)
-    if (!vaccineForm.name.trim() || !vaccineForm.siteCategory || Number.isNaN(weeksValue) || weeksValue < 0) {
+    const timingValue = Number.parseInt(vaccineForm.weeks, 10)
+    const timingUnit = vaccineForm.timingUnit || "weeks"
+    if (!vaccineForm.name.trim() || !vaccineForm.siteCategory || Number.isNaN(timingValue) || timingValue < 0) {
       setSystemMessage("Please complete the vaccine name, timing, and site category.")
       return
     }
-    const parsedDays = weeksValue * 7
-    const scheduleName = weeksValue === 0 ? "At birth" : `Week ${weeksValue}`
+    const parsedDays = getTimingDays(timingValue, timingUnit)
+    const scheduleName = getScheduleLabel(timingValue, timingUnit)
 
     setIsAddingVaccine(true)
     try {
@@ -1746,7 +1790,7 @@ export default function HqDashboardPage() {
         setSystemMessage(`Schedule for "${updatedName}" updated.`)
         appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
         setEditingVaccineId(null)
-        setVaccineForm({ name: "", weeks: "", siteCategory: "" })
+        setVaccineForm({ name: "", weeks: "", timingUnit: "weeks", siteCategory: "" })
         return
       }
 
@@ -1784,7 +1828,7 @@ export default function HqDashboardPage() {
       }
 
       setVaccines((previous) => [vaccineWithSchedule as any, ...previous])
-      setVaccineForm({ name: "", weeks: "", siteCategory: "" })
+      setVaccineForm({ name: "", weeks: "", timingUnit: "weeks", siteCategory: "" })
       setSystemMessage(`Vaccine "${newVaccine.name}" added to national catalogue.`)
       appendAuditLog({ action: `Added vaccine ${newVaccine.name} to master registry`, category: "Schedule" })
     } catch (error) {
@@ -2285,26 +2329,29 @@ export default function HqDashboardPage() {
 
   const cancelVaccineEditing = () => {
     setEditingVaccineId(null)
-    setVaccineForm({ name: "", weeks: "", siteCategory: "" })
+    setVaccineForm({ name: "", weeks: "", timingUnit: "weeks", siteCategory: "" })
     setSystemMessage("Vaccine schedule editing cancelled.")
   }
 
   const handleVaccineEdit = (vaccine: VaccineConfig) => {
+    const timingUnit = resolveTimingUnit(vaccine.schedule)
+    const timingValue = getTimingValueFromDays(vaccine.dueDays, timingUnit)
     setEditingVaccine(vaccine)
-    setVaccineEditForm({ weeks: String(Math.round(vaccine.dueDays / 7)) })
+    setVaccineEditForm({ weeks: String(timingValue), timingUnit })
     setIsVaccineEditModalOpen(true)
   }
 
   const handleVaccineEditSave = async () => {
     if (!editingVaccine || isVaccineSaving) return
 
-    const weeksValue = Number.parseInt(vaccineEditForm.weeks, 10)
-    if (Number.isNaN(weeksValue) || weeksValue < 0) {
-      setSystemMessage("Please enter a valid number of weeks.")
+    const timingValue = Number.parseInt(vaccineEditForm.weeks, 10)
+    const timingUnit = vaccineEditForm.timingUnit || "weeks"
+    if (Number.isNaN(timingValue) || timingValue < 0) {
+      setSystemMessage("Please enter a valid timing value.")
       return
     }
-    const parsedDays = weeksValue * 7
-    const scheduleName = weeksValue === 0 ? "At birth" : `Week ${weeksValue}`
+    const parsedDays = getTimingDays(timingValue, timingUnit)
+    const scheduleName = getScheduleLabel(timingValue, timingUnit)
 
     const hasChanges = editingVaccine.dueDays !== parsedDays
     if (!hasChanges) {
@@ -3929,7 +3976,7 @@ export default function HqDashboardPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="vaccineWeeks">When to give (weeks)</Label>
+              <Label htmlFor="vaccineWeeks">When to give</Label>
               <Input
                 id="vaccineWeeks"
                 type="text"
@@ -3944,6 +3991,24 @@ export default function HqDashboardPage() {
                 required
               />
               <p className="text-xs text-muted-foreground">Enter 0 for vaccines given at birth (e.g. BCG, OPV-0)</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="vaccineTimingUnit">Timing unit</Label>
+              <select
+                id="vaccineTimingUnit"
+                required
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                value={vaccineForm.timingUnit}
+                onChange={(event) =>
+                  setVaccineForm((prev) => ({ ...prev, timingUnit: event.target.value as VaccineTimingUnit }))
+                }
+              >
+                {VACCINE_TIMING_UNITS.map((unit) => (
+                  <option key={unit.value} value={unit.value}>
+                    {unit.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="vaccineSiteCategory">Site category</Label>
@@ -4012,6 +4077,8 @@ export default function HqDashboardPage() {
           ) : (
             vaccines.map((vaccine) => {
               const isArchived = vaccine.status === "archived"
+              const scheduleDisplay = getScheduleDisplay(vaccine.schedule, vaccine.dueDays)
+              const scheduleText = scheduleDisplay === "At birth" ? "Given at birth" : `Given at ${scheduleDisplay}`
               const siteCategoryLabel =
                 VACCINE_SITE_CATEGORIES.find((category) => category.value === vaccine.siteCategory)?.label ||
                 "Other"
@@ -4020,13 +4087,11 @@ export default function HqDashboardPage() {
                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                     <div>
                       <p className="text-base font-semibold text-foreground">{vaccine.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {vaccine.dueDays === 0 ? "Given at birth" : `Given at week ${Math.round(vaccine.dueDays / 7)}`}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{scheduleText}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Badge variant="secondary">
-                        {vaccine.dueDays === 0 ? "At birth" : `Week ${Math.round(vaccine.dueDays / 7)}`}
+                        {scheduleDisplay}
                       </Badge>
                       <Badge variant="outline">{siteCategoryLabel}</Badge>
                       <Badge variant={isArchived ? "outline" : "secondary"}>{isArchived ? "Archived" : "Active"}</Badge>
@@ -4079,25 +4144,49 @@ export default function HqDashboardPage() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4 p-6">
-              <div className="space-y-2">
-                <Label htmlFor="edit-weeks">When to give (weeks)</Label>
-                <Input
-                  id="edit-weeks"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="e.g. 10"
-                  value={vaccineEditForm.weeks}
-                  onChange={(e) => {
-                    const numeric = e.target.value.replace(/\D/g, "")
-                    setVaccineEditForm((prev) => ({ ...prev, weeks: numeric }))
-                  }}
-                  disabled={isVaccineSaving}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Current: {editingVaccine.dueDays === 0 ? "At birth (week 0)" : `Week ${Math.round(editingVaccine.dueDays / 7)}`} · Enter 0 for vaccines given at birth
-                </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-weeks">When to give</Label>
+                  <Input
+                    id="edit-weeks"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="e.g. 10"
+                    value={vaccineEditForm.weeks}
+                    onChange={(e) => {
+                      const numeric = e.target.value.replace(/\D/g, "")
+                      setVaccineEditForm((prev) => ({ ...prev, weeks: numeric }))
+                    }}
+                    disabled={isVaccineSaving}
+                  />
+                  <p className="text-xs text-muted-foreground">Enter 0 for vaccines given at birth.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-timing-unit">Timing unit</Label>
+                  <select
+                    id="edit-timing-unit"
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={vaccineEditForm.timingUnit}
+                    onChange={(event) =>
+                      setVaccineEditForm((prev) => ({
+                        ...prev,
+                        timingUnit: event.target.value as VaccineTimingUnit,
+                      }))
+                    }
+                    disabled={isVaccineSaving}
+                  >
+                    {VACCINE_TIMING_UNITS.map((unit) => (
+                      <option key={unit.value} value={unit.value}>
+                        {unit.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Current: {getScheduleDisplay(editingVaccine.schedule, editingVaccine.dueDays)}
+              </p>
               <div className="flex justify-end gap-2 pt-2">
                 <Button
                   variant="outline"

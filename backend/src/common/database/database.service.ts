@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { getDueDateFromSchedule } from '../schedule-date';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit {
@@ -243,8 +244,11 @@ export class DatabaseService implements OnModuleInit {
         return !completedSet.has(key);
       })
       .map((s) => {
-        const dueDate = new Date(birthDate);
-        dueDate.setDate(dueDate.getDate() + s.due_days_from_birth);
+        const dueDate = getDueDateFromSchedule(
+          dateOfBirth,
+          s.schedule_name,
+          s.due_days_from_birth,
+        );
         const daysOverdue = Math.floor(
           (today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
         );
