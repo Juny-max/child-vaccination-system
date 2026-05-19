@@ -200,7 +200,7 @@ export function MorphNavbar({
                   <Link
                     href={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className="flex h-10 w-full items-center justify-start rounded-xl px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="flex h-10 w-full items-center justify-start rounded-xl px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:text-white"
                   >
                     {item.label}
                   </Link>
@@ -229,7 +229,7 @@ export function MorphNavbar({
                 <li key={item.label}>
                   <Link
                     href={item.href}
-                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    className="text-sm text-muted-foreground transition-colors hover:text-foreground dark:text-white"
                   >
                     {item.label}
                   </Link>

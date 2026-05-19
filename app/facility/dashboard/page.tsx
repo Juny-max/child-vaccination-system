@@ -441,7 +441,7 @@ export default function FacilityDashboardPage() {
 
   const navItems = [
     { label: "Patient lookup", href: "/facility/dashboard", icon: Search },
-    { label: "Register mother", href: "/facility/register-mother", icon: User },
+    { label: "Register guardian", href: "/facility/register-mother", icon: User },
     { label: "Register child", href: "/facility/register-child", icon: FilePlus2 },
     {
       label: "Appointment requests",
@@ -853,7 +853,7 @@ export default function FacilityDashboardPage() {
                 <AlertTriangle className="h-5 w-5" /> Missed appointment follow-ups
               </CardTitle>
               <CardDescription>
-                Mothers who missed appointments in the last 14 days. Call and help them rebook quickly.
+                Guardians who missed appointments in the last 14 days. Call and help them rebook quickly.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -988,7 +988,7 @@ export default function FacilityDashboardPage() {
             </div>
             <div className="rounded-lg border border-border bg-background/70 p-4">
               <p className="text-sm font-semibold text-foreground">Prepare consent cards</p>
-              <p className="mt-1 text-xs text-muted-foreground">Review maternal digital health records and ensure consent tools are ready.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Review guardian digital health records and ensure consent tools are ready.</p>
             </div>
             <div className="rounded-lg border border-border bg-background/70 p-4">
               <p className="text-sm font-semibold text-foreground">Sync digital registers</p>
