@@ -9,20 +9,29 @@ import { MorphNavbar } from "@/components/morph-navbar"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { ArrowRight, BellRing, Check, MessageSquare, Phone, QrCode, ShieldCheck, Syringe, TrendingUp, X } from "lucide-react"
+import { ArrowRight, ArrowUp, BellRing, Check, QrCode, ShieldCheck, Syringe, TrendingUp, X } from "lucide-react"
 
 const heroMedia = {
   light: "https://www.edc-ent.com/wp-content/uploads/2021/07/343434.jpg",
   dark: "https://www.edc-ent.com/wp-content/uploads/2021/07/343434.jpg",
 }
 
-const pulseMetrics = [
-  { label: "Children safeguarded", value: "1.24M", detail: "Active immunisation records across Ghana" },
-  { label: "Appointments this month", value: "38,214", detail: "Synced from 428 public facilities" },
-  { label: "Cold-chain compliance", value: "99.1%", detail: "Alerts resolved within national SLA" },
+const platformCapabilities = [
+  {
+    label: "Multi-facility coordination",
+    icon: TrendingUp,
+    detail: "Vaccine stock levels, cold-chain logs and appointment rosters across every registered facility are visible from one command centre — no spreadsheets, no gaps.",
+  },
+  {
+    label: "Offline-first field tools",
+    icon: Syringe,
+    detail: "Community health workers capture geo-tagged visits and defaulter follow-ups in areas with no signal, then sync automatically when connectivity returns.",
+  },
+  {
+    label: "Guardian engagement engine",
+    icon: BellRing,
+    detail: "Automated SMS and email reminders keep caregivers aligned with national dosing schedules — no manual follow-up required from clinic staff.",
+  },
 ]
 
 const focusStories = [
@@ -54,7 +63,7 @@ const platformPillars = [
   },
   {
     title: "Coverage intelligence",
-    description: "Daily coverage insights highlight gaps so HQ and regions act before drop-offs grow.",
+    description: "Daily coverage insights highlight gaps so national teams and regions act before drop-offs grow.",
     icon: TrendingUp,
   },
   {
@@ -121,21 +130,17 @@ export default function Home() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [activeMoment, setActiveMoment] = useState(0)
   const [navCollapsed, setNavCollapsed] = useState(false)
-
-  const [contactForm, setContactForm] = useState<ContactFormValues>({
-    name: "",
-    email: "",
-    facility: "",
-    message: "",
-    website: "",
-  })
-  const [submittingContact, setSubmittingContact] = useState(false)
-  const [contactState, setContactState] = useState<ContactRequestState>({ type: "idle", message: "" })
-
+  const [showBackToTop, setShowBackToTop] = useState(false)
   const { resolvedTheme } = useTheme()
 
   useEffect(() => {
     setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    const handleScroll = () => setShowBackToTop(window.scrollY > 300)
+    window.addEventListener("scroll", handleScroll, { passive: true })
+    return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
   useEffect(() => {
@@ -285,7 +290,7 @@ export default function Home() {
 
         <div className="relative mx-auto flex min-h-[85vh] max-w-7xl flex-col items-center justify-center gap-12 px-4 py-20 text-center sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-16 lg:px-8 lg:text-left">
           <div className="max-w-2xl space-y-8 text-center lg:text-left">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-sm font-semibold uppercase tracking-[0.3em] text-primary dark:border-white/40 dark:bg-white/10 dark:text-white">
               Protecting every child
             </span>
             <h1 className="text-balance text-4xl font-semibold leading-tight sm:text-5xl md:text-6xl">
@@ -336,20 +341,20 @@ export default function Home() {
                     <Syringe className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium uppercase text-muted-foreground">Live session</p>
-                    <p className="text-lg font-semibold">Care spotlight • Child wellness</p>
+                    <p className="text-base font-medium uppercase text-foreground">Today's focus</p>
+                    <p className="text-xl font-semibold">Care spotlight • Child wellness</p>
                   </div>
                 </div>
                 <div className="rounded-2xl border border-border/60 bg-background/70 p-4 text-sm shadow-sm">
                   <p className="font-semibold text-primary">Why routine vaccines matter</p>
                   <div className="mt-2 grid grid-cols-2 gap-3 text-muted-foreground">
                     <div>
-                      <p className="text-xs uppercase">Stronger immunity</p>
-                      <p className="text-sm font-medium text-foreground">Build protection early</p>
+                      <p className="text-sm uppercase">Stronger immunity</p>
+                      <p className="text-base font-medium text-foreground">Build protection early</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase">Healthier communities</p>
-                      <p className="text-sm font-medium text-foreground">Prevent disease spread</p>
+                      <p className="text-sm uppercase">Healthier communities</p>
+                      <p className="text-base font-medium text-foreground">Prevent disease spread</p>
                     </div>
                   </div>
                 </div>
@@ -363,23 +368,25 @@ export default function Home() {
         <div className="absolute inset-0 bg-linear-to-b from-primary/10 via-transparent to-transparent dark:from-primary/5" />
         <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-primary">
-              National pulse
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-sm font-semibold uppercase tracking-[0.3em] text-primary">
+              What CVCC enables
             </span>
-            <h2 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">A clear view of Ghana&apos;s vaccination network</h2>
+            <h2 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">Built for every level of Ghana&apos;s vaccination programme</h2>
             <p className="mt-4 text-lg text-foreground/80">
-              Live coverage trends, appointment load, and cold-chain status are visible in one place so health leaders can respond early and protect every district.
+              From national coordinators to community health workers, CVCC brings every part of the immunisation workflow into one secure, connected system.
             </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
-            {pulseMetrics.map((metric) => (
+            {platformCapabilities.map((cap) => (
               <div
-                key={metric.label}
+                key={cap.label}
                 className="rounded-3xl border border-primary/20 bg-background/70 p-6 shadow-lg backdrop-blur-xl transition hover:border-primary/40"
               >
-                <p className="text-xs uppercase tracking-[0.3em] text-primary/80">{metric.label}</p>
-                <p className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">{metric.value}</p>
-                <p className="mt-2 text-sm text-foreground/75">{metric.detail}</p>
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                  <cap.icon className="h-6 w-6" />
+                </div>
+                <p className="text-lg font-semibold text-foreground">{cap.label}</p>
+                <p className="mt-2 text-base text-foreground/75">{cap.detail}</p>
               </div>
             ))}
           </div>
@@ -401,7 +408,7 @@ export default function Home() {
 
         <div className="relative mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:px-8">
           <div className="rounded-[2.25rem] border border-primary/20 bg-background/80 p-8 shadow-xl backdrop-blur-xl sm:p-10">
-            <span className={`${playfulHeadingFont.className} inline-flex items-center rounded-full border border-primary/35 bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-primary`}>
+            <span className={`${playfulHeadingFont.className} inline-flex items-center rounded-full border border-primary/35 bg-primary/10 px-4 py-1 text-sm font-semibold uppercase tracking-[0.22em] text-primary`}>
               Childhood care
             </span>
             <h2 className={`${playfulHeadingFont.className} mt-6 text-balance text-3xl font-semibold leading-tight text-foreground sm:text-4xl`}>
@@ -410,7 +417,7 @@ export default function Home() {
             <p className="mt-4 text-base text-foreground/80 sm:text-lg">
               Routine vaccination keeps children safer as they learn, play, and discover the world around them.
             </p>
-            <p className="mt-4 max-w-xl text-sm leading-relaxed text-foreground/70 sm:text-base">
+            <p className="mt-4 max-w-xl text-base leading-relaxed text-foreground/70">
               Every timely dose builds stronger immunity, helps families avoid preventable illness, and supports healthier communities where children can grow with confidence.
             </p>
             <div className="mt-8">
@@ -453,7 +460,7 @@ export default function Home() {
                           className="object-cover"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent" />
-                        <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-white/35 bg-background/70 px-3 py-2 text-xs font-medium text-foreground/80 backdrop-blur-md">
+                        <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-white/35 bg-background/70 px-3 py-2 text-sm font-medium text-foreground/80 backdrop-blur-md">
                           {slide.caption}
                         </div>
                       </div>
@@ -502,8 +509,8 @@ export default function Home() {
                 <div className="absolute inset-x-6 bottom-6">
                   <div className="rounded-3xl border border-white/15 bg-background/75 p-6 shadow-xl backdrop-blur-2xl dark:bg-background/70">
                     <h3 className="text-2xl font-semibold text-foreground">{story.title}</h3>
-                    <p className="mt-3 text-sm text-foreground/80">{story.description}</p>
-                    <ul className="mt-5 space-y-2 text-sm text-foreground/75">
+                    <p className="mt-3 text-base text-foreground/80">{story.description}</p>
+                    <ul className="mt-5 space-y-2 text-base text-foreground/75">
                       {story.highlights.map((item) => (
                         <li key={item} className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-primary" />
@@ -521,11 +528,26 @@ export default function Home() {
 
       <section className="bg-background py-20 sm:py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-10 md:grid-cols-[0.85fr_1.15fr] md:items-center">
-            <div className="relative h-[340px] overflow-hidden rounded-[2rem] border border-primary/20 bg-background/70 shadow-xl backdrop-blur-xl">
-              <Image src="/images/certificate-preview.png" alt="Digital vaccination certificate" fill className="object-cover" />
-              <div className="absolute inset-0 bg-linear-to-t from-background/85 via-background/40 to-transparent" />
-            </div>
+          <div className="grid gap-10 md:grid-cols-[1.1fr_0.9fr] md:items-center">
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(true)}
+              className="group relative w-full cursor-pointer overflow-hidden rounded-[2rem] border border-primary/20 bg-muted/20 shadow-xl backdrop-blur-xl transition hover:border-primary/40 hover:shadow-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              aria-label="View full certificate"
+            >
+              <Image
+                src="/images/certificate-preview.png"
+                alt="Digital vaccination certificate"
+                width={800}
+                height={600}
+                className="w-full h-auto p-2"
+              />
+              <div className="absolute inset-x-0 bottom-0 flex justify-center pb-3 opacity-0 transition-opacity group-hover:opacity-100">
+                <span className="rounded-full bg-background/90 px-4 py-2 text-sm font-medium text-foreground shadow-lg backdrop-blur-sm">
+                  Tap to view full size
+                </span>
+              </div>
+            </button>
             <div className="rounded-[2rem] border border-primary/20 bg-background/70 p-8 shadow-xl backdrop-blur-2xl">
               <Badge variant="outline" className="border-primary/40 text-primary">
                 Digital certificates
@@ -534,7 +556,7 @@ export default function Home() {
               <p className="mt-4 text-base text-foreground/80">
                 Every certificate carries secure QR validation so parents, schools and clinicians trust the record instantly.
               </p>
-              <ul className="mt-6 space-y-2 text-sm text-foreground/75">
+              <ul className="mt-6 space-y-2 text-base text-foreground/75">
                 {certificateBenefits.map((benefit) => (
                   <li key={benefit} className="flex items-start gap-2">
                     <Check className="mt-0.5 h-4 w-4 text-primary" />
@@ -542,12 +564,6 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
-              <div className="mt-8">
-                <Button size="lg" className="gap-2" onClick={() => setPreviewOpen(true)}>
-                  Preview certificate
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
           </div>
         </div>
@@ -558,7 +574,7 @@ export default function Home() {
           <div className="text-center">
             <h2 className="text-3xl font-semibold text-foreground md:text-4xl">Pillars that support vaccination delivery</h2>
             <p className="mt-3 text-lg text-foreground/80">
-              Core pillars present supply, coverage and record-integrity workflows in translucent panels so facility, outreach and HQ teams see exact responsibilities and act quickly to keep every child on schedule.
+              Core pillars present supply, coverage and record-integrity workflows in translucent panels so facility, outreach and national teams see exact responsibilities and act quickly to keep every child on schedule.
             </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
@@ -570,8 +586,8 @@ export default function Home() {
                 <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
                   <pillar.icon className="h-5 w-5" />
                 </div>
-                <h3 className="text-xl font-semibold text-foreground">{pillar.title}</h3>
-                <p className="mt-3 text-sm text-foreground/75">{pillar.description}</p>
+                <h3 className="text-2xl font-semibold text-foreground">{pillar.title}</h3>
+                <p className="mt-3 text-base text-foreground/75">{pillar.description}</p>
               </div>
             ))}
           </div>
@@ -779,7 +795,7 @@ export default function Home() {
                   CHW Mission Control
                 </Link>
                     <Link href="/discover#hq-command-center" className="transition hover:text-foreground">
-                  HQ Command Center
+                  National Command Center
                 </Link>
                     <Link href="/discover#national-reports" className="transition hover:text-foreground">
                   National Reports
@@ -793,6 +809,21 @@ export default function Home() {
         </div>
       </footer>
       </div>
+
+      {/* Back to top */}
+      <button
+        type="button"
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        style={{
+          opacity: showBackToTop ? 1 : 0,
+          transform: showBackToTop ? "translateY(0) scale(1)" : "translateY(20px) scale(0.8)",
+          pointerEvents: showBackToTop ? "auto" : "none",
+        }}
+        className="group fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/40 ring-2 ring-primary/20 transition-all duration-300 hover:scale-110 hover:shadow-xl hover:shadow-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        aria-label="Back to top"
+      >
+        <ArrowUp className="h-5 w-5 transition-transform duration-200 group-hover:-translate-y-0.5" />
+      </button>
     </div>
   )
 }

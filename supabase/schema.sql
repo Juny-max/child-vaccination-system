@@ -165,6 +165,16 @@ CREATE TABLE child_guardian (
 -- Vaccine status enum
 CREATE TYPE vaccine_status AS ENUM ('active', 'archived', 'discontinued');
 
+-- Vaccine site category enum
+CREATE TYPE vaccine_site_category AS ENUM (
+  'oral',
+  'injection-thigh',
+  'injection-arm',
+  'intradermal',
+  'intranasal',
+  'other'
+);
+
 -- Vaccines master catalog
 CREATE TABLE vaccines (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -172,6 +182,7 @@ CREATE TABLE vaccines (
   name VARCHAR(255) NOT NULL,
   description TEXT,
   manufacturer VARCHAR(255),
+  site_category vaccine_site_category DEFAULT 'other',
   status vaccine_status DEFAULT 'active',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()

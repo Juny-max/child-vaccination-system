@@ -292,11 +292,11 @@ export default function PublicVerifyPage() {
         {/* How it works */}
         <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2 text-lg">
               <ShieldCheck className="h-5 w-5 text-primary" /> How verification works
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <CardContent className="space-y-2 text-base text-muted-foreground">
             <p>✅ This tool confirms a digital vaccination certificate is authentic and issued by an authorised CVCC facility.</p>
             <p>🔒 For privacy protection, the child's name, date of birth, and parent contact details are <strong>never displayed</strong>.</p>
             <p>📱 Enter the Certificate ID printed on the card, or use the QR scanner on this page.</p>
@@ -324,7 +324,7 @@ export default function PublicVerifyPage() {
                   disabled={isVerifying}
                   onKeyDown={(e) => { if (e.key === "Enter") handleVerify() }}
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   Found on the printed certificate and embedded in the QR code
                 </p>
               </div>
@@ -374,14 +374,14 @@ export default function PublicVerifyPage() {
               {!verificationResult && !isVerifying && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <ShieldCheck className="mb-4 h-16 w-16 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">Enter a certificate ID or scan a QR code to begin</p>
+                  <p className="text-base text-muted-foreground">Enter a certificate ID or scan a QR code to begin</p>
                 </div>
               )}
 
               {isVerifying && (
                 <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
                   <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                  <p className="text-sm text-muted-foreground">Checking database…</p>
+                  <p className="text-base text-muted-foreground">Checking database…</p>
                 </div>
               )}
 
@@ -392,14 +392,14 @@ export default function PublicVerifyPage() {
                     <div className="text-center">
                       <CheckCircle2 className="mx-auto mb-3 h-16 w-16 text-green-600" />
                       <p className="text-lg font-bold text-green-900 dark:text-green-100">✓ CERTIFICATE VERIFIED</p>
-                      <p className="mt-1 text-sm text-green-700 dark:text-green-400">This certificate is authentic and valid</p>
+                      <p className="mt-1 text-base text-green-700 dark:text-green-400">This certificate is authentic and valid</p>
                     </div>
                   </div>
                   <div className="rounded-lg border bg-background p-4">
-                    <dl className="space-y-3 text-sm">
+                    <dl className="space-y-3 text-base">
                       <div className="flex items-center justify-between border-b pb-2">
                         <dt className="font-semibold">Certificate ID</dt>
-                        <dd className="font-mono text-xs text-muted-foreground">{verificationResult.certificateId}</dd>
+                        <dd className="font-mono text-sm text-muted-foreground">{verificationResult.certificateId}</dd>
                       </div>
                       <div className="flex items-center justify-between border-b pb-2">
                         <dt className="font-semibold">Issued date</dt>
@@ -434,7 +434,7 @@ export default function PublicVerifyPage() {
                   </div>
                   {verificationResult.data.vaccinesCompleted.length > 0 && (
                     <div className="rounded-lg border bg-muted/30 p-4">
-                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                         Vaccines recorded ({verificationResult.data.vaccinesCompleted.length})
                       </p>
                       <div className="flex flex-wrap gap-2">
@@ -445,7 +445,7 @@ export default function PublicVerifyPage() {
                     </div>
                   )}
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:bg-blue-950/20">
-                    <p className="text-xs text-blue-700 dark:text-blue-400">
+                    <p className="text-sm text-blue-700 dark:text-blue-400">
                       🔒 For privacy protection, this system does not display the child's name, date of birth, or parent contact information.
                     </p>
                   </div>
@@ -459,13 +459,13 @@ export default function PublicVerifyPage() {
                     <div className="text-center">
                       <AlertTriangle className="mx-auto mb-3 h-16 w-16 text-amber-600" />
                       <p className="text-lg font-bold text-amber-900 dark:text-amber-100">⚠ CERTIFICATE REVOKED OR EXPIRED</p>
-                      <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">This certificate exists but is no longer valid</p>
+                      <p className="mt-1 text-base text-amber-700 dark:text-amber-400">This certificate exists but is no longer valid</p>
                     </div>
                   </div>
-                  <div className="rounded-lg border bg-background p-4 text-sm">
+                  <div className="rounded-lg border bg-background p-4 text-base">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold">Certificate ID</span>
-                      <span className="font-mono text-xs text-muted-foreground">{verificationResult.certificateId}</span>
+                      <span className="font-mono text-sm text-muted-foreground">{verificationResult.certificateId}</span>
                     </div>
                   </div>
                 </div>
@@ -478,19 +478,19 @@ export default function PublicVerifyPage() {
                     <div className="text-center">
                       <Clock className="mx-auto mb-3 h-16 w-16 text-blue-600" />
                       <p className="text-lg font-bold text-blue-900 dark:text-blue-100">VACCINATION IN PROGRESS</p>
-                      <p className="mt-1 text-sm text-blue-700 dark:text-blue-400">
+                      <p className="mt-1 text-base text-blue-700 dark:text-blue-400">
                         This child is registered in CVCC but has not yet completed their vaccination schedule
                       </p>
                     </div>
                   </div>
-                  <div className="rounded-lg border bg-background p-4 text-sm">
+                  <div className="rounded-lg border bg-background p-4 text-base">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold">Reference ID</span>
-                      <span className="font-mono text-xs text-muted-foreground">{verificationResult.certificateId}</span>
+                      <span className="font-mono text-sm text-muted-foreground">{verificationResult.certificateId}</span>
                     </div>
                   </div>
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:bg-blue-950/20">
-                    <p className="text-xs text-blue-700 dark:text-blue-400">
+                    <p className="text-sm text-blue-700 dark:text-blue-400">
                       This is a valid CVCC-registered child. A formal certificate will be issued once all mandatory vaccinations are complete. This ID is <strong>not fraudulent</strong>.
                     </p>
                   </div>
@@ -504,7 +504,7 @@ export default function PublicVerifyPage() {
                     <div className="text-center">
                       <XCircle className="mx-auto mb-3 h-16 w-16 text-red-600" />
                       <p className="text-lg font-bold text-red-900 dark:text-red-100">✗ CERTIFICATE NOT FOUND</p>
-                      <p className="mt-1 text-sm text-red-700 dark:text-red-400">This ID is not in our system</p>
+                      <p className="mt-1 text-base text-red-700 dark:text-red-400">This ID is not in our system</p>
                     </div>
                   </div>
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:bg-amber-950/20">
@@ -512,7 +512,7 @@ export default function PublicVerifyPage() {
                       <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-600" />
                       <div className="text-sm text-amber-800 dark:text-amber-300">
                         <p className="font-semibold">This certificate may be fraudulent</p>
-                        <ul className="mt-2 space-y-1 text-xs">
+                        <ul className="mt-2 space-y-1 text-sm">
                           <li>• The ID does not exist in the CVCC database</li>
                           <li>• It may be fake, expired, or incorrectly entered</li>
                           <li>• Double-check and try again, or report it to authorities</li>
@@ -527,7 +527,7 @@ export default function PublicVerifyPage() {
         </div>
       </main>
 
-      <footer className="mt-16 border-t border-border bg-background py-8 text-center text-xs text-muted-foreground">
+      <footer className="mt-16 border-t border-border bg-background py-8 text-center text-sm text-muted-foreground">
         <p>© {new Date().getFullYear()} Ghana Health Service · Child Vaccination Command Center</p>
         <p className="mt-1">
           <Link href="/" className="underline-offset-2 hover:underline">Back to home</Link>

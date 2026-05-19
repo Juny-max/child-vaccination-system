@@ -766,6 +766,93 @@ git push origin backend
 
 ---
 
+## 🧩 Diagram Creation Prompts (Eraser.io)
+
+Use these prompts to generate 9 simple diagrams (3 per prompt). Each prompt is aligned with the current system state.
+
+### Prompt 1 (Architecture + ERD + Use Case)
+
+```
+Create 3 simple diagrams (not too complex):
+
+1) System Architecture Diagram
+- Layers: Users, Frontend, Backend, Database, External Services.
+- Users: Parent, Facility Nurse, CHW, Branch Manager, HQ Admin, Public Verifier.
+- Frontend: Next.js web app with role-based portals + PWA offline support (service worker + IndexedDB).
+- Backend: NestJS API with auth + feature modules.
+- Database: Supabase Postgres.
+- External services: SMS gateway (Hubtel) and Email (Brevo SMTP).
+- Show arrows from users -> frontend -> backend -> database; backend -> SMS/Email.
+
+2) Database Schema (ERD)
+- Keep core tables only: users, branches, catchment_areas, guardians, children, child_guardian, vaccines, vaccination_events, vaccination_schedules, appointments, certificates, stock_inventory, audit_logs, notifications, aefi_reports.
+- Key relationships:
+  users -> branches (staff belong to branches)
+  branches -> catchment_areas
+  guardians + children linked via child_guardian
+  children -> vaccination_events, appointments, certificates, aefi_reports
+  vaccines -> vaccination_events, vaccination_schedules, stock_inventory
+  users -> vaccination_events (administered_by)
+  audit_logs -> users
+- Simple crow’s foot notation.
+
+3) System Use Case Overview
+- Actors: Parent, Facility Nurse, CHW, Branch Manager, HQ Admin, Public Verifier.
+- Use cases (simple):
+  Parent: view child status, request appointment, download certificate.
+  Nurse: register child, record vaccination, record side effects.
+  CHW: register child, offline capture/sync, transfer child.
+  Branch Manager: manage stock, view analytics, monitor transfers.
+  HQ Admin: manage branches/users, view analytics.
+  Public Verifier: verify certificate.
+
+```
+
+### Prompt 2 (Flowcharts)
+
+```
+Create 3 simple flowcharts:
+
+1) Child Registration Flowchart (Facility Nurse)
+- Start -> search existing guardian -> decision (exists?)
+- If no: register guardian -> save guardian
+- Enter child details (name, DOB, gender, birth weight) -> generate CVCC ID + QR -> save child -> create vaccination schedule -> optional SMS -> End.
+
+2) CHW Offline Vaccination Flowchart
+- Start in field -> open child record -> select vaccine -> enter details + GPS -> save to IndexedDB -> mark pending sync
+- Decision: internet available?
+  No -> continue offline
+  Yes -> background sync -> upload to server -> mark synced -> clear local queue -> end.
+
+3) Nurse Vaccination Administration Flowchart
+- Start -> open child chart (today's clinic) -> select due/overdue dose -> click Administer
+- Administer modal opens with date set to today and site auto-selected; batch number + expiry date auto-filled from stock inventory
+- Nurse confirms administered by and optionally flags AEFI with notes -> save dose
+- Online: save + refresh timeline; Offline: queue for sync and show saved offline message
+- Keep it straightforward, no extra branches.
+```
+
+### Prompt 3 (Activity + Activity + Sequence)
+
+```
+Create 3 simple diagrams:
+
+1) CHW Transfer Out Activity Diagram
+- Swimlanes: CHW, Frontend, Backend, Database.
+- Steps: open child chart -> click Transfer Out -> enter reason -> confirm.
+- If offline: queue transfer_out, remove child from local register.
+- If online: POST transfer-out -> backend validates catchment -> database sets children.catchment_area_id = NULL -> write audit_log -> response -> success message -> redirect to search.
+- Keep it short and clear.
+
+2) Vaccination Workflow Activity Diagram
+- Start (child registered) -> create schedule -> send reminder -> parent visits facility -> nurse vaccinates -> record in system -> update stock -> decide if more doses due -> loop or generate certificate -> end.
+
+3) User Login Sequence Diagram
+- Actors: User, Web App, Auth API, Database.
+- Steps: User enters credentials -> Web App sends login -> API validates user in DB -> API returns JWT/profile -> Web App routes by role (Parent/Nurse/CHW/Branch/HQ).
+- No chatbot, no Gemini.
+```
+
 ## 🆘 Need Help?
 
 ### Common Issues

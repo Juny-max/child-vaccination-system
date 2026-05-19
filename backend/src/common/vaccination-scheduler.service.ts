@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DatabaseService } from './database/database.service';
 import { SmsService } from './sms.service';
+import { formatAppointmentDate, formatAppointmentTime } from './appointment-format';
 
 @Injectable()
 export class VaccinationSchedulerService {
@@ -308,10 +309,10 @@ export class VaccinationSchedulerService {
 
         const childId = appointment.child_id as string | null | undefined;
         const childName = await this.getChildNameById(childId);
-        const timeLabel = appointment.scheduled_time
-          ? ` at ${String(appointment.scheduled_time).slice(0, 5)}`
-          : '';
-        const smsMessage = `CVCC: Your appointment for ${childName} on ${appointment.scheduled_date}${timeLabel} was marked as MISSED because attendance was not recorded. Please rebook from your dashboard or contact your facility.`;
+        const dateLabel = formatAppointmentDate(appointment.scheduled_date);
+        const timeLabel = formatAppointmentTime(appointment.scheduled_time);
+        const timeSuffix = timeLabel ? ` at ${timeLabel}` : '';
+        const smsMessage = `CVCC: Your appointment for ${childName} on ${dateLabel}${timeSuffix} was marked as MISSED because attendance was not recorded. Please rebook from your dashboard or contact your facility.`;
 
         const sent = await this.smsService.sendSms(recipientPhone, smsMessage);
 

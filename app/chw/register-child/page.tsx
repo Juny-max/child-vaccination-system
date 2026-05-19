@@ -398,7 +398,7 @@ export default function ChwRegisterChildPage() {
                     {errors.motherName ? (
                       <p className="text-xs text-destructive">{errors.motherName}</p>
                     ) : (
-                      <p className="text-xs text-muted-foreground">Match the name in the maternal record book if available.</p>
+                      <p className="text-xs text-muted-foreground">Match the name in the maternal digital health record if available.</p>
                     )}
                   </div>
                   <div>

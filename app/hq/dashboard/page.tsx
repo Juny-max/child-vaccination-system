@@ -8,6 +8,7 @@ import {
   AlertCircle,
   Activity,
   ArrowDownToLine,
+  Baby,
   BellRing,
   Building2,
   Check,
@@ -30,6 +31,7 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  Stethoscope,
   Trash2,
   Upload,
   X,
@@ -60,7 +62,7 @@ import {
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
 import { getHqAnalytics, getHqOverviewStats, HqOverviewStats, getHqAefiReports, getHqDeviceSyncStatus, getHqChwProductivity, HqChwProductivity } from "@/lib/api/hq-analytics"
-import { GHANA_REGIONS } from "@/lib/constants/ghana-regions"
+import { GHANA_REGIONS, GREATER_ACCRA_DISTRICTS } from "@/lib/constants/ghana-regions"
 import {
   getHqVaccines,
   createHqVaccine,
@@ -109,6 +111,54 @@ const SECTIONS = [
 const HQ_REVIEW_QUEUE_STORAGE_KEY = "hqReviewQueue"
 const HQ_NOTIFICATION_TEMPLATES_STORAGE_KEY = "hqNotificationTemplates"
 
+const VACCINE_SITE_CATEGORIES = [
+  { value: "oral", label: "Oral" },
+  { value: "injection-thigh", label: "Injection (thigh)" },
+  { value: "injection-arm", label: "Injection (upper arm)" },
+  { value: "intradermal", label: "Intradermal" },
+  { value: "intranasal", label: "Intranasal" },
+] as const
+
+const VACCINE_TIMING_UNITS = [
+  { value: "weeks", label: "Weeks" },
+  { value: "months", label: "Months" },
+  { value: "years", label: "Years" },
+] as const
+
+type VaccineTimingUnit = (typeof VACCINE_TIMING_UNITS)[number]["value"]
+
+const TIMING_UNIT_DAYS: Record<VaccineTimingUnit, number> = {
+  weeks: 7,
+  months: 30,
+  years: 365,
+}
+
+const TIMING_UNIT_LABEL: Record<VaccineTimingUnit, string> = {
+  weeks: "Week",
+  months: "Month",
+  years: "Year",
+}
+
+const resolveTimingUnit = (schedule?: string | null): VaccineTimingUnit => {
+  if (!schedule) return "weeks"
+  const normalized = schedule.trim().toLowerCase()
+  if (normalized.startsWith("month")) return "months"
+  if (normalized.startsWith("year")) return "years"
+  return "weeks"
+}
+
+const getScheduleLabel = (value: number, unit: VaccineTimingUnit) =>
+  value === 0 ? "At birth" : `${TIMING_UNIT_LABEL[unit]} ${value}`
+
+const getTimingValueFromDays = (days: number, unit: VaccineTimingUnit) =>
+  Math.round(days / TIMING_UNIT_DAYS[unit])
+
+const getTimingDays = (value: number, unit: VaccineTimingUnit) =>
+  value * TIMING_UNIT_DAYS[unit]
+
+const getScheduleDisplay = (schedule: string | null | undefined, dueDays: number) =>
+  schedule?.trim() || (dueDays === 0 ? "At birth" : `Week ${Math.round(dueDays / 7)}`)
+
 
 type SectionId = (typeof SECTIONS)[number]["id"]
 
@@ -129,6 +179,8 @@ type UserRecord = {
   role: string
   branch?: string
   status: "active" | "inactive"
+  mustChangePassword?: boolean
+  lastLoginAt?: string | null
 }
 
 type VaccineConfig = {
@@ -137,6 +189,7 @@ type VaccineConfig = {
   schedule: string
   dueDays: number
   status: "active" | "archived"
+  siteCategory?: string | null
 }
 
 type NotificationTemplate = {
@@ -466,7 +519,7 @@ export default function HqDashboardPage() {
   const [branches, setBranches] = useState(initialBranches)
   const [branchForm, setBranchForm] = useState({
     name: "",
-    region: "",
+    region: "Greater Accra",
     district: "",
     managerId: "",
   })
@@ -477,6 +530,7 @@ export default function HqDashboardPage() {
     managerId: "",
   })
   const [editingBranchId, setEditingBranchId] = useState<string | null>(null)
+  const [showUserBreakdownModal, setShowUserBreakdownModal] = useState(false)
 
   const [users, setUsers] = useState(initialUsers)
   const [userForm, setUserForm] = useState({
@@ -486,12 +540,14 @@ export default function HqDashboardPage() {
     branch: "",
   })
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [isProvisioningUser, setIsProvisioningUser] = useState(false)
 
   const [vaccines, setVaccines] = useState(initialVaccines)
   const [vaccineForm, setVaccineForm] = useState({
     name: "",
-    schedule: "",
-    dueDays: "",
+    weeks: "",
+    timingUnit: "weeks" as VaccineTimingUnit,
+    siteCategory: "",
   })
   const [editingVaccineId, setEditingVaccineId] = useState<string | null>(null)
   const [analyticsFilters, setAnalyticsFilters] = useState({
@@ -518,9 +574,13 @@ export default function HqDashboardPage() {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false)
   const [isVaccineEditModalOpen, setIsVaccineEditModalOpen] = useState(false)
   const [editingVaccine, setEditingVaccine] = useState<VaccineConfig | null>(null)
-  const [vaccineEditForm, setVaccineEditForm] = useState({ schedule: "", dueDays: "" })
+  const [vaccineEditForm, setVaccineEditForm] = useState({
+    weeks: "",
+    timingUnit: "weeks" as VaccineTimingUnit,
+  })
   const [isVaccinesLoading, setIsVaccinesLoading] = useState(true)
   const [isVaccineSaving, setIsVaccineSaving] = useState(false)
+  const [isAddingVaccine, setIsAddingVaccine] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [isVaccineDeleting, setIsVaccineDeleting] = useState(false)
   const [vaccineToDelete, setVaccineToDelete] = useState<VaccineConfig | null>(null)
@@ -1198,7 +1258,7 @@ export default function HqDashboardPage() {
     )
     setEditBranchForm({
       name: branch.name,
-      region: branch.region,
+      region: "Greater Accra",
       district: branch.district ?? "",
       managerId: currentManagerUser?.id ?? "",
     })
@@ -1348,7 +1408,7 @@ export default function HqDashboardPage() {
     }
 
     if (!editingBranchId) {
-      setBranchForm({ name: "", region: "", district: "", managerId: "" })
+      setBranchForm({ name: "", region: "Greater Accra", district: "", managerId: "" })
     }
     setEditingBranchId(null)
     setEditBranchForm({ name: "", region: "", managerId: "" })
@@ -1701,6 +1761,7 @@ export default function HqDashboardPage() {
       return
     }
 
+    setIsProvisioningUser(true)
     try {
       if (editingUserId) {
         const updatePayload = {
@@ -1742,46 +1803,49 @@ export default function HqDashboardPage() {
       const notice = mapUserManagementError(error)
       setUserActionNotice(notice)
       setSystemMessage(notice.detail)
+      setIsProvisioningUser(false)
       return
     }
 
+    setIsProvisioningUser(false)
     setEditingUserId(null)
     setUserForm({ name: "", email: "", role: "Branch Manager", branch: "" })
   }
 
   const handleAddVaccine = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const parsedDays = Number.parseInt(vaccineForm.dueDays, 10)
-    if (!vaccineForm.name.trim() || Number.isNaN(parsedDays)) return
+    const timingValue = Number.parseInt(vaccineForm.weeks, 10)
+    const timingUnit = vaccineForm.timingUnit || "weeks"
+    if (!vaccineForm.name.trim() || !vaccineForm.siteCategory || Number.isNaN(timingValue) || timingValue < 0) {
+      setSystemMessage("Please complete the vaccine name, timing, and site category.")
+      return
+    }
+    const parsedDays = getTimingDays(timingValue, timingUnit)
+    const scheduleName = getScheduleLabel(timingValue, timingUnit)
 
+    setIsAddingVaccine(true)
     try {
       if (editingVaccineId) {
-        // Update existing vaccine via API (only send fields accepted by backend DTO)
         await updateHqVaccine(editingVaccineId, {
           name: vaccineForm.name.trim(),
+          siteCategory: vaccineForm.siteCategory,
         })
 
         const updatedName = vaccineForm.name.trim()
         setVaccines((previous) =>
           previous.map((vaccine) => {
             if (vaccine.id !== editingVaccineId) return vaccine
-            return {
-              ...vaccine,
-              name: vaccineForm.name.trim(),
-              schedule: vaccineForm.schedule.trim() || "Custom schedule",
-              dueDays: parsedDays,
-            }
+            return { ...vaccine, name: updatedName, schedule: scheduleName, dueDays: parsedDays }
           }),
         )
 
         setSystemMessage(`Schedule for "${updatedName}" updated.`)
         appendAuditLog({ action: `Updated schedule for ${updatedName}`, category: "Schedule" })
         setEditingVaccineId(null)
-        setVaccineForm({ name: "", schedule: "", dueDays: "" })
+        setVaccineForm({ name: "", weeks: "", timingUnit: "weeks", siteCategory: "" })
         return
       }
 
-      // Create new vaccine via API (only send fields accepted by backend DTO)
       const generatedCode = vaccineForm.name
         .trim()
         .toLowerCase()
@@ -1792,40 +1856,38 @@ export default function HqDashboardPage() {
       const newVaccine = await createHqVaccine({
         name: vaccineForm.name.trim(),
         code: generatedCode,
+        siteCategory: vaccineForm.siteCategory,
       })
 
-      setVaccines((previous) => [newVaccine as any, ...previous])
-      setVaccineForm({ name: "", schedule: "", dueDays: "" })
-      setSystemMessage(`Vaccine "${newVaccine.name}" added to master list.`)
-
-      // Create schedule entry for the new vaccine
       const vaccineId = (newVaccine as any).id
       if (vaccineId) {
         await createHqSchedule({
-          vaccineId: vaccineId,
+          vaccineId,
           doseNumber: 1,
-          scheduleName: vaccineForm.schedule.trim() || "Single dose",
+          scheduleName,
           dueDaysFromBirth: parsedDays,
           isMandatory: true,
           sortOrder: 0,
         })
       }
 
-      // Add to local state with form values for schedule/dueDays
       const vaccineWithSchedule = {
         ...newVaccine,
-        id: generatedCode, // Use code as ID for consistency
-        schedule: vaccineForm.schedule.trim() || "Single dose",
+        id: generatedCode,
+        schedule: scheduleName,
         dueDays: parsedDays,
+        siteCategory: vaccineForm.siteCategory,
       }
 
       setVaccines((previous) => [vaccineWithSchedule as any, ...previous])
-      setVaccineForm({ name: "", schedule: "", dueDays: "" })
+      setVaccineForm({ name: "", weeks: "", timingUnit: "weeks", siteCategory: "" })
       setSystemMessage(`Vaccine "${newVaccine.name}" added to national catalogue.`)
       appendAuditLog({ action: `Added vaccine ${newVaccine.name} to master registry`, category: "Schedule" })
     } catch (error) {
       console.error("Failed to save vaccine", error)
       setSystemMessage("Failed to save vaccine. Please try again.")
+    } finally {
+      setIsAddingVaccine(false)
     }
   }
 
@@ -2319,33 +2381,31 @@ export default function HqDashboardPage() {
 
   const cancelVaccineEditing = () => {
     setEditingVaccineId(null)
-    setVaccineForm({ name: "", schedule: "", dueDays: "" })
+    setVaccineForm({ name: "", weeks: "", timingUnit: "weeks", siteCategory: "" })
     setSystemMessage("Vaccine schedule editing cancelled.")
   }
 
   const handleVaccineEdit = (vaccine: VaccineConfig) => {
+    const timingUnit = resolveTimingUnit(vaccine.schedule)
+    const timingValue = getTimingValueFromDays(vaccine.dueDays, timingUnit)
     setEditingVaccine(vaccine)
-    setVaccineEditForm({
-      schedule: vaccine.schedule,
-      dueDays: String(vaccine.dueDays),
-    })
+    setVaccineEditForm({ weeks: String(timingValue), timingUnit })
     setIsVaccineEditModalOpen(true)
   }
 
   const handleVaccineEditSave = async () => {
     if (!editingVaccine || isVaccineSaving) return
 
-    const parsedDays = Number.parseInt(vaccineEditForm.dueDays, 10)
-    if (Number.isNaN(parsedDays)) {
-      setSystemMessage("Please enter a valid number for due days.")
+    const timingValue = Number.parseInt(vaccineEditForm.weeks, 10)
+    const timingUnit = vaccineEditForm.timingUnit || "weeks"
+    if (Number.isNaN(timingValue) || timingValue < 0) {
+      setSystemMessage("Please enter a valid timing value.")
       return
     }
+    const parsedDays = getTimingDays(timingValue, timingUnit)
+    const scheduleName = getScheduleLabel(timingValue, timingUnit)
 
-    // Check if values have actually changed
-    const hasChanges =
-      editingVaccine.schedule !== (vaccineEditForm.schedule.trim() || "Custom schedule") ||
-      editingVaccine.dueDays !== parsedDays
-
+    const hasChanges = editingVaccine.dueDays !== parsedDays
     if (!hasChanges) {
       setSystemMessage("No changes to save.")
       setIsVaccineEditModalOpen(false)
@@ -2355,43 +2415,35 @@ export default function HqDashboardPage() {
 
     setIsVaccineSaving(true)
     try {
-      // Update or create schedule in database
       const vaccineObj = vaccines.find((v) => v.id === editingVaccine.id)
       const schedules = (vaccineObj as any)?.schedules || []
       const dbId = (vaccineObj as any)?.dbId
 
       if (schedules.length > 0 && schedules[0].id) {
-        // Update existing schedule
         await updateHqSchedule(schedules[0].id, {
-          scheduleName: vaccineEditForm.schedule.trim() || "Custom schedule",
+          scheduleName,
           dueDaysFromBirth: parsedDays,
         })
       } else if (dbId) {
-        // Create new schedule for this vaccine
         await createHqSchedule({
           vaccineId: dbId,
           doseNumber: 1,
-          scheduleName: vaccineEditForm.schedule.trim() || "Custom schedule",
+          scheduleName,
           dueDaysFromBirth: parsedDays,
           isMandatory: true,
           sortOrder: 0,
         })
       }
 
-      // Update local state
       setVaccines((previous) =>
         previous.map((vaccine) => {
           if (vaccine.id !== editingVaccine.id) return vaccine
-          return {
-            ...vaccine,
-            schedule: vaccineEditForm.schedule.trim() || "Custom schedule",
-            dueDays: parsedDays,
-          }
+          return { ...vaccine, schedule: scheduleName, dueDays: parsedDays }
         }),
       )
 
-      setSystemMessage(`Timing for "${editingVaccine.name}" updated to ${parsedDays} days.`)
-      appendAuditLog({ action: `Updated timing for ${editingVaccine.name} to ${parsedDays} days`, category: "Schedule" })
+      setSystemMessage(`Timing for "${editingVaccine.name}" updated to ${scheduleName}.`)
+      appendAuditLog({ action: `Updated timing for ${editingVaccine.name} to ${scheduleName}`, category: "Schedule" })
       setIsVaccineEditModalOpen(false)
       setEditingVaccine(null)
     } catch (error) {
@@ -2512,20 +2564,134 @@ export default function HqDashboardPage() {
             <p className="text-xs text-muted-foreground mt-1">Active branches in the system</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-3">
+        <Card
+          className="cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all"
+          onClick={() => setShowUserBreakdownModal(true)}
+        >
+          <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <UsersIcon className="h-4 w-4 text-primary" /> Total Users
+              <UsersIcon className="h-4 w-4 text-primary" /> System Users
             </CardTitle>
-            <CardDescription>Managers, Nurses, CHWs, and Officers.</CardDescription>
+            <CardDescription>Active accounts by role · tap to expand</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">
+            <p className="text-3xl font-semibold mb-3">
               {isOverviewLoading ? "..." : (overviewStats?.totalUsers ?? users.length).toLocaleString()}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">Active staff accounts</p>
+            {isOverviewLoading ? (
+              <p className="text-xs text-muted-foreground">Loading breakdown...</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Building2 className="h-3 w-3 text-blue-500 shrink-0" />
+                  <span className="text-xs text-muted-foreground flex-1 truncate">Br. Managers</span>
+                  <span className="text-xs font-semibold tabular-nums">{overviewStats?.usersByRole?.branchManagers ?? 0}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Stethoscope className="h-3 w-3 text-emerald-500 shrink-0" />
+                  <span className="text-xs text-muted-foreground flex-1 truncate">Nurses</span>
+                  <span className="text-xs font-semibold tabular-nums">{overviewStats?.usersByRole?.nurses ?? 0}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <MapPin className="h-3 w-3 text-orange-500 shrink-0" />
+                  <span className="text-xs text-muted-foreground flex-1 truncate">CHWs</span>
+                  <span className="text-xs font-semibold tabular-nums">{overviewStats?.usersByRole?.chws ?? 0}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Baby className="h-3 w-3 text-pink-500 shrink-0" />
+                  <span className="text-xs text-muted-foreground flex-1 truncate">Parents</span>
+                  <span className="text-xs font-semibold tabular-nums">{overviewStats?.usersByRole?.parents ?? 0}</span>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
+
+        {/* User Breakdown Modal */}
+        <Dialog open={showUserBreakdownModal} onOpenChange={setShowUserBreakdownModal}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UsersIcon className="h-5 w-5 text-primary" /> Users by Branch &amp; Role
+              </DialogTitle>
+              <DialogDescription>
+                Active staff accounts across all facilities.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Role summary row */}
+            <div className="grid grid-cols-4 gap-3 py-2">
+              {[
+                { label: "Br. Managers", value: overviewStats?.usersByRole?.branchManagers ?? 0, color: "text-blue-500", icon: <Building2 className="h-4 w-4" /> },
+                { label: "Nurses", value: overviewStats?.usersByRole?.nurses ?? 0, color: "text-emerald-500", icon: <Stethoscope className="h-4 w-4" /> },
+                { label: "CHWs", value: overviewStats?.usersByRole?.chws ?? 0, color: "text-orange-500", icon: <MapPin className="h-4 w-4" /> },
+                { label: "Parents", value: overviewStats?.usersByRole?.parents ?? 0, color: "text-pink-500", icon: <Baby className="h-4 w-4" /> },
+              ].map((item) => (
+                <div key={item.label} className="flex flex-col items-center gap-1 rounded-lg border p-3">
+                  <span className={item.color}>{item.icon}</span>
+                  <span className="text-2xl font-bold tabular-nums">{item.value}</span>
+                  <span className="text-xs text-muted-foreground text-center">{item.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Per-branch breakdown table */}
+            <div className="mt-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Breakdown by Facility</p>
+              <div className="rounded-lg border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-xs">Facility</th>
+                      <th className="text-center px-3 py-2 font-medium text-xs">
+                        <span className="flex items-center justify-center gap-1"><Building2 className="h-3 w-3 text-blue-500" />Managers</span>
+                      </th>
+                      <th className="text-center px-3 py-2 font-medium text-xs">
+                        <span className="flex items-center justify-center gap-1"><Stethoscope className="h-3 w-3 text-emerald-500" />Nurses</span>
+                      </th>
+                      <th className="text-center px-3 py-2 font-medium text-xs">
+                        <span className="flex items-center justify-center gap-1"><MapPin className="h-3 w-3 text-orange-500" />CHWs</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {branches.filter((b) => b.status === "active").map((branch, idx) => {
+                      const branchUsers = users.filter((u) => u.branch === branch.name && u.status === "active")
+                      const managerCount = branchUsers.filter((u) => u.role === "Branch Manager").length
+                      const nurseCount = branchUsers.filter((u) => u.role === "Facility Nurse").length
+                      const chwCount = branchUsers.filter((u) => u.role === "Community Health Worker").length
+                      return (
+                        <tr key={branch.id} className={idx % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                          <td className="px-3 py-2 font-medium truncate max-w-[160px]">{branch.name}</td>
+                          <td className="px-3 py-2 text-center tabular-nums font-semibold">{managerCount}</td>
+                          <td className="px-3 py-2 text-center tabular-nums font-semibold">{nurseCount}</td>
+                          <td className="px-3 py-2 text-center tabular-nums font-semibold">{chwCount}</td>
+                        </tr>
+                      )
+                    })}
+                    {branches.filter((b) => b.status === "active").length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground text-xs">No active branches found.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Parents are portal users not linked to a specific branch */}
+              <div className="mt-3 flex items-center justify-between rounded-lg border px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Baby className="h-4 w-4 text-pink-500" />
+                  <span className="text-sm font-medium">Registered Parents</span>
+                  <span className="text-xs text-muted-foreground">(portal accounts, not facility-specific)</span>
+                </div>
+                <span className="text-xl font-bold tabular-nums">
+                  {overviewStats?.usersByRole?.parents ?? users.filter((u) => u.role === "Parent" && u.status === "active").length}
+                </span>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -2893,31 +3059,31 @@ export default function HqDashboardPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="branchRegion">Region</Label>
-              <select
+              <Input
                 id="branchRegion"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                value={branchForm.region}
-                onChange={(event) => setBranchForm((prev) => ({ ...prev, region: event.target.value }))}
-                required
-              >
-                <option value="">— Select a region —</option>
-                {GHANA_REGIONS.map((r) => <option key={r}>{r}</option>)}
-              </select>
+                value="Greater Accra"
+                readOnly
+                className="bg-muted text-muted-foreground cursor-not-allowed"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="branchDistrict">District</Label>
-              <Input
+              <select
                 id="branchDistrict"
-                placeholder="e.g. Awutu Senya East"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={branchForm.district}
                 onChange={(event) => setBranchForm((prev) => ({ ...prev, district: event.target.value }))}
-              />
+                required
+              >
+                <option value="">— Select a district —</option>
+                {GREATER_ACCRA_DISTRICTS.map((d) => <option key={d}>{d}</option>)}
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="branchManagerSelect">Branch manager</Label>
               {(() => {
                 const available = users.filter(
-                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active"
+                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active" && u.mustChangePassword === false
                 )
                 const selected = users.find((u) => u.id === branchForm.managerId)
                 return (
@@ -2977,25 +3143,25 @@ export default function HqDashboardPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="editBranchRegion">Region</Label>
-              <select
+              <Input
                 id="editBranchRegion"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                value={editBranchForm.region}
-                onChange={(event) => setEditBranchForm((prev) => ({ ...prev, region: event.target.value }))}
-                required
-              >
-                <option value="">— Select a region —</option>
-                {GHANA_REGIONS.map((r) => <option key={r}>{r}</option>)}
-              </select>
+                value="Greater Accra"
+                readOnly
+                className="bg-muted text-muted-foreground cursor-not-allowed"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="editBranchDistrict">District</Label>
-              <Input
+              <select
                 id="editBranchDistrict"
-                placeholder="e.g. Awutu Senya East"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={editBranchForm.district}
                 onChange={(event) => setEditBranchForm((prev) => ({ ...prev, district: event.target.value }))}
-              />
+                required
+              >
+                <option value="">— Select a district —</option>
+                {GREATER_ACCRA_DISTRICTS.map((d) => <option key={d}>{d}</option>)}
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="editBranchManagerSelect">Branch manager</Label>
@@ -3005,7 +3171,7 @@ export default function HqDashboardPage() {
                   ? users.find((u) => (u.role === "Branch Manager" || u.role === "branch-manager") && u.branch === editingBranch.name)
                   : null
                 const unassigned = users.filter(
-                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active"
+                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active" && u.mustChangePassword === false
                 )
                 const options = currentManagerUser
                   ? [currentManagerUser, ...unassigned.filter((u) => u.id !== currentManagerUser.id)]
@@ -3443,8 +3609,11 @@ export default function HqDashboardPage() {
                   Cancel edit
                 </Button>
               ) : null}
-              <Button type="submit" className="gap-2">
-                <Shield className="h-4 w-4" /> {editingUserId ? "Save user" : "Provision user"}
+              <Button type="submit" className="gap-2" disabled={isProvisioningUser}>
+                {isProvisioningUser
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> {editingUserId ? "Saving..." : "Provisioning..."}</>
+                  : <><Shield className="h-4 w-4" /> {editingUserId ? "Save user" : "Provision user"}</>
+                }
               </Button>
             </div>
           </form>
@@ -3847,7 +4016,7 @@ export default function HqDashboardPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleAddVaccine} className="grid gap-4 md:grid-cols-3">
+          <form onSubmit={handleAddVaccine} className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="vaccineName">Vaccine name</Label>
               <Input
@@ -3859,29 +4028,64 @@ export default function HqDashboardPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="vaccineSchedule">When to Give</Label>
+              <Label htmlFor="vaccineWeeks">When to give</Label>
               <Input
-                id="vaccineSchedule"
-                placeholder="e.g. 10 weeks"
-                value={vaccineForm.schedule}
-                onChange={(event) => setVaccineForm((prev) => ({ ...prev, schedule: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="vaccineDays">Due in days</Label>
-              <Input
-                id="vaccineDays"
-                type="number"
-                min={0}
-                placeholder="e.g. 70"
-                value={vaccineForm.dueDays}
-                onChange={(event) => setVaccineForm((prev) => ({ ...prev, dueDays: event.target.value }))}
+                id="vaccineWeeks"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="e.g. 10"
+                value={vaccineForm.weeks}
+                onChange={(event) => {
+                  const numeric = event.target.value.replace(/\D/g, "")
+                  setVaccineForm((prev) => ({ ...prev, weeks: numeric }))
+                }}
                 required
               />
+              <p className="text-xs text-muted-foreground">Enter 0 for vaccines given at birth (e.g. BCG, OPV-0)</p>
             </div>
-            <div className="md:col-span-3 flex justify-end">
-              <Button type="submit" className="gap-2">
-                <CheckCircle2 className="h-4 w-4" /> Add vaccine to schedule
+            <div className="space-y-2">
+              <Label htmlFor="vaccineTimingUnit">Timing unit</Label>
+              <select
+                id="vaccineTimingUnit"
+                required
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                value={vaccineForm.timingUnit}
+                onChange={(event) =>
+                  setVaccineForm((prev) => ({ ...prev, timingUnit: event.target.value as VaccineTimingUnit }))
+                }
+              >
+                {VACCINE_TIMING_UNITS.map((unit) => (
+                  <option key={unit.value} value={unit.value}>
+                    {unit.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="vaccineSiteCategory">Site category</Label>
+              <select
+                id="vaccineSiteCategory"
+                required
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                value={vaccineForm.siteCategory}
+                onChange={(event) => setVaccineForm((prev) => ({ ...prev, siteCategory: event.target.value }))}
+              >
+                <option value="">Select site category</option>
+                {VACCINE_SITE_CATEGORIES.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">Used to auto-fill site of administration during vaccination.</p>
+            </div>
+            <div className="md:col-span-2 flex justify-end">
+              <Button type="submit" className="gap-2" disabled={isAddingVaccine}>
+                {isAddingVaccine
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Adding...</>
+                  : <><CheckCircle2 className="h-4 w-4" /> Add vaccine to schedule</>
+                }
               </Button>
             </div>
           </form>
@@ -3925,15 +4129,23 @@ export default function HqDashboardPage() {
           ) : (
             vaccines.map((vaccine) => {
               const isArchived = vaccine.status === "archived"
+              const scheduleDisplay = getScheduleDisplay(vaccine.schedule, vaccine.dueDays)
+              const scheduleText = scheduleDisplay === "At birth" ? "Given at birth" : `Given at ${scheduleDisplay}`
+              const siteCategoryLabel =
+                VACCINE_SITE_CATEGORIES.find((category) => category.value === vaccine.siteCategory)?.label ||
+                "Other"
               return (
                 <div key={vaccine.id} className="rounded-lg border border-border bg-background p-4">
                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                     <div>
                       <p className="text-base font-semibold text-foreground">{vaccine.name}</p>
-                      <p className="text-sm text-muted-foreground">{vaccine.schedule}</p>
+                      <p className="text-sm text-muted-foreground">{scheduleText}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">Due {vaccine.dueDays} days post birth</Badge>
+                      <Badge variant="secondary">
+                        {scheduleDisplay}
+                      </Badge>
+                      <Badge variant="outline">{siteCategoryLabel}</Badge>
                       <Badge variant={isArchived ? "outline" : "secondary"}>{isArchived ? "Archived" : "Active"}</Badge>
                     </div>
                   </div>
@@ -3984,30 +4196,49 @@ export default function HqDashboardPage() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4 p-6">
-              <div className="space-y-2">
-                <Label htmlFor="edit-schedule">Schedule Name</Label>
-                <Input
-                  id="edit-schedule"
-                  placeholder="e.g. 9 months"
-                  value={vaccineEditForm.schedule}
-                  onChange={(e) => setVaccineEditForm((prev) => ({ ...prev, schedule: e.target.value }))}
-                  disabled={isVaccineSaving}
-                />
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-weeks">When to give</Label>
+                  <Input
+                    id="edit-weeks"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="e.g. 10"
+                    value={vaccineEditForm.weeks}
+                    onChange={(e) => {
+                      const numeric = e.target.value.replace(/\D/g, "")
+                      setVaccineEditForm((prev) => ({ ...prev, weeks: numeric }))
+                    }}
+                    disabled={isVaccineSaving}
+                  />
+                  <p className="text-xs text-muted-foreground">Enter 0 for vaccines given at birth.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-timing-unit">Timing unit</Label>
+                  <select
+                    id="edit-timing-unit"
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={vaccineEditForm.timingUnit}
+                    onChange={(event) =>
+                      setVaccineEditForm((prev) => ({
+                        ...prev,
+                        timingUnit: event.target.value as VaccineTimingUnit,
+                      }))
+                    }
+                    disabled={isVaccineSaving}
+                  >
+                    {VACCINE_TIMING_UNITS.map((unit) => (
+                      <option key={unit.value} value={unit.value}>
+                        {unit.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-due-days">Due Days (from birth)</Label>
-                <Input
-                  id="edit-due-days"
-                  type="number"
-                  placeholder="e.g. 270"
-                  value={vaccineEditForm.dueDays}
-                  onChange={(e) => setVaccineEditForm((prev) => ({ ...prev, dueDays: e.target.value }))}
-                  disabled={isVaccineSaving}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Current: {editingVaccine.dueDays} days ({Math.round(editingVaccine.dueDays / 30)} months)
-                </p>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Current: {getScheduleDisplay(editingVaccine.schedule, editingVaccine.dueDays)}
+              </p>
               <div className="flex justify-end gap-2 pt-2">
                 <Button
                   variant="outline"

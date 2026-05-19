@@ -18,3 +18,37 @@ export const GHANA_REGIONS = [
 ] as const;
 
 export type GhanaRegion = (typeof GHANA_REGIONS)[number];
+
+export const GREATER_ACCRA_DISTRICTS = [
+  "Ablekuma Central Municipal",
+  "Ablekuma North Municipal",
+  "Ablekuma West Municipal",
+  "Accra Metropolitan",
+  "Ada East District",
+  "Ada West District",
+  "Adenta Municipal",
+  "Ashaiman Municipal",
+  "Ayawaso Central Municipal",
+  "Ayawaso East Municipal",
+  "Ayawaso North Municipal",
+  "Ayawaso West Municipal",
+  "Ga Central Municipal",
+  "Ga East Municipal",
+  "Ga North Municipal",
+  "Ga South Municipal",
+  "Ga West Municipal",
+  "Korle Klottey Municipal",
+  "Kpone Katamanso Municipal",
+  "Krowor Municipal",
+  "La Dade Kotopon Municipal",
+  "La Nkwantanang Madina Municipal",
+  "Ledzokuku Municipal",
+  "Ningo Prampram District",
+  "Okaikwei North Municipal",
+  "Shai Osudoku District",
+  "Tema Metropolitan",
+  "Tema West Municipal",
+  "Weija Gbawe Municipal",
+] as const;
+
+export type GreaterAccraDistrict = (typeof GREATER_ACCRA_DISTRICTS)[number];

@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 
-type MotherFormState = {
+type GuardianFormState = {
   fullName: string
   phoneNumber: string
   alternatePhone: string
@@ -36,7 +36,7 @@ type MotherFormState = {
   notes: string
 }
 
-const initialState: MotherFormState = {
+const initialState: GuardianFormState = {
   fullName: "",
   phoneNumber: "",
   alternatePhone: "",
@@ -56,10 +56,10 @@ const initialState: MotherFormState = {
   notes: "",
 }
 
-export default function RegisterMotherPage() {
+export default function RegisterGuardianPage() {
   const router = useRouter()
   const [userName, setUserName] = useState("")
-  const [formData, setFormData] = useState<MotherFormState>(initialState)
+  const [formData, setFormData] = useState<GuardianFormState>(initialState)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [systemMessage, setSystemMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null)
   const [showErrorModal, setShowErrorModal] = useState(false)
@@ -88,7 +88,7 @@ export default function RegisterMotherPage() {
     return () => window.clearTimeout(timeout)
   }, [systemMessage])
 
-  const handleChange = (field: keyof MotherFormState, value: string) => {
+  const handleChange = (field: keyof GuardianFormState, value: string) => {
     setFormData((previous) => ({ ...previous, [field]: value }))
   }
 
@@ -158,7 +158,7 @@ export default function RegisterMotherPage() {
       setFormData(initialState)
     } catch (error) {
       console.error("Registration error:", error)
-      const message = error instanceof Error ? error.message : "Failed to register mother. Please try again."
+      const message = error instanceof Error ? error.message : "Failed to register guardian. Please try again."
       setSystemMessage({ text: message, type: 'error' })
       setErrorModalMessage(message)
       setShowErrorModal(true)
@@ -179,7 +179,7 @@ export default function RegisterMotherPage() {
             </Button>
             <div>
               <p className="text-sm text-muted-foreground">Facility Nurse Workflow</p>
-              <p className="text-lg font-semibold text-foreground">Register new mother</p>
+              <p className="text-lg font-semibold text-foreground">Register new guardian</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -202,9 +202,9 @@ export default function RegisterMotherPage() {
 
         <Card className="mt-6 border-primary/40">
           <CardHeader className="space-y-2">
-            <CardTitle>Mother details</CardTitle>
+            <CardTitle>Guardian details</CardTitle>
             <CardDescription>
-              Capture the information recorded on the Ghana Child Welfare Clinic Maternal Details page. Required fields ensure SMS
+              Capture the information recorded for the child&apos;s guardian. Required fields ensure SMS
               reminders are delivered to the right caregiver.
             </CardDescription>
           </CardHeader>
@@ -260,7 +260,7 @@ export default function RegisterMotherPage() {
                     value={formData.email}
                     onChange={(event) => handleChange("email", event.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground">If provided, the parent portal credentials will be emailed immediately.</p>
+                  <p className="text-xs text-muted-foreground">If provided, the guardian portal credentials will be emailed immediately.</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="nhisNumber">NHIS number (optional)</Label>
@@ -345,7 +345,7 @@ export default function RegisterMotherPage() {
                 <div className="space-y-2">
                   <Label>Preferred contact method</Label>
                   <p className="text-xs text-muted-foreground mb-2">
-                    SMS is recommended for parents without smartphones. Email requires internet access but provides login credentials.
+                    SMS is recommended for guardians without smartphones. Email requires internet access but provides login credentials.
                   </p>
                   <div className="flex gap-2">
                     <button
@@ -422,24 +422,24 @@ export default function RegisterMotherPage() {
                     </>
                   ) : (
                     <>
-                      <Save className="h-4 w-4" /> Save mother record
+                      <Save className="h-4 w-4" /> Save guardian record
                     </>
                   )}
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-muted/40 px-4 py-3 text-sm">
+                <p className="text-muted-foreground">Next step: register the child once the caregiver&apos;s information is saved.</p>
+                <Button variant="outline" size="sm" className="gap-2" asChild>
+                  <Link href="/facility/register-child">
+                    Continue to child registration
+                    <CheckCircle2 className="h-4 w-4" />
+                  </Link>
                 </Button>
               </div>
             </form>
           </CardContent>
         </Card>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-          <p>Next step: register the child once the caregiver&apos;s information is saved.</p>
-          <Button variant="outline" size="sm" className="gap-2" asChild>
-            <Link href="/facility/register-child">
-              Continue to child registration
-              <CheckCircle2 className="h-4 w-4" />
-            </Link>
-          </Button>
-        </div>
       </main>
 
       <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
@@ -465,7 +465,7 @@ export default function RegisterMotherPage() {
             <div className="mx-auto mb-2 h-28 w-28">
               <DotLottieReact src="/Done.lottie" autoplay loop className="h-full w-full" />
             </div>
-            <DialogTitle className="text-center text-xl">Mother Registered Successfully</DialogTitle>
+            <DialogTitle className="text-center text-xl">Guardian Registered Successfully</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-center">
             <p className="text-sm text-muted-foreground">{successModalMessage}</p>

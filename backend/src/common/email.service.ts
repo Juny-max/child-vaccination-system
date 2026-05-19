@@ -608,4 +608,108 @@ export class EmailService {
 </body>
 </html>`;
   }
+
+  async sendBranchAssignmentEmail(
+    to: { email: string; name: string },
+    branch: { name: string; district?: string | null; region: string; code: string },
+  ): Promise<EmailDispatchResult> {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const location = [branch.district, branch.region].filter(Boolean).join(', ');
+
+    try {
+      const provider = await this.sendEmail({
+        to: { email: to.email, name: to.name },
+        subject: `Branch Assignment — ${branch.name} | Child Vaccination Command Center`,
+        html: `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Branch Assignment</title>
+</head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background-color:#f4f4f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#ffffff;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#16a34a 0%,#15803d 100%);padding:36px 40px;border-radius:12px 12px 0 0;text-align:center;">
+              <h1 style="color:#ffffff;margin:0;font-size:26px;font-weight:700;">🏥 Child Vaccination Command Center</h1>
+              <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:15px;">Protecting Ghana's Children</p>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px;">
+              <h2 style="color:#1f2937;margin:0 0 8px;font-size:22px;">Branch Assignment Confirmed</h2>
+              <p style="color:#6b7280;margin:0 0 28px;font-size:15px;">Hello ${to.name},</p>
+              <p style="color:#374151;font-size:15px;margin:0 0 24px;">
+                You have been assigned as <strong>Branch Manager</strong> of the following facility. You can now log in to your dashboard and begin managing your branch.
+              </p>
+              <!-- Branch details card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin-bottom:28px;">
+                <tr>
+                  <td style="padding:24px;">
+                    <p style="margin:0 0 14px;font-size:13px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:0.08em;">Your Branch</p>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:6px 0;width:130px;font-size:14px;color:#6b7280;font-weight:600;">Facility name</td>
+                        <td style="padding:6px 0;font-size:14px;color:#111827;font-weight:700;">${branch.name}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:6px 0;font-size:14px;color:#6b7280;font-weight:600;">Location</td>
+                        <td style="padding:6px 0;font-size:14px;color:#111827;">${location}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:6px 0;font-size:14px;color:#6b7280;font-weight:600;">Branch code</td>
+                        <td style="padding:6px 0;font-size:14px;color:#111827;font-family:monospace;">${branch.code}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:6px 0;font-size:14px;color:#6b7280;font-weight:600;">Your role</td>
+                        <td style="padding:6px 0;font-size:14px;color:#111827;">Branch Manager</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              <p style="color:#374151;font-size:14px;margin:0 0 28px;">
+                Use your existing login credentials to access the Branch Manager dashboard. If you have not yet changed your temporary password, you will be prompted to do so on first sign-in.
+              </p>
+              <!-- CTA -->
+              <table cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                <tr>
+                  <td>
+                    <a href="${frontendUrl}/auth/login" style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;padding:13px 28px;border-radius:8px;font-size:15px;font-weight:600;">
+                      Go to my dashboard →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="color:#9ca3af;font-size:12px;margin:0;">If you believe this assignment was made in error, please contact your system administrator.</p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#f9fafb;padding:20px 40px;border-radius:0 0 12px 12px;text-align:center;border-top:1px solid #e5e7eb;">
+              <p style="color:#9ca3af;font-size:12px;margin:0;">© ${new Date().getFullYear()} Ghana Health Service · Child Vaccination Command Center</p>
+              <p style="color:#9ca3af;font-size:12px;margin:6px 0 0;">Do not reply to this email.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`,
+      });
+      this.logger.log(`Branch assignment email sent to ${to.email} via ${provider}`);
+      return { success: true, provider };
+    } catch (error: any) {
+      const reason = this.getErrorMessage(error);
+      this.logger.error(`Failed to send branch assignment email to ${to.email}`, error);
+      return { success: false, errorMessage: String(reason) };
+    }
+  }
 }

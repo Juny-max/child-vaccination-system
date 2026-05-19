@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import type { Html5Qrcode } from "html5-qrcode"
+import { usePathname, useRouter } from "next/navigation"
+import { Html5Qrcode } from "html5-qrcode"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import {
   AlertCircle,
@@ -23,6 +23,7 @@ import {
   QrCode,
   Search,
   Shield,
+  SlidersHorizontal,
   Stethoscope,
   Syringe,
   User,
@@ -51,6 +52,7 @@ type CameraState = "idle" | "starting" | "active" | "error"
 
 export default function FacilityDashboardPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const [userName, setUserName] = useState("")
   const [facilityInfo, setFacilityInfo] = useState<{ name: string; region: string; district: string } | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
@@ -77,6 +79,9 @@ export default function FacilityDashboardPage() {
   const [followUpsModalOpen, setFollowUpsModalOpen] = useState(false)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [pendingAppointmentRequestsCount, setPendingAppointmentRequestsCount] = useState(0)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [filterStatus, setFilterStatus] = useState<"all" | "Complete" | "In Progress" | "Overdue">("all")
+  const [filterGender, setFilterGender] = useState<"all" | "Male" | "Female">("all")
 
   useEffect(() => {
     const role = localStorage.getItem("userRole")
@@ -172,37 +177,30 @@ export default function FacilityDashboardPage() {
     }
   }, [])
 
-  const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     const trimmed = searchTerm.trim()
-    
-    if (!trimmed || trimmed.length < 2) {
+    if (trimmed.length < 2) {
       setSearchResults([])
-      setSystemMessage("Type at least 2 characters to search (child name, phone number, or CVCC ID).")
       return
     }
-
-    setIsSearching(true)
-    setSystemMessage(null)
-
-    try {
-      const results = await facilityApi.searchChildren(trimmed)
-      setSearchResults(results)
-
-      if (results.length === 0) {
-        setShowErrorModal(true)
-      } else {
-        setSystemMessage(`${results.length} result${results.length > 1 ? "s" : ""} ready. Select a child to open their chart.`)
+    debounceRef.current = setTimeout(async () => {
+      setIsSearching(true)
+      try {
+        const results = await facilityApi.searchChildren(trimmed)
+        setSearchResults(results)
+        if (results.length === 0) setShowErrorModal(true)
+      } catch {
+        setShowSearchFailedModal(true)
+        setSearchResults([])
+      } finally {
+        setIsSearching(false)
       }
-    } catch (error) {
-      console.error('Search failed:', error)
-      setSystemMessage(null)
-      setShowSearchFailedModal(true)
-      setSearchResults([])
-    } finally {
-      setIsSearching(false)
+    }, 350)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }
+  }, [searchTerm])
 
   const startCamera = async () => {
     if (cameraState === "active" || cameraState === "starting") return
@@ -424,6 +422,14 @@ export default function FacilityDashboardPage() {
     [recentMissedAppointments],
   )
 
+  const filteredResults = useMemo(() => {
+    return searchResults.filter((r) => {
+      if (filterStatus !== "all" && r.vaccinationStatus !== filterStatus) return false
+      if (filterGender !== "all" && r.gender !== filterGender) return false
+      return true
+    })
+  }, [searchResults, filterStatus, filterGender])
+
   const handleLogout = () => {
     setIsLoggingOut(true)
     localStorage.removeItem("userRole")
@@ -434,6 +440,25 @@ export default function FacilityDashboardPage() {
     localStorage.removeItem("userId")
     router.push("/")
   }
+
+  const navItems = [
+    { label: "Patient lookup", href: "/facility/dashboard", icon: Search },
+    { label: "Register guardian", href: "/facility/register-mother", icon: User },
+    { label: "Register child", href: "/facility/register-child", icon: FilePlus2 },
+    {
+      label: "Appointment requests",
+      href: "/facility/dashboard/appointments",
+      icon: CalendarCheck,
+      badge: pendingAppointmentRequestsCount,
+    },
+    { label: "Missed follow-ups", href: "/facility/dashboard/appointments/missed", icon: AlertTriangle },
+    {
+      label: "Offline sync",
+      href: "/facility/offline-sync",
+      icon: Syringe,
+      badge: pendingSyncCount,
+    },
+  ]
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -465,80 +490,161 @@ export default function FacilityDashboardPage() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-        {systemMessage ? (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{systemMessage}</AlertDescription>
-          </Alert>
-        ) : null}
-        {cameraError ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{cameraError}</AlertDescription>
-          </Alert>
-        ) : null}
+      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <aside className="hidden lg:sticky lg:top-24 lg:flex lg:w-72 lg:flex-col lg:gap-4 lg:self-start">
+            <div className="rounded-2xl border border-border bg-background p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Clinic overview</p>
+              <p className="mt-2 text-sm text-foreground">Stay on top of today&apos;s priority tasks and requests.</p>
+              <div className="mt-3 rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                Offline sync pending: <span className="font-semibold text-foreground">{pendingSyncCount}</span> ·
+                Appointment requests: <span className="font-semibold text-foreground">{pendingAppointmentRequestsCount}</span>
+              </div>
+            </div>
+            <nav className="rounded-2xl border border-border bg-background p-3 shadow-sm">
+              <p className="px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick navigation</p>
+              <div className="mt-3 flex flex-col gap-1">
+                {navItems.map((item) => {
+                  const isActive =
+                    pathname === item.href ||
+                    (item.href !== "/facility/dashboard" && pathname.startsWith(item.href))
+                  const Icon = item.icon
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={
+                        isActive
+                          ? "flex items-center gap-3 rounded-xl bg-primary/10 px-3 py-2 text-sm font-semibold text-primary"
+                          : "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      }
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span className="flex-1">{item.label}</span>
+                      {item.badge && item.badge > 0 ? (
+                        <Badge variant="default" className="text-[10px]">
+                          {item.badge}
+                        </Badge>
+                      ) : null}
+                    </Link>
+                  )
+                })}
+              </div>
+            </nav>
+          </aside>
 
-        {/* Registration Quick Actions - Top of Page */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Button asChild size="lg" className="gap-2">
-            <Link href="/facility/register-mother">
-              <User className="h-5 w-5" /> Register New Mother
-            </Link>
-          </Button>
-          <Button asChild size="lg" className="gap-2">
-            <Link href="/facility/register-child">
-              <FilePlus2 className="h-5 w-5" /> Register New Child
-            </Link>
-          </Button>
-          <Button asChild size="lg" className="gap-2" variant="default">
-            <Link href="/facility/offline-sync">
-              <Syringe className="h-5 w-5" />
-              Manage Offline Vaccinations
-              {pendingSyncCount > 0 && (
-                <Badge variant="secondary" className="ml-auto">
-                  {pendingSyncCount}
-                </Badge>
-              )}
-            </Link>
-          </Button>
-        </div>
+          <main className="flex min-w-0 flex-1 flex-col gap-6">
+            <Card className="border border-border bg-background lg:hidden">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Quick navigation</CardTitle>
+                <CardDescription>Swipe to access key nurse workflows.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex gap-2 overflow-x-auto pb-2">
+                {navItems.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <Button key={item.href} asChild variant="outline" size="sm" className="gap-2">
+                      <Link href={item.href}>
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                        {item.badge && item.badge > 0 ? (
+                          <Badge variant="default" className="ml-1">
+                            {item.badge}
+                          </Badge>
+                        ) : null}
+                      </Link>
+                    </Button>
+                  )
+                })}
+              </CardContent>
+            </Card>
 
-        <section className="flex flex-col gap-6 lg:flex-row">
-          <Card className="flex-1 border-primary/40">
+            {systemMessage ? (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{systemMessage}</AlertDescription>
+              </Alert>
+            ) : null}
+            {cameraError ? (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{cameraError}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            <section className="flex flex-col gap-6">
+              <Card className="border-primary/40">
             <CardHeader className="space-y-2">
               <CardTitle className="text-lg">Patient lookup</CardTitle>
-              <CardDescription>Search by child name, CVCC ID, or guardian phone number.</CardDescription>
+              <CardDescription>Type a child name, CVCC ID, or guardian phone number — results appear as you type.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <form className="flex flex-col gap-3" onSubmit={handleSearch}>
+              <div className="space-y-3">
                 <Label htmlFor="search" className="text-sm font-medium">
                   Who are you attending to?
                 </Label>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="search"
-                      type="search"
-                      placeholder="e.g. Child Mensah, +233245001100, CH-2025-001"
-                      value={searchTerm}
-                      onChange={(event) => setSearchTerm(event.target.value)}
-                      className="h-14 rounded-lg border-primary/30 pl-11 text-base"
-                    />
-                  </div>
-                  <Button type="submit" disabled={isSearching} className="h-14 rounded-lg px-6 text-base">
-                    {isSearching ? (
-                      <>
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                        Searching...
-                      </>
-                    ) : (
-                      'Find child'
-                    )}
-                  </Button>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="search"
+                    type="text"
+                    placeholder="e.g. Child Mensah, +233245001100, CH-2025-001"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="h-14 rounded-lg border-primary/30 pl-11 pr-11 text-base"
+                    autoComplete="off"
+                  />
+                  {isSearching ? (
+                    <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-muted-foreground" />
+                  ) : searchTerm ? (
+                    <button
+                      type="button"
+                      onClick={() => { setSearchTerm(""); setSearchResults([]); }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="Clear search"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
                 </div>
-              </form>
+
+                {searchTerm.length >= 2 && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <SlidersHorizontal className="h-3.5 w-3.5" /> Filters:
+                    </span>
+                    {(["all", "Overdue", "In Progress", "Complete"] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setFilterStatus(s)}
+                        className={
+                          filterStatus === s
+                            ? "rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+                            : "rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80"
+                        }
+                      >
+                        {s === "all" ? "All statuses" : s}
+                      </button>
+                    ))}
+                    <span className="select-none text-muted-foreground/40">·</span>
+                    {(["all", "Male", "Female"] as const).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setFilterGender(g)}
+                        className={
+                          filterGender === g
+                            ? "rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+                            : "rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80"
+                        }
+                      >
+                        {g === "all" ? "All genders" : g}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div className="space-y-3">
                 {isSearching ? (
@@ -552,11 +658,16 @@ export default function FacilityDashboardPage() {
                     </div>
                     <p className="text-sm text-muted-foreground">Searching for child...</p>
                   </div>
-                ) : searchResults.length > 0 ? (
+                ) : filteredResults.length > 0 ? (
                   <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Matching records</p>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      {filteredResults.length} matching record{filteredResults.length !== 1 ? "s" : ""}
+                      {(filterStatus !== "all" || filterGender !== "all") && searchResults.length !== filteredResults.length ? (
+                        <span className="ml-1 normal-case text-primary">· filtered from {searchResults.length}</span>
+                      ) : null}
+                    </p>
                     <div className="grid gap-2">
-                      {searchResults.map((result, index) => (
+                      {filteredResults.map((result, index) => (
                         <div
                           key={`${result.id}-${index}`}
                           className="flex flex-col gap-3 rounded-lg border border-border bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -565,15 +676,15 @@ export default function FacilityDashboardPage() {
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-semibold text-foreground">{result.name}</p>
                               <Badge variant={
-                                result.vaccinationStatus === 'Complete' ? 'default' : 
-                                result.vaccinationStatus === 'Overdue' ? 'destructive' : 
+                                result.vaccinationStatus === 'Complete' ? 'default' :
+                                result.vaccinationStatus === 'Overdue' ? 'destructive' :
                                 'secondary'
                               }>
                                 {result.vaccinationStatus}
                               </Badge>
                             </div>
                             <p className="text-xs text-muted-foreground">Guardian: {result.guardianName} • {result.guardianPhone}</p>
-                            <p className="text-xs text-muted-foreground font-mono">{result.childId} • {result.age}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{result.childId} • {result.age} • {result.gender}</p>
                             {result.lastVisit && (
                               <p className="text-xs text-muted-foreground">Last visit: {result.lastVisit}</p>
                             )}
@@ -609,99 +720,82 @@ export default function FacilityDashboardPage() {
                       ))}
                     </div>
                   </div>
+                ) : searchResults.length > 0 && filteredResults.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No results match the active filters. Try changing or clearing the filters.</p>
+                ) : searchTerm.length >= 2 && !isSearching ? (
+                  <p className="text-xs text-muted-foreground">No matching children found. Try a different name, ID, or phone number.</p>
                 ) : (
-                  <p className="text-xs text-muted-foreground">Search results will appear here once a match is found.</p>
+                  <p className="text-xs text-muted-foreground">Search results will appear here as you type.</p>
                 )}
+              </div>
+
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+                <div className="flex items-center gap-2">
+                  <QrCode className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Scan QR</p>
+                    <p className="text-xs text-muted-foreground">Fast CVCC look-up.</p>
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-col gap-2">
+                  <Button
+                    className="h-8 gap-2 text-xs"
+                    variant="default"
+                    size="sm"
+                    onClick={startCamera}
+                    disabled={cameraState === "starting" || cameraState === "active"}
+                  >
+                    <Camera className="h-4 w-4" />
+                    {cameraState === "starting" ? "Starting camera..." : cameraState === "active" ? "Scanning..." : "Start scanning"}
+                  </Button>
+                  {(cameraState === "starting" || cameraState === "active") ? (
+                    <div className="space-y-2">
+                      <div
+                        id={scannerId}
+                        className="mx-auto aspect-[4/3] w-full max-w-sm overflow-hidden rounded-lg border-2 border-primary/50 bg-muted/20"
+                      />
+                      {cameraState === "active" && (
+                        <Button variant="outline" size="sm" onClick={stopCamera} className="h-8 w-full text-xs">
+                          Stop camera
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+                  {cameraState === "error" || cameraError ? (
+                    <div className="space-y-2">
+                      <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription className="text-xs">
+                          {cameraError || "Camera error occurred"}
+                        </AlertDescription>
+                      </Alert>
+                      <div className="rounded-md bg-muted p-3 text-xs space-y-1">
+                        <p className="font-semibold">Troubleshooting:</p>
+                        <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+                          <li>Check if another app is using your camera</li>
+                          <li>Click the camera icon in your browser&apos;s address bar and allow access</li>
+                          <li>Try refreshing the page (F5)</li>
+                          <li>Restart your browser if the issue persists</li>
+                        </ul>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { setCameraError(null); setCameraState("idle"); }}
+                        className="w-full"
+                      >
+                        Try again
+                      </Button>
+                    </div>
+                  ) : cameraState !== "active" ? (
+                    <p className="text-xs text-muted-foreground">
+                      Hold the QR in frame to open the child&apos;s record.
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </CardContent>
           </Card>
-
-          <div className="flex w-full flex-col gap-4 lg:w-80">
-            <Card className="border-primary/40 bg-primary/5">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <QrCode className="h-5 w-5 text-primary" /> Scan QR code
-                </CardTitle>
-                <CardDescription>Fastest look-up using the CVCC passbook or digital certificate.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <Button 
-                  className="gap-2" 
-                  variant="default" 
-                  onClick={startCamera} 
-                  disabled={cameraState === "starting" || cameraState === "active"}
-                >
-                  <Camera className="h-4 w-4" />
-                  {cameraState === "starting" ? "Starting camera..." : cameraState === "active" ? "Scanning..." : "Start scanning"}
-                </Button>
-                {(cameraState === "starting" || cameraState === "active") ? (
-                  <div className="space-y-2">
-                    <div id={scannerId} className="relative overflow-hidden rounded-lg border-2 border-primary/50" />
-                    {cameraState === "active" && (
-                      <Button variant="outline" size="sm" onClick={stopCamera} className="w-full">
-                        Stop camera
-                      </Button>
-                    )}
-                  </div>
-                ) : null}
-                {cameraState === "error" || cameraError ? (
-                  <div className="space-y-2">
-                    <Alert variant="destructive">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription className="text-xs">
-                        {cameraError || "Camera error occurred"}
-                      </AlertDescription>
-                    </Alert>
-                    <div className="rounded-md bg-muted p-3 text-xs space-y-1">
-                      <p className="font-semibold">Troubleshooting:</p>
-                      <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
-                        <li>Check if another app is using your camera</li>
-                        <li>Click the camera icon in your browser&apos;s address bar and allow access</li>
-                        <li>Try refreshing the page (F5)</li>
-                        <li>Restart your browser if the issue persists</li>
-                      </ul>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => { setCameraError(null); setCameraState("idle"); }} className="w-full">
-                      Try again
-                    </Button>
-                  </div>
-                ) : cameraState !== "active" ? (
-                  <p className="text-xs text-muted-foreground">
-                    Position the QR code within the frame. The system will decode and open the child&apos;s record automatically.
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Quick actions</CardTitle>
-                <CardDescription>Manage appointments and offline sync.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <Button asChild variant="outline" className="gap-2">
-                  <Link href="/facility/dashboard/appointments">
-                    <CalendarCheck className="h-4 w-4" />
-                    Review appointment requests
-                    {pendingAppointmentRequestsCount > 0 ? (
-                      <Badge variant="default" className="ml-auto">
-                        {pendingAppointmentRequestsCount}
-                      </Badge>
-                    ) : null}
-                  </Link>
-                </Button>
-                {pendingSyncCount > 0 && (
-                  <Button asChild variant="secondary" className="gap-2">
-                    <Link href="/facility/offline-sync">
-                      <Syringe className="h-4 w-4" /> 
-                      Offline sync 
-                      <Badge variant="default" className="ml-auto">{pendingSyncCount}</Badge>
-                    </Link>
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          </div>
         </section>
 
         <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-[3fr,2fr]">
@@ -761,7 +855,7 @@ export default function FacilityDashboardPage() {
                 <AlertTriangle className="h-5 w-5" /> Missed appointment follow-ups
               </CardTitle>
               <CardDescription>
-                Mothers who missed appointments in the last 14 days. Call and help them rebook quickly.
+                Guardians who missed appointments in the last 14 days. Call and help them rebook quickly.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -785,23 +879,23 @@ export default function FacilityDashboardPage() {
                         Missed on {item.scheduledDate || "Unknown date"} at {item.scheduledTime} • {item.vaccine}
                       </p>
                     </div>
-                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                       <Badge variant="outline" className="border-amber-400/60 text-amber-700 dark:text-amber-300">
                         {item.daysSinceMissed} day{item.daysSinceMissed === 1 ? "" : "s"} ago
                       </Badge>
                       {item.contact && item.contact !== "N/A" ? (
-                        <Button variant="outline" size="sm" className="gap-2" asChild>
+                        <Button variant="outline" size="sm" className="h-7 gap-2 px-2 text-xs" asChild>
                           <Link href={`tel:${item.contact.replace(/\s+/g, "")}`}>
-                            <Phone className="h-4 w-4" /> Call guardian
+                            <Phone className="h-4 w-4" /> Call
                           </Link>
                         </Button>
                       ) : (
-                        <Button variant="outline" size="sm" className="gap-2" disabled>
+                        <Button variant="outline" size="sm" className="h-7 gap-2 px-2 text-xs" disabled>
                           <Phone className="h-4 w-4" /> No phone
                         </Button>
                       )}
-                      <Button variant="secondary" size="sm" asChild>
-                        <Link href="/facility/dashboard/appointments">Manage requests</Link>
+                      <Button variant="secondary" size="sm" className="h-7 px-2 text-xs" asChild>
+                        <Link href="/facility/dashboard/appointments/missed">Open queue</Link>
                       </Button>
                     </div>
                   </div>
@@ -850,11 +944,11 @@ export default function FacilityDashboardPage() {
           <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-lg border border-border bg-background/70 p-4">
               <p className="text-sm font-semibold text-foreground">Review vaccine fridge log</p>
-              <p className="mt-1 text-xs text-muted-foreground">Confirm morning temperature check and chart in the cold chain book.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Confirm morning temperature check and update the digital cold chain log.</p>
             </div>
             <div className="rounded-lg border border-border bg-background/70 p-4">
               <p className="text-sm font-semibold text-foreground">Prepare consent cards</p>
-              <p className="mt-1 text-xs text-muted-foreground">Lay out maternal health record books and ensure ink pads are available.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Review guardian digital health records and ensure consent tools are ready.</p>
             </div>
             <div className="rounded-lg border border-border bg-background/70 p-4">
               <p className="text-sm font-semibold text-foreground">Sync digital registers</p>
@@ -862,7 +956,24 @@ export default function FacilityDashboardPage() {
             </div>
           </CardContent>
         </Card>
-      </main>
+
+        {/* Offline Sync Management Button */}
+        <div className="flex justify-center pb-4">
+          <Button asChild variant="outline" size="lg" className="gap-2">
+            <Link href="/facility/offline-sync">
+              <Syringe className="h-5 w-5" />
+              Manage Offline Vaccinations
+              {pendingSyncCount > 0 && (
+                <Badge variant="default" className="ml-2">
+                  {pendingSyncCount} pending
+                </Badge>
+              )}
+            </Link>
+          </Button>
+        </div>
+          </main>
+        </div>
+      </div>
 
       {/* Guardian Contact Details Modal */}
       {contactDetail && (
@@ -1006,7 +1117,7 @@ export default function FacilityDashboardPage() {
             </div>
           </DialogHeader>
           <DialogDescription className="text-center text-base py-4">
-            No matching child found. Confirm spelling or scan the QR code on the health passbook.
+            No matching child found. Confirm the spelling or scan the QR code on the digital certificate.
           </DialogDescription>
           <div className="flex justify-center pt-2">
             <Button onClick={() => setShowErrorModal(false)} className="w-full sm:w-auto px-8">

@@ -1,4 +1,13 @@
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+
+const VACCINE_SITE_CATEGORIES = [
+  'oral',
+  'injection-thigh',
+  'injection-arm',
+  'intradermal',
+  'intranasal',
+  'other',
+] as const;
 
 export class CreateHqVaccineDto {
   @IsString()
@@ -8,6 +17,11 @@ export class CreateHqVaccineDto {
   @IsString()
   @IsNotEmpty()
   name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(VACCINE_SITE_CATEGORIES)
+  siteCategory: string;
 
   @IsOptional()
   @IsString()
@@ -30,6 +44,11 @@ export class UpdateHqVaccineDto {
   @IsOptional()
   @IsString()
   manufacturer?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(VACCINE_SITE_CATEGORIES)
+  siteCategory?: string;
 
   @IsOptional()
   @IsString()

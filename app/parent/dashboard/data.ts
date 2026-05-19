@@ -140,7 +140,7 @@ export const childProfiles: ChildProfile[] = [
 
 export const healthReminders: string[] = [
   "Keep your child hydrated and observe for any reactions within 24 hours after each shot.",
-  "Carry the child health record booklet to every visit.",
+  "Have the child's digital health record ready for every visit.",
   "Update the nurse if your child shows signs of fever lasting more than 48 hours.",
 ]
 
@@ -187,7 +187,7 @@ export const appointments: Appointment[] = [
     date: "March 5, 2025",
     time: "10:00 AM",
     location: "Accra Central Health Center",
-    notes: "Arrive 15 minutes early for triage. Bring health record booklet.",
+    notes: "Arrive 15 minutes early for triage. Have the child's digital health record ready.",
   },
   {
     title: "Nutrition counselling",

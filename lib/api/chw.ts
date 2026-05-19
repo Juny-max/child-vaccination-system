@@ -57,6 +57,7 @@ export type ChwChildChart = {
   id: string
   name: string
   age: string
+  dateOfBirth: string
   motherName: string
   motherPhone: string
   village: string

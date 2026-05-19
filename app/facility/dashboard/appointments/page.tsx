@@ -483,7 +483,7 @@ export default function AppointmentRequestsPage() {
                         <div>
                           <Label className="text-xs">Notes (optional)</Label>
                           <Input
-                            placeholder="e.g. Bring health record book"
+                            placeholder="e.g. Review digital health record"
                             value={confirmNotes}
                             onChange={(e) => setConfirmNotes(e.target.value)}
                           />

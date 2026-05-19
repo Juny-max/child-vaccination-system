@@ -4,6 +4,7 @@ import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { SmsService } from '../common/sms.service';
 import { QrTokenService } from '../common/qr-token.service';
+import { formatAppointmentDate, formatAppointmentTime } from '../common/appointment-format';
 import {
   ChildSearchResultDto,
   FacilityChildProfileDto,
@@ -434,6 +435,7 @@ export class FacilityService {
       isOverdue: v.isOverdue,
       daysOverdue: v.daysOverdue,
       isMandatory: v.is_mandatory,
+      siteCategory: v.vaccine?.site_category ?? null,
     }));
   }
 
@@ -1392,6 +1394,7 @@ export class FacilityService {
         scheduled_time,
         status,
         vaccine_id,
+        notes,
         children (
           id,
           full_name,
@@ -1434,6 +1437,15 @@ export class FacilityService {
         ? guardianJoin[0]
         : guardianJoin;
 
+      const notes = typeof apt.notes === 'string' ? apt.notes : '';
+      const normalizedNotes = notes.toLowerCase();
+      let visitPreference: 'facility' | 'chw' | undefined;
+      if (normalizedNotes.includes('visit preference: chw') || normalizedNotes.includes('[visit_pref:chw]')) {
+        visitPreference = 'chw';
+      } else if (normalizedNotes.includes('visit preference: facility') || normalizedNotes.includes('[visit_pref:facility]')) {
+        visitPreference = 'facility';
+      }
+
       return {
         id: apt.id,
         childId: child?.id || apt.child_id,
@@ -1443,6 +1455,7 @@ export class FacilityService {
         vaccine: apt.vaccines?.name || 'General checkup',
         contact: guardianData?.phone_primary || 'N/A',
         status: apt.status,
+        visitPreference,
       };
     });
   }
@@ -2349,11 +2362,10 @@ export class FacilityService {
       if (guardianPhone) {
         let smsMessage = '';
         if (dto.action === 'confirmed') {
-          const date = apt?.scheduled_date || '';
-          const time = apt?.scheduled_time
-            ? ` at ${(apt.scheduled_time as string).slice(0, 5)}`
-            : '';
-          smsMessage = `CVCC: Your appointment for ${childName}'s vaccination has been CONFIRMED for ${date}${time}. Please arrive 15 minutes early with the child health record book.`;
+          const date = formatAppointmentDate(apt?.scheduled_date);
+          const timeLabel = formatAppointmentTime(apt?.scheduled_time);
+          const time = timeLabel ? ` at ${timeLabel}` : '';
+          smsMessage = `CVCC: Your appointment for ${childName}'s vaccination has been CONFIRMED for ${date}${time}. Please arrive 15 minutes early.`;
         } else if (dto.action === 'cancelled') {
           smsMessage = `CVCC: Your appointment request for ${childName}'s vaccination could not be scheduled at this time. Please contact the facility for alternative dates.`;
         } else if (dto.action === 'completed') {

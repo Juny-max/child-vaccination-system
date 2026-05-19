@@ -517,7 +517,7 @@ export default function AppointmentsPage() {
                     <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-foreground">
                       <p className="text-sm font-semibold">Preparation checklist</p>
                       <ul className="ml-4 list-disc space-y-1 text-sm text-muted-foreground">
-                        <li>Carry the child health record booklet</li>
+                        <li>Have the child's digital health record ready</li>
                         <li>Arrive 15 minutes early</li>
                         <li>Note any reactions since the previous dose</li>
                         <li>Ensure your child has eaten a light meal</li>
@@ -621,7 +621,7 @@ export default function AppointmentsPage() {
         </CardHeader>
         <CardContent className="grid gap-3 text-sm text-muted-foreground md:grid-cols-2">
           {[
-            "Carry the child health record booklet",
+            "Have the child's digital health record ready",
             "Pack extra diapers and a change of clothes",
             "Note any reactions since the previous dose",
             "Ensure your child eats a light meal before the visit",

@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label"
 import * as facilityApi from "@/lib/api/facility"
 import { supabase } from "@/lib/supabase"
 
-type MotherOption = {
+type GuardianOption = {
   id: string
   name: string
   phone: string
@@ -25,7 +25,7 @@ type MotherOption = {
 }
 
 type ChildFormState = {
-  motherId: string
+  guardianId: string
   childName: string
   dateOfBirth: string
   gender: "male" | "female" | "intersex" | "undisclosed"
@@ -42,7 +42,7 @@ type ChildFormState = {
 }
 
 const initialState: ChildFormState = {
-  motherId: "",
+  guardianId: "",
   childName: "",
   dateOfBirth: "",
   gender: "male",
@@ -68,14 +68,14 @@ function RegisterChildContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [userName, setUserName] = useState("")
-  const [searchMother, setSearchMother] = useState("")
-  const [selectedMother, setSelectedMother] = useState<MotherOption | null>(null)
-  const [mothers, setMothers] = useState<MotherOption[]>([])
+  const [searchGuardian, setSearchGuardian] = useState("")
+  const [selectedGuardian, setSelectedGuardian] = useState<GuardianOption | null>(null)
+  const [guardians, setGuardians] = useState<GuardianOption[]>([])
   const [guardiansOffset, setGuardiansOffset] = useState(0)
   const [hasMoreGuardians, setHasMoreGuardians] = useState(false)
   const [isLoadingMoreGuardians, setIsLoadingMoreGuardians] = useState(false)
-  const [isLoadingMothers, setIsLoadingMothers] = useState(false)
-  const [motherLoadError, setMotherLoadError] = useState<string | null>(null)
+  const [isLoadingGuardians, setIsLoadingGuardians] = useState(false)
+  const [guardianLoadError, setGuardianLoadError] = useState<string | null>(null)
   const [formData, setFormData] = useState<ChildFormState>(initialState)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [systemMessage, setSystemMessage] = useState<string | null>(null)
@@ -152,22 +152,22 @@ function RegisterChildContent() {
 
   useEffect(() => {
     let isActive = true
-    const trimmedQuery = searchMother.trim()
+    const trimmedQuery = searchGuardian.trim()
 
     if (!trimmedQuery) {
-      setMothers([])
+      setGuardians([])
       setGuardiansOffset(0)
       setHasMoreGuardians(false)
-      setIsLoadingMothers(false)
-      setMotherLoadError(null)
+      setIsLoadingGuardians(false)
+      setGuardianLoadError(null)
       return () => {
         isActive = false
       }
     }
 
     const timer = window.setTimeout(async () => {
-      setIsLoadingMothers(true)
-      setMotherLoadError(null)
+      setIsLoadingGuardians(true)
+      setGuardianLoadError(null)
 
       try {
         const data = await facilityApi.getGuardians({
@@ -178,17 +178,17 @@ function RegisterChildContent() {
 
         if (!isActive) return
 
-        setMothers(data || [])
+        setGuardians(data || [])
         setGuardiansOffset((data || []).length)
         setHasMoreGuardians((data || []).length === GUARDIANS_PAGE_SIZE)
       } catch {
         if (!isActive) return
-        setMotherLoadError("Unable to load guardians. Please refresh or re-login.")
-        setMothers([])
+        setGuardianLoadError("Unable to load guardians. Please refresh or re-login.")
+        setGuardians([])
         setGuardiansOffset(0)
         setHasMoreGuardians(false)
       } finally {
-        if (isActive) setIsLoadingMothers(false)
+        if (isActive) setIsLoadingGuardians(false)
       }
     }, 300)
 
@@ -196,42 +196,37 @@ function RegisterChildContent() {
       isActive = false
       window.clearTimeout(timer)
     }
-  }, [searchMother])
+  }, [searchGuardian])
 
-  const filteredMothers = useMemo(() => mothers, [mothers])
+  const filteredGuardians = useMemo(() => guardians, [guardians])
 
   const loadMoreGuardians = async () => {
     if (isLoadingMoreGuardians || !hasMoreGuardians) return
     setIsLoadingMoreGuardians(true)
     try {
       const data = await facilityApi.getGuardians({
-        query: searchMother,
+        query: searchGuardian,
         limit: GUARDIANS_PAGE_SIZE,
         offset: guardiansOffset,
       })
 
-      setMothers((previous) => [...previous, ...(data || [])])
+      setGuardians((previous) => [...previous, ...(data || [])])
       setGuardiansOffset((previous) => previous + (data || []).length)
       setHasMoreGuardians((data || []).length === GUARDIANS_PAGE_SIZE)
     } catch {
-      setMotherLoadError("Unable to load more guardians right now.")
+      setGuardianLoadError("Unable to load more guardians right now.")
     } finally {
       setIsLoadingMoreGuardians(false)
     }
   }
 
-  const handleSelectMother = (mother: MotherOption) => {
-    setSelectedMother(mother)
-    setFormData((previous) => ({ ...previous, motherId: mother.id }))
-    setSystemMessage(`Linked to ${mother.name}. Continue with child details.`)
-
-    // Scroll to child details form
-    setTimeout(() => {
-      childDetailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 100)
+  const handleSelectGuardian = (guardian: GuardianOption) => {
+    setSelectedGuardian(guardian)
+    setFormData((previous) => ({ ...previous, guardianId: guardian.id }))
+    setSystemMessage(`Linked to ${guardian.name}. Continue with child details.`)
   }
 
-  const isMotherSelected = (motherId: string) => selectedMother?.id === motherId
+  const isGuardianSelected = (guardianId: string) => selectedGuardian?.id === guardianId
 
   const handleChange = <Field extends keyof ChildFormState>(field: Field, value: ChildFormState[Field]) => {
     setFormData((previous) => ({ ...previous, [field]: value }))
@@ -239,9 +234,9 @@ function RegisterChildContent() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!selectedMother) {
-      setSystemMessage("Select an existing mother before saving the child record.")
-      toast.error("Please select a mother first")
+    if (!selectedGuardian) {
+      setSystemMessage("Select an existing guardian before saving the child record.")
+      toast.error("Please select a guardian first")
       return
     }
 
@@ -312,7 +307,7 @@ function RegisterChildContent() {
       }
 
       const result = await facilityApi.registerChild({
-        guardianId: selectedMother.id,
+        guardianId: selectedGuardian.id,
         fullName: formData.childName,
         dateOfBirth: formData.dateOfBirth,
         gender: formData.gender,
@@ -384,88 +379,88 @@ function RegisterChildContent() {
 
         <Card className="mt-6 border-primary/40">
           <CardHeader className="space-y-2">
-            <CardTitle>Link to mother</CardTitle>
-            <CardDescription>Select the caregiver registered in the Maternal Register before capturing the child&apos;s details.</CardDescription>
+            <CardTitle>Link to guardian</CardTitle>
+            <CardDescription>Select the guardian registered in the Guardian Register before capturing the child&apos;s details.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="motherSearch">Search mother</Label>
-                {!isLoadingMothers && mothers.length > 0 && (
-                  <span className="text-xs text-muted-foreground">{mothers.length} registered</span>
+                <Label htmlFor="guardianSearch">Search guardian</Label>
+                {!isLoadingGuardians && guardians.length > 0 && (
+                  <span className="text-xs text-muted-foreground">{guardians.length} registered</span>
                 )}
               </div>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  id="motherSearch"
+                  id="guardianSearch"
                   type="search"
                   placeholder="e.g. Akosua Mensah or +233 24 500 1100"
-                  value={searchMother}
-                  onChange={(event) => setSearchMother(event.target.value)}
+                  value={searchGuardian}
+                  onChange={(event) => setSearchGuardian(event.target.value)}
                   className="pl-11"
                 />
               </div>
             </div>
-            {motherLoadError ? (
+            {guardianLoadError ? (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{motherLoadError}</AlertDescription>
+                <AlertDescription>{guardianLoadError}</AlertDescription>
               </Alert>
             ) : null}
-            {!searchMother.trim() ? (
+            {!searchGuardian.trim() ? (
               <div className="rounded-lg border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
-                Search for a mother by name, phone, or community to display results.
+                Search for a guardian by name, phone, or community to display results.
               </div>
             ) : null}
-            {isLoadingMothers ? (
+            {isLoadingGuardians ? (
               <div className="rounded-lg border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
                 <div className="flex flex-col items-center gap-3 py-2">
                   <DotLottieReact src="/Free%20Searching%20Animation.lottie" autoplay loop className="h-24 w-24" />
-                  <p>Searching mothers in the Maternal Register...</p>
+                  <p>Searching guardians in the Guardian Register...</p>
                 </div>
               </div>
-            ) : searchMother.trim() && mothers.length === 0 ? (
+            ) : searchGuardian.trim() && guardians.length === 0 ? (
               <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 p-4 space-y-2">
                 <p className="text-sm font-semibold text-amber-900">⚠️ No guardians available</p>
                 <p className="text-xs text-amber-800">
                   No guardians matched your search. Try a different name, phone, or community.
                 </p>
               </div>
-            ) : searchMother.trim() && filteredMothers.length === 0 ? (
+            ) : searchGuardian.trim() && filteredGuardians.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
-                No mothers match &quot;{searchMother}&quot;. Try a different search or clear the search to see all {mothers.length} registered mothers.
+                No guardians match &quot;{searchGuardian}&quot;. Try a different search or clear the search to see all {guardians.length} registered guardians.
               </div>
-            ) : searchMother.trim() ? (
+            ) : searchGuardian.trim() ? (
               <>
                 <div className="grid gap-3 md:grid-cols-2">
-                  {filteredMothers.map((mother) => (
+                  {filteredGuardians.map((guardian) => (
                     <button
-                      key={mother.id}
+                      key={guardian.id}
                       type="button"
                       className={`rounded-lg border p-4 text-left transition ${
-                        isMotherSelected(mother.id) ? "border-primary bg-primary/10" : "border-border bg-background"
+                        isGuardianSelected(guardian.id) ? "border-primary bg-primary/10" : "border-border bg-background"
                       }`}
-                      onClick={() => handleSelectMother(mother)}
+                      onClick={() => handleSelectGuardian(guardian)}
                     >
-                      <p className="text-sm font-semibold text-foreground">{mother.name}</p>
-                      <p className="text-xs text-muted-foreground">{mother.phone}</p>
-                      <p className="text-xs text-muted-foreground">Community: {mother.community}</p>
-                      <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">ID: {mother.id.slice(0, 8)}...</p>
+                      <p className="text-sm font-semibold text-foreground">{guardian.name}</p>
+                      <p className="text-xs text-muted-foreground">{guardian.phone}</p>
+                      <p className="text-xs text-muted-foreground">Community: {guardian.community}</p>
+                      <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">ID: {guardian.id.slice(0, 8)}...</p>
                     </button>
                   ))}
                 </div>
                 {hasMoreGuardians ? (
                   <div className="flex justify-center">
                     <Button type="button" variant="outline" onClick={loadMoreGuardians} disabled={isLoadingMoreGuardians}>
-                      {isLoadingMoreGuardians ? "Loading more..." : "Load more mothers"}
+                      {isLoadingMoreGuardians ? "Loading more..." : "Load more guardians"}
                     </Button>
                   </div>
                 ) : null}
               </>
             ) : null}
             <div className="text-xs text-muted-foreground">
-              Mother missing? <Link href="/facility/register-mother" className="text-primary hover:underline">Register a new caregiver</Link> first.
+              Guardian missing? <Link href="/facility/register-mother" className="text-primary hover:underline">Register a new guardian</Link> first.
             </div>
           </CardContent>
         </Card>
@@ -474,7 +469,7 @@ function RegisterChildContent() {
           <CardHeader className="space-y-2">
             <CardTitle>Child details</CardTitle>
             <CardDescription>
-              Enter the details recorded on the Ghana Child Health Record Book birth page. These drive the automated vaccine schedule.
+              Enter the details from the child&apos;s digital health record. These drive the automated vaccine schedule.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -765,8 +760,8 @@ function RegisterChildContent() {
                     onClick={() => {
                       setShowSuccessModal(false)
                       setFormData(initialState)
-                      setSelectedMother(null)
-                      setSearchMother("")
+                      setSelectedGuardian(null)
+                      setSearchGuardian("")
                       setImagePreview(null)
                       setRegisteredChildId(null)
                     }}

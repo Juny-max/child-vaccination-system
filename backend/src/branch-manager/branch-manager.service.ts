@@ -12,6 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../common/database/database.service';
 import { EmailService } from '../common/email.service';
 import { QrTokenService } from '../common/qr-token.service';
+import { getDueDateFromSchedule, getDueDaysFromSchedule } from '../common/schedule-date';
 import { CreateHqBranchDto, UpdateHqBranchDto } from './hq-branches.dto';
 import {
   CreateHqUserDto,
@@ -141,7 +142,7 @@ export class BranchManagerService {
         // National vaccination schedule (mandatory doses) for overdue computation
         db
           .from('vaccination_schedules')
-          .select('vaccine_id, dose_number, due_days_from_birth, vaccines(name)')
+          .select('vaccine_id, dose_number, schedule_name, due_days_from_birth, vaccines(name)')
           .eq('is_mandatory', true)
           .order('due_days_from_birth', { ascending: true }),
 
@@ -388,14 +389,21 @@ export class BranchManagerService {
         // Find worst (most overdue) missing dose for this child
         let worstOverdue: any = null;
         for (const schedule of (vaccinationSchedulesRows.data ?? [])) {
-          if (ageInDays > schedule.due_days_from_birth + GRACE_DAYS) {
+          const scheduleDueDays = getDueDaysFromSchedule(
+            child.date_of_birth,
+            schedule.schedule_name,
+            schedule.due_days_from_birth,
+          );
+          if (ageInDays > scheduleDueDays + GRACE_DAYS) {
             const exactKey = `${child.id}:${schedule.vaccine_id}:${schedule.dose_number}`;
             const looseKey = `${child.id}:${schedule.vaccine_id}`;
             if (!receivedExact.has(exactKey) && !receivedVaccine.has(looseKey)) {
-              const daysOverdue = ageInDays - schedule.due_days_from_birth;
+              const daysOverdue = ageInDays - scheduleDueDays;
               if (!worstOverdue || daysOverdue > worstOverdue.daysOverdue) {
-                const dueDate = new Date(
-                  dob.getTime() + schedule.due_days_from_birth * 24 * 60 * 60 * 1000,
+                const dueDate = getDueDateFromSchedule(
+                  child.date_of_birth,
+                  schedule.schedule_name,
+                  schedule.due_days_from_birth,
                 );
                 const dueDateStr = dueDate.toLocaleDateString('en-GH', {
                   day: 'numeric', month: 'short', year: 'numeric',
@@ -1074,7 +1082,7 @@ export class BranchManagerService {
           .eq('is_active', true),
         db
           .from('vaccination_schedules')
-          .select('vaccine_id, dose_number, due_days_from_birth, vaccines(name)')
+          .select('vaccine_id, dose_number, schedule_name, due_days_from_birth, vaccines(name)')
           .eq('is_mandatory', true)
           .order('due_days_from_birth', { ascending: true }),
         db
@@ -1346,7 +1354,8 @@ export class BranchManagerService {
 
       if (!child.dateOfBirth) return;
 
-      const dob = new Date(child.dateOfBirth);
+      const dateOfBirth = child.dateOfBirth;
+      const dob = new Date(dateOfBirth);
       const ageInDays = Math.floor(
         (today.getTime() - dob.getTime()) / (1000 * 60 * 60 * 24),
       );
@@ -1354,7 +1363,12 @@ export class BranchManagerService {
       const mostOverdue = schedules.reduce<
         { schedule: any; daysOverdue: number; dueDate: Date } | null
       >((current, schedule: any) => {
-        if (ageInDays <= schedule.due_days_from_birth + GRACE_DAYS) {
+        const scheduleDueDays = getDueDaysFromSchedule(
+          dateOfBirth,
+          schedule.schedule_name,
+          schedule.due_days_from_birth,
+        );
+        if (ageInDays <= scheduleDueDays + GRACE_DAYS) {
           return current;
         }
 
@@ -1365,9 +1379,11 @@ export class BranchManagerService {
           return current;
         }
 
-        const daysOverdue = ageInDays - schedule.due_days_from_birth;
-        const dueDate = new Date(
-          dob.getTime() + schedule.due_days_from_birth * 24 * 60 * 60 * 1000,
+        const daysOverdue = ageInDays - scheduleDueDays;
+        const dueDate = getDueDateFromSchedule(
+          dateOfBirth,
+          schedule.schedule_name,
+          schedule.due_days_from_birth,
         );
 
         if (!current || daysOverdue > current.daysOverdue) {
@@ -2182,6 +2198,17 @@ export class BranchManagerService {
       }
     }
 
+    // Fetch active user counts broken down by role in one query
+    const { data: roleRows } = await db
+      .from('users')
+      .select('role')
+      .eq('status', 'active');
+
+    const roleCounts: Record<string, number> = {};
+    for (const row of roleRows ?? []) {
+      roleCounts[row.role] = (roleCounts[row.role] ?? 0) + 1;
+    }
+
     return {
       totalBranches: branchCount ?? 0,
       totalUsers: userCount ?? 0,
@@ -2190,6 +2217,12 @@ export class BranchManagerService {
       totalChws: totalChwCount ?? 0,
       chwSyncPercentage,
       nationalCoverageRate,
+      usersByRole: {
+        branchManagers: roleCounts['branch-manager'] ?? 0,
+        nurses: roleCounts['facility-nurse'] ?? 0,
+        chws: roleCounts['chw'] ?? 0,
+        parents: roleCounts['parent'] ?? 0,
+      },
     };
   }
 
@@ -2449,16 +2482,18 @@ export class BranchManagerService {
       throw new BadRequestException({ message: 'Region is required', code: 'REGION_REQUIRED' });
     }
 
-    // Resolve manager name from userId if provided
+    // Resolve manager name and email from userId if provided
     let managerName = dto.manager?.trim() || 'Unassigned';
+    let managerEmail: string | null = null;
     if (dto.managerId) {
       const { data: managerUser } = await db
         .from('users')
-        .select('id, full_name, role, branch_id')
+        .select('id, full_name, email, role, branch_id')
         .eq('id', dto.managerId)
         .maybeSingle();
       if (managerUser?.role === 'branch-manager') {
         managerName = managerUser.full_name ?? 'Unassigned';
+        managerEmail = managerUser.email ?? null;
       }
     }
 
@@ -2491,8 +2526,27 @@ export class BranchManagerService {
     if (normalizedCatchments.length) {
       await this.replaceCatchmentsForBranch(createdBranch.id, createdBranch.code, normalizedCatchments);
     }
+
+    // Send branch assignment notification email to the manager (non-blocking)
+    let emailSent = false;
+    if (dto.managerId && managerEmail) {
+      const emailDispatch = await this.emailService.sendBranchAssignmentEmail(
+        { email: managerEmail, name: managerName },
+        {
+          name: createdBranch.name,
+          district: createdBranch.district,
+          region: createdBranch.region,
+          code: createdBranch.code,
+        },
+      );
+      emailSent = emailDispatch.success;
+      if (!emailDispatch.success) {
+        this.logger.warn(`Branch created but assignment email failed for ${managerEmail}: ${emailDispatch.errorMessage}`);
+      }
+    }
+
     const [fullBranch] = await this.getHqBranches().then((rows) => rows.filter((row) => row.dbId === createdBranch.id));
-    return fullBranch;
+    return { ...fullBranch, emailSent };
   }
 
   async updateHqBranch(code: string, dto: UpdateHqBranchDto) {
@@ -2841,7 +2895,7 @@ export class BranchManagerService {
 
     const { data, error } = await db
       .from('users')
-      .select('id, full_name, email, role, status, branch_id')
+      .select('id, full_name, email, role, status, branch_id, must_change_password, last_login_at')
       .in('role', ['hq-admin', 'branch-manager', 'facility-nurse', 'chw', 'parent'])
       .order('full_name', { ascending: true });
 
@@ -2885,6 +2939,8 @@ export class BranchManagerService {
       role: this.toDisplayRole(user.role),
       branch: user.branch_id ? branchMap.get(user.branch_id)?.name : undefined,
       status: user.status === 'inactive' ? 'inactive' : 'active',
+      mustChangePassword: user.must_change_password ?? true,
+      lastLoginAt: user.last_login_at ?? null,
     }));
   }
 
@@ -3974,7 +4030,7 @@ export class BranchManagerService {
     const db = this.databaseService.supabase;
     const { data, error } = await db
       .from('vaccines')
-      .select('id, code, name, description, manufacturer, status, created_at, updated_at')
+      .select('id, code, name, description, manufacturer, site_category, status, created_at, updated_at')
       .order('name', { ascending: true });
     if (error) {
       this.logger.error('Failed to fetch vaccine catalogue', error);
@@ -4007,6 +4063,7 @@ export class BranchManagerService {
         id: v.id,
         code: v.code,
         name: v.name,
+        siteCategory: v.site_category,
         schedule: firstSchedule?.schedule_name || v.description || 'Standard schedule',
         dueDays: firstSchedule?.due_days_from_birth ?? 0,
         status: v.status,
@@ -4018,6 +4075,7 @@ export class BranchManagerService {
   async createHqVaccine(dto: {
     code: string;
     name: string;
+    siteCategory: string;
     description?: string;
     manufacturer?: string;
   }) {
@@ -4029,6 +4087,7 @@ export class BranchManagerService {
         name: dto.name.trim(),
         description: dto.description?.trim() || null,
         manufacturer: dto.manufacturer?.trim() || null,
+        site_category: dto.siteCategory,
         status: 'active',
       })
       .select()
@@ -4043,13 +4102,14 @@ export class BranchManagerService {
 
   async updateHqVaccine(
     vaccineId: string,
-    dto: { name?: string; description?: string; manufacturer?: string; status?: string },
+    dto: { name?: string; description?: string; manufacturer?: string; status?: string; siteCategory?: string },
   ) {
     const db = this.databaseService.supabase;
     const payload: Record<string, any> = {};
     if (dto.name !== undefined) payload.name = dto.name.trim();
     if (dto.description !== undefined) payload.description = dto.description.trim() || null;
     if (dto.manufacturer !== undefined) payload.manufacturer = dto.manufacturer.trim() || null;
+    if (dto.siteCategory !== undefined) payload.site_category = dto.siteCategory;
     if (dto.status !== undefined) payload.status = dto.status;
 
     if (Object.keys(payload).length === 0) throw new BadRequestException('No fields to update');

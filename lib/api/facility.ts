@@ -80,6 +80,7 @@ export interface ScheduledVaccine {
   isOverdue: boolean;
   daysOverdue: number;
   isMandatory: boolean;
+  siteCategory?: string | null;
 }
 
 // ============================================
@@ -339,6 +340,7 @@ export interface TodayAppointment {
   vaccine: string;
   contact: string;
   status: string;
+  visitPreference?: 'facility' | 'chw';
 }
 
 /**
