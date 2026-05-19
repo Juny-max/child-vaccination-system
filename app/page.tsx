@@ -9,7 +9,10 @@ import { MorphNavbar } from "@/components/morph-navbar"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowRight, ArrowUp, BellRing, Check, QrCode, ShieldCheck, Syringe, TrendingUp, X } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { ArrowRight, ArrowUp, BellRing, Check, MessageSquare, Phone, QrCode, ShieldCheck, Syringe, TrendingUp, X } from "lucide-react"
 
 const heroMedia = {
   light: "https://www.edc-ent.com/wp-content/uploads/2021/07/343434.jpg",
@@ -131,6 +134,9 @@ export default function Home() {
   const [activeMoment, setActiveMoment] = useState(0)
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [showBackToTop, setShowBackToTop] = useState(false)
+  const [contactForm, setContactForm] = useState<ContactFormValues>({ name: "", email: "", facility: "", message: "", website: "" })
+  const [contactState, setContactState] = useState<ContactRequestState>({ type: "idle", message: "" })
+  const [submittingContact, setSubmittingContact] = useState(false)
   const { resolvedTheme } = useTheme()
 
   useEffect(() => {
