@@ -10,7 +10,7 @@ import { MorphNavbar } from "@/components/morph-navbar"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowRight, ArrowUp, BellRing, Check, QrCode, ShieldCheck, Syringe, TrendingUp, X } from "lucide-react"
+import { ArrowRight, ArrowUp, BellRing, Check, Mail, Phone, QrCode, ShieldCheck, Syringe, TrendingUp, X } from "lucide-react"
 
 const heroMedia = {
   light: "https://www.edc-ent.com/wp-content/uploads/2021/07/343434.jpg",
@@ -522,19 +522,54 @@ export default function Home() {
       <section id="contact" className="relative overflow-hidden py-20 sm:py-24">
         <div className="absolute inset-0 bg-linear-to-r from-primary/20 via-transparent to-primary/20" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_65%)] dark:bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.55),_transparent_65%)]" />
-        <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-          <div className="rounded-[2rem] border border-primary/20 bg-background/70 p-10 text-center shadow-2xl backdrop-blur-2xl">
-            <h2 className="text-3xl font-semibold text-foreground sm:text-4xl">Ready to run a calmer command center?</h2>
-            <p className="mt-4 text-base text-foreground/80">
-              Log in to orchestrate clinics, outreach teams and certificates from one trusted workspace.
-            </p>
-            <div className="mt-6 flex justify-center">
-              <Link href="/auth/login">
-                <Button size="lg" className="gap-2">
-                  Portal Login
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
+        <div className="relative mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          <div className="rounded-[2rem] border border-primary/20 bg-background/70 p-10 shadow-2xl backdrop-blur-2xl">
+            <div className="grid gap-10 md:grid-cols-[1.2fr_1fr] md:items-center">
+              <div>
+                <h2 className="text-3xl font-semibold text-foreground sm:text-4xl">Ready to run a calmer command center?</h2>
+                <p className="mt-4 text-base text-foreground/80">
+                  Log in to orchestrate clinics, outreach teams and certificates from one trusted workspace.
+                </p>
+                <div className="mt-6">
+                  <Link href="/auth/login">
+                    <Button size="lg" className="gap-2">
+                      Portal Login
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-background/85 p-6 shadow-lg">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary">Contact desk</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Reach the support team for onboarding, access, or service questions.
+                </p>
+                <div className="mt-5 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Mail className="h-4 w-4" />
+                    </div>
+                    <div className="text-sm">
+                      <p className="font-semibold text-foreground">Email</p>
+                      <a className="text-foreground/80 transition hover:text-foreground" href="mailto:support@cvcc.gov.gh">
+                        support@cvcc.gov.gh
+                      </a>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Phone className="h-4 w-4" />
+                    </div>
+                    <div className="text-sm">
+                      <p className="font-semibold text-foreground">Phone</p>
+                      <a className="text-foreground/80 transition hover:text-foreground" href="tel:+233300000000">
+                        +233 30 000 0000
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
