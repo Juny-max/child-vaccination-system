@@ -153,8 +153,27 @@ export default function ChwDashboardPage() {
     }
   }
 
+  const loadPendingSyncTotal = async () => {
+    try {
+      const [pendingVaccinations, pendingQueue, failedQueue] = await Promise.all([
+        chwStorage.getCHWPendingCount(),
+        chwOfflineDb.vaccinationQueue.where("status").equals("pending").count(),
+        chwOfflineDb.vaccinationQueue.where("status").equals("failed").count(),
+      ])
+      const total = pendingVaccinations + pendingQueue + failedQueue
+      setPendingSyncTotal(total)
+      return total
+    } catch (error) {
+      console.error("Failed to load local pending sync count", error)
+      setPendingSyncTotal(0)
+      return 0
+    }
+  }
+
   const loadDashboardSummary = async () => {
     try {
+      await loadPendingSyncTotal()
+
       if (!isOnline) {
         setSyncState("offline")
         setSystemMessage("Offline mode active. Data will sync automatically when connection is restored.")
@@ -162,7 +181,6 @@ export default function ChwDashboardPage() {
       }
 
       const summary = await getChwDashboardSummary()
-      const localPending = await chwStorage.getCHWPendingCount()
       setVisitList(
         summary.visits.map((entry: ChwVisit) => ({
           id: entry.id,
@@ -172,7 +190,6 @@ export default function ChwDashboardPage() {
           householdLocation: entry.householdLocation,
         })),
       )
-      setPendingSyncTotal(summary.pendingQueueCount + localPending)
       setLastSyncTime(new Date(summary.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
       setSyncState("synced")
       await showFollowUpNotifications()
@@ -332,9 +349,11 @@ export default function ChwDashboardPage() {
     const handleUpdate = () => {
       loadFromIndexedDB()
       loadTodayActivityCount()
+      loadPendingSyncTotal()
     }
 
     loadFromIndexedDB()
+    loadPendingSyncTotal()
     window.addEventListener(VACCINATION_SAVED_EVENT, handleUpdate)
 
     return () => {
@@ -386,6 +405,11 @@ export default function ChwDashboardPage() {
     router.push("/")
   }
 
+  const openLogoutConfirm = () => {
+    void loadPendingSyncTotal()
+    setShowLogoutConfirm(true)
+  }
+
   const scrollToVisitList = () => {
     visitListSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
@@ -416,7 +440,7 @@ export default function ChwDashboardPage() {
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <NetworkStatusIndicator />
             <ThemeToggle />
-            <Button variant="outline" size="sm" className="h-8 px-3 text-xs sm:h-9 sm:text-sm" onClick={() => setShowLogoutConfirm(true)}>
+            <Button variant="outline" size="sm" className="h-8 px-3 text-xs sm:h-9 sm:text-sm" onClick={openLogoutConfirm}>
               Logout
             </Button>
           </div>
@@ -448,13 +472,13 @@ export default function ChwDashboardPage() {
               Find child
             </Link>
           </Button>
-          <Button asChild variant="secondary" className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base">
+          <Button asChild className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base">
             <Link href="/chw/register-child">
               <UserPlus className="h-6 w-6" />
               Register child
             </Link>
           </Button>
-          <Button asChild variant="outline" className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base">
+          <Button asChild className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base">
             <Link href="/chw/register">
               <BookOpen className="h-6 w-6" />
               My register
@@ -462,7 +486,6 @@ export default function ChwDashboardPage() {
           </Button>
           <Button
             type="button"
-            variant="outline"
             className="h-24 flex-col gap-2 text-sm sm:h-28 sm:gap-3 sm:text-base"
             onClick={scrollToVisitList}
           >
@@ -472,18 +495,20 @@ export default function ChwDashboardPage() {
         </section>
 
         {/* Today's activity link */}
-        <Link
-          href="/chw/activity"
-          className="mt-3 flex items-center justify-between rounded-lg border border-border bg-background/80 px-4 py-2.5 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
-        >
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-background/80 px-4 py-2.5 text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Activity className="h-4 w-4 text-primary" />
             <span>Today&apos;s activity</span>
           </div>
-          <Badge variant="outline" className="text-xs">
-            {todayActivityCount} action{todayActivityCount === 1 ? "" : "s"}
-          </Badge>
-        </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <Badge variant="outline" className="text-xs">
+              {todayActivityCount} action{todayActivityCount === 1 ? "" : "s"}
+            </Badge>
+            <Button asChild size="sm" className="h-8 px-3 text-xs">
+              <Link href="/chw/activity">View</Link>
+            </Button>
+          </div>
+        </div>
 
         <section id="visit-list" ref={visitListSectionRef} className="mt-8">
           <Card className="border-primary/40">

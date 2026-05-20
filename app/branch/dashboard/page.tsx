@@ -90,7 +90,7 @@ const SECTIONS = [
   { id: "analytics", label: "Coverage Analytics", icon: BarChart3 },
   // TODO: Re-enable Catchment Command after the upgraded version ships.
   // { id: "catchment", label: "Catchment Command", icon: Compass },
-  { id: "modules", label: "Key Modules", icon: ClipboardList },
+  { id: "modules", label: "Stock & Child Records", icon: ClipboardList },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]["id"]
@@ -1503,7 +1503,7 @@ export default function BranchDashboardPage() {
     <div className="grid gap-6 md:grid-cols-2">
       <Card className="border border-primary/30">
         <CardHeader>
-          <CardTitle className="text-lg">Child record management</CardTitle>
+          <CardTitle className="text-lg">Child records</CardTitle>
           <CardDescription>Find and review child vaccination journeys.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -1722,10 +1722,10 @@ export default function BranchDashboardPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Radio className="h-5 w-5 text-primary" /> Child record management
+              <Radio className="h-5 w-5 text-primary" /> Child records
             </DialogTitle>
             <p className="text-sm text-muted-foreground">
               Use operational queues first, then search fallback when needed.
@@ -1767,7 +1767,7 @@ export default function BranchDashboardPage() {
                   <p className="mt-1 text-xs text-muted-foreground">{activeChildQueueCopy.description}</p>
                 </div>
 
-                <div className="max-h-[400px] space-y-3 overflow-y-auto pr-1">
+                <div className="max-h-[45vh] space-y-3 overflow-y-auto pr-1 pb-4">
                   {childManagementQueuesLoading ? (
                     <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
                       <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading child action queues...
@@ -1897,7 +1897,7 @@ export default function BranchDashboardPage() {
                   </Alert>
                 ) : null}
 
-                <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
+                <div className="max-h-[45vh] space-y-3 overflow-y-auto pr-1 pb-4">
                   {childLookupLoading ? (
                     <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
                       <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading child records...
