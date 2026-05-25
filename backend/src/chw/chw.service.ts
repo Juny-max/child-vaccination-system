@@ -454,6 +454,7 @@ export class ChwService {
     const childGender = this.normalizeGender(payload.childGender);
     let insertedChildId: string | null = null;
     let lastInsertError: any = null;
+    const scheduleVersionId = await this.db.getActiveScheduleVersionId();
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -470,6 +471,7 @@ export class ChwService {
           date_of_birth: payload.childDob,
           gender: childGender,
           primary_facility_id: context.branchId,
+          schedule_version_id: scheduleVersionId,
           catchment_area_id: context.catchmentAreaId,
           critical_notes:
             'Provisional child profile created from CHW minimal registration.',
@@ -2183,4 +2185,3 @@ export class ChwService {
     return register;
   }
 }
-

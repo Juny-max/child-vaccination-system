@@ -145,6 +145,40 @@ npx ts-node scripts/delete-user.ts
 
 The script prompts for an email, removes or nullifies dependent references, and then deletes the user record.
 
+### Deleting a test vaccine safely (terminal/Supabase SQL)
+
+Use the dedicated cleanup SQL file when you need to remove a test vaccine from the master catalogue:
+
+```text
+scripts/delete-test-vaccine.sql
+```
+
+Open the file and change the vaccine code on this line:
+
+```sql
+vaccine_code TEXT := 'DGB';
+```
+
+Replace `DGB` with the vaccine code you want to delete, then run the SQL in the Supabase SQL Editor.
+
+If you have `DATABASE_URL` configured locally and prefer the terminal, run this from the project root:
+
+```powershell
+psql "$env:DATABASE_URL" -f scripts/delete-test-vaccine.sql
+```
+
+The script permanently deletes matching records from `vaccination_events`, `vaccination_schedules`, and then `vaccines`, so only use it for test vaccines you are sure should be removed.
+
+### Adding schedule versioning to an existing Supabase database
+
+If `schema.sql` has already been run before, do **not** paste the full schema again. To add the schedule-versioning upgrade only, copy and run this file in the Supabase SQL Editor:
+
+```text
+supabase/add-schedule-versioning.sql
+```
+
+This creates `schedule_versions`, links children, schedules, and certificates to a schedule version, then backfills existing records to `Ghana EPI Schedule v1`.
+
 ### Starting the backend for daily work
 
 ```powershell
@@ -311,6 +345,7 @@ const { data, error } = await supabase
 - Branch management (CRUD operations for facilities)
 - User management (create/update/delete users across all non-HQ-admin roles)
 - Vaccine configuration (manage master vaccine catalog)
+- Schedule versioning for vaccine policy changes
 - Catchment area management
 - System settings and configurations
 - Audit log viewing
@@ -330,6 +365,21 @@ const { data, error } = await supabase
 - `GET /audit-logs` - View system audit trail
 - `GET /system-settings` - Get system configurations
 - `PUT /system-settings` - Update system settings
+
+### Vaccine schedule versioning
+
+The system uses schedule versioning so new vaccine policy changes do not retroactively invalidate children who were already complete under an older schedule.
+
+When an HQ admin adds a new vaccine schedule entry:
+
+1. The backend creates a new `schedule_versions` row.
+2. It copies the previous active `vaccination_schedules` rows into the new version.
+3. It adds the new vaccine schedule row to the new version.
+4. It marks the new version as active and archives the previous version.
+5. Existing children stay assigned to their original schedule version.
+6. Newly registered children use the current active schedule version.
+
+This means an older child on `Ghana EPI Schedule v1` remains judged against v1, while a new child registered after the update may be assigned to `Ghana EPI Schedule v2`. Issued certificates also store their schedule version, and the downloaded certificate PDF displays the schedule used for that certificate.
 
 #### 2. **Branch Manager Module**
 
@@ -875,4 +925,3 @@ Create 3 simple diagrams:
 ## 📄 License
 
 Government of Ghana Ministry of Health © 2025
-

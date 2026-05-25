@@ -835,8 +835,8 @@ export class ParentService {
     const child = await this.getChildDetails(userId, childId);
     const certificates = await this.db.getCertificates(childId);
     
-    // Get actual vaccination completion status (not from certificate table)
-    const vaccinationStatus = await this.db.getVaccinationCompletionStatus(childId);
+    // For children without an issued certificate, use the child's assigned current policy.
+    const currentVaccinationStatus = await this.db.getVaccinationCompletionStatus(childId);
 
     // Get child's registration facility name
     const client = this.db.supabase;
@@ -861,44 +861,50 @@ export class ParentService {
           issuedDate: 'Not issued yet',
           issuedBy: 'Not issued yet',
           issuedByFacility: facilityName,
-          completionStatus: vaccinationStatus.isComplete
+          completionStatus: currentVaccinationStatus.isComplete
             ? CertificateCompletionStatus.COMPLETE
             : CertificateCompletionStatus.PARTIAL,
           qrPayload: child.qrPayload || `TEMP-${child.childId}`,
-          vaccinesCompleted: vaccinationStatus.completedVaccines,
+          vaccinesCompleted: currentVaccinationStatus.completedVaccines,
           lastVerified: null,
           pdfUrl: null,
-          vaccinationProgress: `${vaccinationStatus.completedCount}/${vaccinationStatus.totalRequired}`,
+          scheduleVersionName: null,
+          vaccinationProgress: `${currentVaccinationStatus.completedCount}/${currentVaccinationStatus.totalRequired}`,
         },
       ];
     }
 
-    return (certificates || []).map((cert: any) => ({
-      certificateId: cert.certificate_id,
-      childId: child.childId, // Use human-readable CVCC ID instead of UUID
-      childName: child.name,
-      issuedDate: cert.issued_date,
-      issuedBy: cert.issued_by?.full_name || 'Unknown',
-      issuedByFacility: cert.facility?.name || 'Unknown',
-      // Use ACTUAL completion status from vaccination_events, not stored certificate status
-      completionStatus: vaccinationStatus.isComplete
-        ? CertificateCompletionStatus.COMPLETE
-        : CertificateCompletionStatus.PARTIAL,
-      qrPayload: cert.qr_payload,
-      // Use actual completed vaccines from vaccination_events
-      vaccinesCompleted: vaccinationStatus.completedVaccines,
-      lastVerified: cert.last_verified_at
-        ? new Date(cert.last_verified_at).toLocaleString('en-GB', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        : null,
-      pdfUrl: cert.pdf_url,
-      // Add progress info for UI
-      vaccinationProgress: `${vaccinationStatus.completedCount}/${vaccinationStatus.totalRequired}`,
+    return Promise.all((certificates || []).map(async (cert: any) => {
+      const vaccinationStatus = await this.db.getVaccinationCompletionStatus(
+        childId,
+        cert.schedule_version_id,
+      );
+
+      return {
+        certificateId: cert.certificate_id,
+        childId: child.childId, // Use human-readable CVCC ID instead of UUID
+        childName: child.name,
+        issuedDate: cert.issued_date,
+        issuedBy: cert.issued_by?.full_name || 'Unknown',
+        issuedByFacility: cert.facility?.name || 'Unknown',
+        completionStatus: vaccinationStatus.isComplete
+          ? CertificateCompletionStatus.COMPLETE
+          : CertificateCompletionStatus.PARTIAL,
+        qrPayload: cert.qr_payload,
+        vaccinesCompleted: vaccinationStatus.completedVaccines,
+        lastVerified: cert.last_verified_at
+          ? new Date(cert.last_verified_at).toLocaleString('en-GB', {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : null,
+        pdfUrl: cert.pdf_url,
+        scheduleVersionName: cert.schedule_version?.name || null,
+        vaccinationProgress: `${vaccinationStatus.completedCount}/${vaccinationStatus.totalRequired}`,
+      };
     }));
   }
 

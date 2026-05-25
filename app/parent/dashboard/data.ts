@@ -30,6 +30,7 @@ export type CertificateRecord = {
   qrPayload: string
   vaccinesCompleted: string[]
   lastVerified: string
+  scheduleVersionName?: string | null
 }
 
 export const certificateRecords: CertificateRecord[] = [

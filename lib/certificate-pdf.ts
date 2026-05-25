@@ -26,9 +26,6 @@ export async function generateCertificatePdf(
     doc.addImage(qrDataUrl, "PNG", pageWidth - marginX - qrSize, qrPositionY, qrSize, qrSize)
   }
 
-  doc.setDrawColor(227, 233, 239)
-  doc.roundedRect(marginX - 12, 24, pageWidth - marginX * 2 + 24, 520, 12, 12)
-
   doc.setFont("helvetica", "bold")
   doc.setFontSize(22)
   doc.text("Child Vaccination Certificate", headingOffsetX, cursorY)
@@ -39,6 +36,7 @@ export async function generateCertificatePdf(
     { label: "Child", value: `${record.childName} (${record.childId})` },
     { label: "Issued", value: record.issuedDate },
     { label: "Facility", value: record.issuedBy },
+    { label: "Schedule", value: record.scheduleVersionName || "Ghana EPI Schedule" },
   ]
 
   doc.setFontSize(12)
@@ -67,6 +65,18 @@ export async function generateCertificatePdf(
   cursorY += 10
   doc.setFontSize(10)
   doc.text(`Last verified: ${record.lastVerified}`, marginX, cursorY)
+
+  const borderTop = 24
+  const borderBottom = cursorY + 28
+  doc.setDrawColor(227, 233, 239)
+  doc.roundedRect(
+    marginX - 12,
+    borderTop,
+    pageWidth - marginX * 2 + 24,
+    borderBottom - borderTop,
+    12,
+    12
+  )
 
   doc.save(`${record.certificateId}.pdf`)
 }

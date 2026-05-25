@@ -119,6 +119,20 @@ CREATE TABLE guardians (
 -- 4. CHILDREN
 -- ============================================================================
 
+-- Schedule versions preserve the policy used to judge each child/certificate.
+CREATE TABLE schedule_versions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(255) NOT NULL,
+  version_number INTEGER UNIQUE NOT NULL,
+  effective_from DATE NOT NULL DEFAULT CURRENT_DATE,
+  effective_to DATE,
+  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active', 'archived')),
+  based_on_version_id UUID REFERENCES schedule_versions(id),
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Gender enum
 CREATE TYPE gender_type AS ENUM ('male', 'female', 'intersex', 'undisclosed');
 
@@ -138,6 +152,7 @@ CREATE TABLE children (
   birth_order VARCHAR(20),
   blood_type VARCHAR(5),
   primary_facility_id UUID REFERENCES branches(id),
+  schedule_version_id UUID REFERENCES schedule_versions(id),
   profile_photo_url TEXT,
   allergies TEXT[], -- Array of allergies
   critical_notes TEXT,
@@ -191,6 +206,7 @@ CREATE TABLE vaccines (
 -- National vaccination schedule (dosing rules)
 CREATE TABLE vaccination_schedules (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  schedule_version_id UUID NOT NULL REFERENCES schedule_versions(id),
   vaccine_id UUID NOT NULL REFERENCES vaccines(id) ON DELETE CASCADE,
   dose_number INTEGER NOT NULL, -- e.g., 1, 2, 3
   schedule_name VARCHAR(255) NOT NULL, -- e.g., "At birth", "6 weeks", "14 weeks"
@@ -289,6 +305,7 @@ CREATE TABLE certificates (
   issued_date DATE NOT NULL,
   issued_by_user_id UUID REFERENCES users(id),
   issued_by_facility_id UUID REFERENCES branches(id),
+  schedule_version_id UUID REFERENCES schedule_versions(id),
   completion_status VARCHAR(50) NOT NULL, -- 'Complete' or 'Partial'
   vaccines_completed TEXT[], -- Array of vaccine names
   pdf_url TEXT, -- Link to generated PDF
@@ -548,6 +565,7 @@ CREATE INDEX idx_guardians_catchment_area_id ON guardians(catchment_area_id);
 CREATE INDEX idx_children_cvcc_id ON children(cvcc_id);
 CREATE INDEX idx_children_date_of_birth ON children(date_of_birth);
 CREATE INDEX idx_children_primary_facility_id ON children(primary_facility_id);
+CREATE INDEX idx_children_schedule_version_id ON children(schedule_version_id);
 CREATE INDEX idx_children_is_active ON children(is_active);
 
 -- Child-Guardian indexes
@@ -555,6 +573,7 @@ CREATE INDEX idx_child_guardian_child_id ON child_guardian(child_id);
 CREATE INDEX idx_child_guardian_guardian_id ON child_guardian(guardian_id);
 
 -- Vaccination events indexes
+CREATE INDEX idx_vaccination_schedules_schedule_version_id ON vaccination_schedules(schedule_version_id);
 CREATE INDEX idx_vaccination_events_child_id ON vaccination_events(child_id);
 CREATE INDEX idx_vaccination_events_vaccine_id ON vaccination_events(vaccine_id);
 CREATE INDEX idx_vaccination_events_administered_date ON vaccination_events(administered_date);
@@ -562,6 +581,7 @@ CREATE INDEX idx_vaccination_events_facility_id ON vaccination_events(facility_i
 CREATE INDEX idx_vaccination_events_is_synced ON vaccination_events(is_synced);
 
 -- Appointments indexes
+CREATE INDEX idx_certificates_schedule_version_id ON certificates(schedule_version_id);
 CREATE INDEX idx_appointments_child_id ON appointments(child_id);
 CREATE INDEX idx_appointments_scheduled_date ON appointments(scheduled_date);
 CREATE INDEX idx_appointments_status ON appointments(status);
@@ -629,6 +649,9 @@ CREATE TRIGGER update_catchment_areas_updated_at BEFORE UPDATE ON catchment_area
 CREATE TRIGGER update_guardians_updated_at BEFORE UPDATE ON guardians
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_schedule_versions_updated_at BEFORE UPDATE ON schedule_versions
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER update_children_updated_at BEFORE UPDATE ON children
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -683,6 +706,7 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE branches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE catchment_areas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE guardians ENABLE ROW LEVEL SECURITY;
+ALTER TABLE schedule_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE children ENABLE ROW LEVEL SECURITY;
 ALTER TABLE child_guardian ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vaccines ENABLE ROW LEVEL SECURITY;

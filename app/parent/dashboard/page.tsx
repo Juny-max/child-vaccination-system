@@ -181,6 +181,7 @@ export default function ParentDashboardOverview() {
         vaccinesCompleted: record.vaccinesCompleted || record.vaccines || [],
         qrPayload: record.qrPayload || "",
         lastVerified: record.lastVerified || new Date().toLocaleDateString(),
+        scheduleVersionName: record.scheduleVersionName,
       }
       await generateCertificatePdf(certRecord, { logoDataUrl, qrDataUrl })
       toast.success("Certificate PDF downloaded")

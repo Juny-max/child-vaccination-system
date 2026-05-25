@@ -41,17 +41,31 @@ function generateCertToken(): string {
 
 async function main() {
   console.log('Checking for children with completed vaccines but no certificate...\n');
-
-  // 1. Get total mandatory vaccine schedule count
-  const { data: schedules } = await db
-    .from('vaccination_schedules')
+  const { data: activeVersion } = await db
+    .from('schedule_versions')
     .select('id')
+    .eq('status', 'active')
+    .order('version_number', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // 1. Get mandatory schedule entries by schedule version.
+  let scheduleQuery = db
+    .from('vaccination_schedules')
+    .select('id, schedule_version_id, vaccine_id, dose_number')
     .eq('is_mandatory', true);
 
-  const totalRequired = schedules?.length || 0;
-  console.log(`Total mandatory vaccine doses required: ${totalRequired}`);
+  const { data: schedules } = await scheduleQuery;
+  const schedulesByVersion = new Map<string, any[]>();
+  for (const schedule of schedules || []) {
+    const versionId = schedule.schedule_version_id || activeVersion?.id || 'default';
+    schedulesByVersion.set(versionId, [...(schedulesByVersion.get(versionId) || []), schedule]);
+  }
 
-  if (totalRequired === 0) {
+  const activeRequired = activeVersion?.id ? schedulesByVersion.get(activeVersion.id)?.length || 0 : schedules?.length || 0;
+  console.log(`Active mandatory vaccine doses required: ${activeRequired}`);
+
+  if ((schedules?.length || 0) === 0) {
     console.log('No mandatory schedules found. Make sure your vaccination_schedules table is seeded.');
     process.exit(0);
   }
@@ -59,7 +73,7 @@ async function main() {
   // 2. Get all active children
   const { data: children } = await db
     .from('children')
-    .select('id, cvcc_id, full_name, primary_facility_id')
+    .select('id, cvcc_id, full_name, primary_facility_id, schedule_version_id')
     .eq('is_active', true);
 
   console.log(`Total active children: ${children?.length || 0}\n`);
@@ -72,11 +86,19 @@ async function main() {
     // Check how many vaccines this child has completed
     const { data: completed } = await db
       .from('vaccination_events')
-      .select('id, vaccine_id, vaccines(name)')
+      .select('id, vaccine_id, dose_number, vaccines(name)')
       .eq('child_id', child.id)
       .eq('status', 'completed');
 
-    const completedCount = completed?.length || 0;
+    const childScheduleVersionId = child.schedule_version_id || activeVersion?.id || 'default';
+    const childSchedules = schedulesByVersion.get(childScheduleVersionId) || [];
+    const totalRequired = childSchedules.length;
+    const completedDoseSet = new Set(
+      (completed || []).map((event: any) => `${event.vaccine_id}-${event.dose_number}`),
+    );
+    const completedCount = childSchedules.filter((schedule: any) =>
+      completedDoseSet.has(`${schedule.vaccine_id}-${schedule.dose_number}`),
+    ).length;
 
     if (completedCount < totalRequired) {
       incomplete++;
@@ -110,6 +132,7 @@ async function main() {
       qr_payload: qrPayload,
       issued_date: new Date().toISOString().split('T')[0],
       issued_by_facility_id: child.primary_facility_id || null,
+      schedule_version_id: childScheduleVersionId === 'default' ? null : childScheduleVersionId,
       completion_status: 'Complete',
       vaccines_completed: vaccineNames,
       status: 'issued',

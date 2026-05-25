@@ -70,6 +70,7 @@ export interface Certificate {
   vaccinesCompleted?: string[];
   lastVerified?: string | null;
   pdfUrl?: string | null;
+  scheduleVersionName?: string | null;
   vaccinationProgress?: string;
 }
 

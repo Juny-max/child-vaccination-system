@@ -28,6 +28,7 @@ type CertificateDisplay = {
   vaccinesCompleted: string[]
   lastVerified: string
   pdfUrl: string | null
+  scheduleVersionName?: string | null
   vaccinationProgress?: string
 }
 
@@ -53,6 +54,7 @@ export default function CertificatesPage() {
       vaccinesCompleted: cert.vaccinesCompleted || cert.vaccines || [],
       lastVerified: cert.lastVerified || "Not verified yet",
       pdfUrl: cert.pdfUrl || null,
+      scheduleVersionName: cert.scheduleVersionName || null,
       vaccinationProgress: cert.vaccinationProgress,
     }))
   }, [apiCertificates])
@@ -113,6 +115,7 @@ export default function CertificatesPage() {
           qrPayload: record.qrPayload,
           vaccinesCompleted: record.vaccinesCompleted,
           lastVerified: record.lastVerified,
+          scheduleVersionName: record.scheduleVersionName,
         }
         await generateCertificatePdf(pdfRecord, { logoDataUrl, qrDataUrl })
         toast.success(`${record.childName}'s certificate downloaded`)

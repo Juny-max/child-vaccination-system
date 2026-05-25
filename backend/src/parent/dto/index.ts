@@ -130,6 +130,7 @@ export class CertificateDto {
   vaccinesCompleted: string[];
   lastVerified: string | null;
   pdfUrl: string | null;
+  scheduleVersionName?: string | null;
   /** Progress of vaccinations e.g. "10/17" */
   vaccinationProgress?: string;
 }

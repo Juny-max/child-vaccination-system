@@ -591,6 +591,7 @@ export class FacilityService {
           const suffix = Math.floor(Math.random() * 900000) + 100000;
           const certificateId = `CERT-GH-${year}-${suffix}`;
           const qrPayload = this.qrTokenService.generateCertificateToken();
+          const scheduleVersionId = await this.db.getApplicableScheduleVersionId(childId);
 
           await this.db.supabase.from('certificates').insert({
             certificate_id: certificateId,
@@ -599,6 +600,7 @@ export class FacilityService {
             issued_date: new Date().toISOString().split('T')[0],
             issued_by_user_id: userId,
             issued_by_facility_id: facilityId || null,
+            schedule_version_id: scheduleVersionId,
             completion_status: 'Complete',
             vaccines_completed: completionStatus.completedVaccines,
             status: 'issued',
@@ -692,6 +694,7 @@ export class FacilityService {
       const suffix = Math.floor(Math.random() * 900000) + 100000;
       const certificateId = `CERT-GH-${year}-${suffix}`;
       const qrPayload = this.qrTokenService.generateCertificateToken();
+      const scheduleVersionId = await this.db.getApplicableScheduleVersionId(child.id);
 
       await db.from('certificates').insert({
         certificate_id: certificateId,
@@ -700,6 +703,7 @@ export class FacilityService {
         issued_date: new Date().toISOString().split('T')[0],
         issued_by_user_id: userId,
         issued_by_facility_id: facilityId || null,
+        schedule_version_id: scheduleVersionId,
         completion_status: 'Complete',
         vaccines_completed: completionStatus.completedVaccines,
         status: 'issued',
@@ -1746,6 +1750,7 @@ export class FacilityService {
     let cvccId = '';
     let child: { id: string } | null = null;
     let lastError: any = null;
+    const scheduleVersionId = await this.db.getActiveScheduleVersionId();
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -1771,6 +1776,7 @@ export class FacilityService {
           critical_notes: dto.notes || null,
           profile_photo_url: dto.profilePhotoUrl || null,
           primary_facility_id: facilityId,
+          schedule_version_id: scheduleVersionId,
           created_by_user_id: userId,
           is_active: true,
         })

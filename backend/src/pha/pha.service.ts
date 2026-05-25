@@ -805,7 +805,7 @@ export class PhaService {
       // Look up a formal certificate for this child
       const { data: cert } = await db
         .from('certificates')
-        .select('id, certificate_id, issued_date, completion_status, vaccines_completed, status, issued_by_facility_id, branches!issued_by_facility_id(name, region)')
+        .select('id, certificate_id, issued_date, completion_status, vaccines_completed, status, issued_by_facility_id, schedule_version_id, branches!issued_by_facility_id(name, region)')
         .eq('child_id', (childRow as any).id)
         .eq('status', 'issued')
         .order('created_at', { ascending: false })
@@ -874,7 +874,7 @@ export class PhaService {
     const { data, error } = await db
       .from('certificates')
       .select(
-        'id, certificate_id, child_id, issued_date, completion_status, vaccines_completed, status, issued_by_facility_id, last_verified_at, branches!issued_by_facility_id(name, region)',
+        'id, certificate_id, child_id, issued_date, completion_status, vaccines_completed, status, issued_by_facility_id, schedule_version_id, last_verified_at, branches!issued_by_facility_id(name, region)',
       )
       .eq(lookupColumn, scannedValue)
       .single();
@@ -919,25 +919,18 @@ export class PhaService {
       ? await this.getChildIdentityByField('id', certificate.child_id)
       : null;
 
-    // Dynamically recalculate completion status from actual vaccination events
-    // so stale DB values never override real progress
+    // Recalculate against the schedule version recorded on the certificate, so
+    // newer vaccine policies do not invalidate historical certificates.
     let completionStatus = data.completion_status;
     const nowIso = new Date().toISOString();
     const updatePayload: Record<string, any> = { last_verified_at: nowIso };
 
     if (certificate?.child_id) {
-      const { data: completedEvents } = await db
-        .from('vaccination_events')
-        .select('id')
-        .eq('child_id', certificate.child_id)
-        .eq('status', 'completed');
-      const { data: schedules } = await db
-        .from('vaccination_schedules')
-        .select('id')
-        .eq('is_mandatory', true);
-      const totalRequired = schedules?.length || 0;
-      const completedCount = completedEvents?.length || 0;
-      if (totalRequired > 0 && completedCount >= totalRequired) {
+      const vaccinationStatus = await this.databaseService.getVaccinationCompletionStatus(
+        certificate.child_id,
+        certificate.schedule_version_id,
+      );
+      if (vaccinationStatus.isComplete) {
         completionStatus = 'Complete';
         updatePayload.completion_status = 'Complete';
       }

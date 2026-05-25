@@ -4028,6 +4028,7 @@ export class BranchManagerService {
 
   async getHqVaccines() {
     const db = this.databaseService.supabase;
+    const activeScheduleVersionId = await this.databaseService.getActiveScheduleVersionId();
     const { data, error } = await db
       .from('vaccines')
       .select('id, code, name, description, manufacturer, site_category, status, created_at, updated_at')
@@ -4039,11 +4040,17 @@ export class BranchManagerService {
 
     // Attach schedule rows for each vaccine
     const vaccineIds = (data ?? []).map((v: any) => v.id);
-    const { data: schedules, error: schedulesError } = await db
+    let scheduleQuery = db
       .from('vaccination_schedules')
-      .select('id, vaccine_id, dose_number, schedule_name, due_days_from_birth, min_age_days, max_age_days, is_mandatory, sort_order')
+      .select('id, schedule_version_id, vaccine_id, dose_number, schedule_name, due_days_from_birth, min_age_days, max_age_days, is_mandatory, sort_order')
       .in('vaccine_id', vaccineIds.length ? vaccineIds : ['__none__'])
       .order('sort_order', { ascending: true });
+
+    if (activeScheduleVersionId) {
+      scheduleQuery = scheduleQuery.eq('schedule_version_id', activeScheduleVersionId);
+    }
+
+    const { data: schedules, error: schedulesError } = await scheduleQuery;
     if (schedulesError) {
       this.logger.error('Failed to fetch vaccination schedules', schedulesError);
       throw new InternalServerErrorException('Failed to fetch vaccination schedules');
@@ -4188,9 +4195,71 @@ export class BranchManagerService {
     sortOrder?: number;
   }) {
     const db = this.databaseService.supabase;
+    const { data: activeVersion, error: activeVersionError } = await db
+      .from('schedule_versions')
+      .select('id, version_number')
+      .eq('status', 'active')
+      .order('version_number', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeVersionError) {
+      this.logger.error('Failed to load active schedule version', activeVersionError);
+      throw new InternalServerErrorException('Failed to load active schedule version');
+    }
+
+    const nextVersionNumber = (activeVersion?.version_number ?? 0) + 1;
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data: newVersion, error: newVersionError } = await db
+      .from('schedule_versions')
+      .insert({
+        name: `Ghana EPI Schedule v${nextVersionNumber}`,
+        version_number: nextVersionNumber,
+        effective_from: today,
+        status: 'active',
+        based_on_version_id: activeVersion?.id ?? null,
+      })
+      .select('id')
+      .single();
+
+    if (newVersionError || !newVersion) {
+      this.logger.error('Failed to create schedule version', newVersionError);
+      throw new InternalServerErrorException('Failed to create schedule version');
+    }
+
+    if (activeVersion?.id) {
+      const { data: previousSchedules, error: previousSchedulesError } = await db
+        .from('vaccination_schedules')
+        .select('vaccine_id, dose_number, schedule_name, due_days_from_birth, min_age_days, max_age_days, is_mandatory, sort_order')
+        .eq('schedule_version_id', activeVersion.id);
+
+      if (previousSchedulesError) {
+        this.logger.error('Failed to copy previous schedule version', previousSchedulesError);
+        throw new InternalServerErrorException('Failed to copy previous schedule version');
+      }
+
+      if (previousSchedules && previousSchedules.length > 0) {
+        const { error: cloneError } = await db
+          .from('vaccination_schedules')
+          .insert(
+            previousSchedules.map((schedule: any) => ({
+              ...schedule,
+              schedule_version_id: newVersion.id,
+            })),
+          );
+
+        if (cloneError) {
+          this.logger.error('Failed to clone schedule rows', cloneError);
+          throw new InternalServerErrorException('Failed to clone schedule rows');
+        }
+      }
+    }
+
     const { data, error } = await db
       .from('vaccination_schedules')
       .insert({
+        schedule_version_id: newVersion.id,
         vaccine_id: dto.vaccineId,
         dose_number: dto.doseNumber,
         schedule_name: dto.scheduleName.trim(),
@@ -4206,6 +4275,19 @@ export class BranchManagerService {
       this.logger.error('Failed to create vaccination schedule', error);
       throw new InternalServerErrorException('Failed to create vaccination schedule');
     }
+
+    if (activeVersion?.id) {
+      const { error: archiveError } = await db
+        .from('schedule_versions')
+        .update({ status: 'archived', effective_to: today })
+        .eq('id', activeVersion.id);
+
+      if (archiveError) {
+        this.logger.error('Failed to archive previous schedule version', archiveError);
+        throw new InternalServerErrorException('Failed to archive previous schedule version');
+      }
+    }
+
     return data;
   }
 

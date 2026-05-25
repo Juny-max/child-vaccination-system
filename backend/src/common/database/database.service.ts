@@ -48,6 +48,32 @@ export class DatabaseService implements OnModuleInit {
     return this._supabase;
   }
 
+  async getActiveScheduleVersionId(): Promise<string | null> {
+    const { data, error } = await this._supabase
+      .from('schedule_versions')
+      .select('id')
+      .eq('status', 'active')
+      .order('version_number', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data?.id ?? null;
+  }
+
+  async getApplicableScheduleVersionId(childId: string): Promise<string | null> {
+    const { data: child, error: childError } = await this._supabase
+      .from('children')
+      .select('schedule_version_id')
+      .eq('id', childId)
+      .maybeSingle();
+
+    if (childError) throw new Error(childError.message);
+    if (child?.schedule_version_id) return child.schedule_version_id;
+
+    return this.getActiveScheduleVersionId();
+  }
+
   /**
    * Query helper - wraps Supabase query with error handling
    */
@@ -194,11 +220,14 @@ export class DatabaseService implements OnModuleInit {
    * Get upcoming vaccination schedule for a child
    */
   async getUpcomingVaccinations(childId: string, dateOfBirth: string) {
+    const scheduleVersionId = await this.getApplicableScheduleVersionId(childId);
+
     // Get all schedules
-    const { data: schedules, error: scheduleError } = await this._supabase
+    let scheduleQuery = this._supabase
       .from('vaccination_schedules')
       .select(`
         id,
+        schedule_version_id,
         dose_number,
         schedule_name,
         due_days_from_birth,
@@ -212,6 +241,12 @@ export class DatabaseService implements OnModuleInit {
         )
       `)
       .order('sort_order');
+
+    if (scheduleVersionId) {
+      scheduleQuery = scheduleQuery.eq('schedule_version_id', scheduleVersionId);
+    }
+
+    const { data: schedules, error: scheduleError } = await scheduleQuery;
 
     if (scheduleError) throw new Error(scheduleError.message);
 
@@ -280,7 +315,8 @@ export class DatabaseService implements OnModuleInit {
           status,
           last_verified_at,
           issued_by_user_id,
-          issued_by_facility_id
+          issued_by_facility_id,
+          schedule_version_id
         `)
         .eq('child_id', childId)
         .order('issued_date', { ascending: false });
@@ -297,6 +333,7 @@ export class DatabaseService implements OnModuleInit {
       // Get unique user IDs and facility IDs
       const userIds = [...new Set(data.map(c => c.issued_by_user_id).filter(Boolean))];
       const facilityIds = [...new Set(data.map(c => c.issued_by_facility_id).filter(Boolean))];
+      const scheduleVersionIds = [...new Set(data.map(c => c.schedule_version_id).filter(Boolean))];
       
       // Fetch users
       const usersMap = new Map();
@@ -337,12 +374,32 @@ export class DatabaseService implements OnModuleInit {
         });
         facilities?.forEach(f => facilitiesMap.set(f.id, f));
       }
+
+      const scheduleVersionsMap = new Map();
+      if (scheduleVersionIds.length > 0) {
+        const versions = await this.withRetry(async () => {
+          const { data: versions, error: versionsError } = await this._supabase
+            .from('schedule_versions')
+            .select('id, name, version_number')
+            .in('id', scheduleVersionIds);
+
+          if (versionsError) {
+            throw Object.assign(new Error(versionsError.message), {
+              code: versionsError.code,
+            });
+          }
+
+          return versions;
+        });
+        versions?.forEach(v => scheduleVersionsMap.set(v.id, v));
+      }
       
       // Map the data with related entities
       return data.map(cert => ({
         ...cert,
         issued_by: usersMap.get(cert.issued_by_user_id) || null,
         facility: facilitiesMap.get(cert.issued_by_facility_id) || null,
+        schedule_version: scheduleVersionsMap.get(cert.schedule_version_id) || null,
       }));
     }
     
@@ -549,16 +606,38 @@ export class DatabaseService implements OnModuleInit {
     completedCount: number;
     isComplete: boolean;
     completedVaccines: string[];
+  }>;
+  async getVaccinationCompletionStatus(childId: string, scheduleVersionId: string | null): Promise<{
+    totalRequired: number;
+    completedCount: number;
+    isComplete: boolean;
+    completedVaccines: string[];
+  }>;
+  async getVaccinationCompletionStatus(childId: string, scheduleVersionId?: string | null): Promise<{
+    totalRequired: number;
+    completedCount: number;
+    isComplete: boolean;
+    completedVaccines: string[];
   }> {
+    const applicableScheduleVersionId =
+      scheduleVersionId ?? (await this.getApplicableScheduleVersionId(childId));
+
     // Get total mandatory vaccines from schedule
-    const { data: schedules, error: scheduleError } = await this._supabase
+    let scheduleQuery = this._supabase
       .from('vaccination_schedules')
-      .select('id, vaccine:vaccines(id, name)')
+      .select('id, vaccine_id, dose_number, vaccine:vaccines(id, name)')
       .eq('is_mandatory', true);
+
+    if (applicableScheduleVersionId) {
+      scheduleQuery = scheduleQuery.eq('schedule_version_id', applicableScheduleVersionId);
+    }
+
+    const { data: schedules, error: scheduleError } = await scheduleQuery;
 
     if (scheduleError) throw new Error(scheduleError.message);
 
-    const totalRequired = schedules?.length || 0;
+    const requiredSchedules = schedules || [];
+    const totalRequired = requiredSchedules.length;
 
     // Get completed vaccinations for this child
     const { data: completed, error: completedError } = await this._supabase
@@ -574,8 +653,23 @@ export class DatabaseService implements OnModuleInit {
 
     if (completedError) throw new Error(completedError.message);
 
-    const completedCount = completed?.length || 0;
-    const completedVaccines = completed?.map((v: any) => v.vaccine?.name).filter(Boolean) || [];
+    const completedDoseSet = new Set(
+      (completed || []).map((v: any) => `${v.vaccine_id}-${v.dose_number}`),
+    );
+    const completedRequiredKeys = new Set<string>();
+
+    for (const schedule of requiredSchedules as any[]) {
+      const key = `${schedule.vaccine_id}-${schedule.dose_number}`;
+      if (completedDoseSet.has(key)) {
+        completedRequiredKeys.add(key);
+      }
+    }
+
+    const completedCount = completedRequiredKeys.size;
+    const completedVaccines = (completed || [])
+      .filter((v: any) => completedRequiredKeys.has(`${v.vaccine_id}-${v.dose_number}`))
+      .map((v: any) => v.vaccine?.name)
+      .filter(Boolean);
 
     return {
       totalRequired,
