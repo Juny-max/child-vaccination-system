@@ -275,10 +275,6 @@ export default function Home() {
         }
       />
 
-      <div className="fixed right-4 top-24 z-[60] sm:right-5 sm:top-24">
-        <ThemeToggle />
-      </div>
-
       <div className="pt-20">
       <section className="relative overflow-hidden">
         <div className="absolute inset-0">
