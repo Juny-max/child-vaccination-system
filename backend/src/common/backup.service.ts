@@ -290,38 +290,45 @@ export class BackupService {
   }
 
   /**
-   * Encrypt data using AES-256-CBC
+   * Encrypt data using AES-256-GCM (AEAD – provides confidentiality + integrity)
+   * Output layout: IV (12 bytes) | Auth Tag (16 bytes) | Ciphertext
    */
   private encryptData(data: Buffer, key: string): Buffer {
     if (!key || key.length < 64) {
       throw new Error('Invalid encryption key. Must be 256-bit (64 hex characters)');
     }
 
-    const iv = crypto.randomBytes(16);
+    const iv = crypto.randomBytes(12);
     const keyBuffer = Buffer.from(key, 'hex');
-    const cipher = crypto.createCipheriv('aes-256-cbc', keyBuffer, iv);
+    const cipher = crypto.createCipheriv('aes-256-gcm', keyBuffer, iv);
 
     const encrypted = Buffer.concat([
       cipher.update(data),
       cipher.final(),
     ]);
 
-    // Return IV + encrypted data (IV needed for decryption)
-    return Buffer.concat([iv, encrypted]);
+    const authTag = cipher.getAuthTag();
+
+    // Return IV + Auth Tag + encrypted data
+    return Buffer.concat([iv, authTag, encrypted]);
   }
 
   /**
-   * Decrypt data using AES-256-CBC
+   * Decrypt data using AES-256-GCM.
+   * The auth tag is verified automatically; an error is thrown if integrity fails.
+   * Input layout: IV (12 bytes) | Auth Tag (16 bytes) | Ciphertext
    */
   decryptData(encryptedData: Buffer, key: string): Buffer {
     if (!key || key.length < 64) {
       throw new Error('Invalid encryption key. Must be 256-bit (64 hex characters)');
     }
 
-    const iv = encryptedData.slice(0, 16);
-    const data = encryptedData.slice(16);
+    const iv = encryptedData.slice(0, 12);
+    const authTag = encryptedData.slice(12, 28);
+    const data = encryptedData.slice(28);
     const keyBuffer = Buffer.from(key, 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', keyBuffer, iv);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, iv);
+    decipher.setAuthTag(authTag);
 
     return Buffer.concat([
       decipher.update(data),
