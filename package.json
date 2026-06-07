@@ -58,7 +58,7 @@
     "framer-motion": "^12.23.24",
     "html5-qrcode": "^2.3.8",
     "input-otp": "1.4.1",
-    "jspdf": "^3.0.3",
+    "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "leaflet-draw": "^1.0.4",
     "lottie-react": "^2.4.1",
