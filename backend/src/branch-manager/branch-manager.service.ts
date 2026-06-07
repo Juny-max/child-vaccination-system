@@ -2246,7 +2246,27 @@ export class BranchManagerService {
 
     // Filter by priority/severity if specified
     if (params.priority && params.priority !== 'all') {
-      query = query.eq('severity', params.priority);
+      const priorityLower = params.priority.toLowerCase();
+      let severityFilter: string;
+
+      // Map human-readable priority labels to stored severity values
+      switch (priorityLower) {
+        case 'high':
+          severityFilter = 'severe';
+          break;
+        case 'medium':
+          severityFilter = 'moderate';
+          break;
+        case 'low':
+          severityFilter = 'mild';
+          break;
+        default:
+          // Assume the incoming value is already a valid severity
+          severityFilter = params.priority;
+          break;
+      }
+
+      query = query.eq('severity', severityFilter);
     }
 
     const { data, error } = await query;

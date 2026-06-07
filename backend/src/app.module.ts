@@ -30,6 +30,7 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
         limit: 10,      // 10 requests per minute default
       },
       {
+        name: 'hourly',
         ttl: 3600,      // 1 hour
         limit: 100,     // 100 requests per hour
       },
