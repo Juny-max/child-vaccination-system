@@ -302,6 +302,16 @@ export class DataOfficerService {
       }
 
       const survivorId = dto.survivor_id;
+
+      if (
+        survivorId !== duplicate.child_a_id &&
+        survivorId !== duplicate.child_b_id
+      ) {
+        throw new BadRequestException(
+          'survivor_id must be one of the two candidate child IDs for this duplicate',
+        );
+      }
+
       const loserChildId =
         survivorId === duplicate.child_a_id
           ? duplicate.child_b_id
