@@ -2,6 +2,19 @@
  * Data Officer DTOs
  */
 
+import {
+  IsArray,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
 // ============================================================================
 // DASHBOARD DTOs
 // ============================================================================
@@ -100,15 +113,40 @@ export interface NotificationLogDto {
 }
 
 export class FilterNotificationsDto {
+  @IsOptional()
+  @IsIn(['all', 'sent', 'delivered', 'failed', 'pending'])
   status?: 'all' | 'sent' | 'delivered' | 'failed' | 'pending';
+
+  @IsOptional()
+  @IsIn(['sms', 'email', 'all'])
   channel?: 'sms' | 'email' | 'all';
+
+  @IsOptional()
+  @IsDateString()
   date_from?: string;
+
+  @IsOptional()
+  @IsDateString()
   date_to?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
   limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
   offset?: number;
 }
 
 export class BulkRetryDto {
+  @IsNotEmpty()
+  @IsArray()
+  @IsString({ each: true })
   notification_ids: string[];
 }
 
