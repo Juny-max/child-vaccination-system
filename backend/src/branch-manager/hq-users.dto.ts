@@ -5,7 +5,6 @@ export const hqUserRoles = [
   'branch-manager',
   'facility-nurse',
   'chw',
-  'parent',
 ] as const;
 
 export type HqUserRole = (typeof hqUserRoles)[number];
@@ -57,4 +56,13 @@ export class UpdateHqUserStatusDto {
 export class ResetHqUserPasswordDto {
   @IsEmail()
   email!: string;
+}
+
+export class TransferHqUserDto {
+  @IsString()
+  targetBranch!: string;
+
+  @IsOptional()
+  @IsString()
+  replacementManagerId?: string;
 }

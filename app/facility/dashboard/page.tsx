@@ -54,6 +54,7 @@ export default function FacilityDashboardPage() {
   const router = useRouter()
   const pathname = usePathname()
   const [userName, setUserName] = useState("")
+  const [isUnassignedFacilityUser, setIsUnassignedFacilityUser] = useState(false)
   const [facilityInfo, setFacilityInfo] = useState<{ name: string; region: string; district: string } | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [searchResults, setSearchResults] = useState<facilityApi.ChildSearchResult[]>([])
@@ -109,6 +110,15 @@ export default function FacilityDashboardPage() {
     
     // Fetch facility info
     const branchId = localStorage.getItem("branchId")
+    if (!branchId) {
+      setIsUnassignedFacilityUser(true)
+      setIsLoadingAppointments(false)
+      setIsLoadingFollowUps(false)
+      setIsLoadingMissedAppointments(false)
+      return
+    }
+
+    setIsUnassignedFacilityUser(false)
     if (branchId) {
       facilityApi.getBranchDetails(branchId)
         .then(details => {
@@ -123,10 +133,10 @@ export default function FacilityDashboardPage() {
     const fetchDashboardData = async () => {
       try {
         const [appointmentsData, followUpsData, missedAppointmentsData, pendingRequests] = await Promise.all([
-          facilityApi.getTodaysAppointments(branchId || undefined),
-          facilityApi.getUrgentFollowUps(branchId || undefined),
-          facilityApi.getMissedAppointments(branchId || undefined, 14),
-          facilityApi.getAppointmentRequests(branchId || undefined, "scheduled"),
+          facilityApi.getTodaysAppointments(branchId),
+          facilityApi.getUrgentFollowUps(branchId),
+          facilityApi.getMissedAppointments(branchId, 14),
+          facilityApi.getAppointmentRequests(branchId, "scheduled"),
         ])
         setAppointments(appointmentsData)
         setFollowUps(followUpsData)
@@ -457,6 +467,56 @@ export default function FacilityDashboardPage() {
       badge: pendingSyncCount,
     },
   ]
+
+  if (isUnassignedFacilityUser) {
+    return (
+      <div className="min-h-screen bg-muted/30">
+        <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-3">
+              <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-primary/30 bg-primary/5">
+                <Image src="/images/cvcc-logo.png" alt="Child Vaccination Command Center logo" fill sizes="48px" className="object-cover" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Facility Nurse Console</p>
+                <p className="text-xl font-semibold text-foreground">Facility assignment required</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <ThemeToggle />
+              <div className="hidden flex-col items-end sm:flex">
+                <span className="text-sm text-muted-foreground">Welcome, {userName}</span>
+                <span className="text-xs text-muted-foreground/80">Role: Facility Nurse</span>
+              </div>
+              <Button variant="outline" size="sm" className="gap-2" onClick={handleLogout} disabled={isLoggingOut}>
+                {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                {isLoggingOut ? "Signing out..." : "Logout"}
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto flex min-h-[calc(100vh-88px)] w-full max-w-3xl items-center px-4 py-10 sm:px-6">
+          <Card className="w-full border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" /> No facility assigned
+              </CardTitle>
+              <CardDescription className="text-amber-800 dark:text-amber-200">
+                Your nurse account is active, but it has not been assigned to any facility.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p>
+                You cannot register guardians, register children, search patient records, manage appointments, or sync facility data until an administrator assigns your account to a facility.
+              </p>
+              <p className="font-medium">Please contact your Branch Manager or HQ Admin for assignment.</p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-muted/30">

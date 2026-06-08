@@ -97,6 +97,7 @@ export default function ChwDashboardPage() {
   const [pendingSyncTotal, setPendingSyncTotal] = useState(0)
   const [todayActivityCount, setTodayActivityCount] = useState(0)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [isUnassignedChw, setIsUnassignedChw] = useState(false)
   const [followUpNotifications, setFollowUpNotifications] = useState<ChwNotification[]>([])
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [acknowledgingFollowUps, setAcknowledgingFollowUps] = useState(false)
@@ -206,6 +207,7 @@ export default function ChwDashboardPage() {
     const userId = localStorage.getItem("userId")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
+    const branchId = localStorage.getItem("branchId")
 
     const hasAuthState = Boolean(userId || accessToken || legacyToken)
 
@@ -234,6 +236,15 @@ export default function ChwDashboardPage() {
       router.push("/dashboard")
       return
     }
+
+    if (!branchId) {
+      setIsUnassignedChw(true)
+      setSyncState("offline")
+      setSystemMessage(null)
+      return
+    }
+
+    setIsUnassignedChw(false)
 
     // Security: Check and clear stale data (7+ days old)
     checkAndClearStaleData().then((wasCleared) => {
@@ -308,6 +319,8 @@ export default function ChwDashboardPage() {
 
   // Reactively update sync state when network status changes
   useEffect(() => {
+    if (!localStorage.getItem("branchId")) return
+
     if (!isOnline && syncState !== "syncing") {
       setSyncState("offline")
       setSystemMessage("Connection lost. Operating in offline mode.")
@@ -398,9 +411,12 @@ export default function ChwDashboardPage() {
 
   const confirmLogout = () => {
     localStorage.removeItem("authToken")
+    localStorage.removeItem("accessToken")
     localStorage.removeItem("userRole")
     localStorage.removeItem("userRoleDetail")
     localStorage.removeItem("userName")
+    localStorage.removeItem("branchId")
+    localStorage.removeItem("userId")
     sessionStorage.removeItem("userName")
     router.push("/")
   }
@@ -426,6 +442,63 @@ export default function ChwDashboardPage() {
       hour: "2-digit",
       minute: "2-digit",
     })
+  }
+
+  if (isUnassignedChw) {
+    return (
+      <>
+        <div className="min-h-screen bg-muted/30">
+          <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
+            <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-4">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground sm:text-lg">CHW Dashboard</p>
+                <p className="truncate text-xs text-muted-foreground sm:text-sm">Facility assignment required</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                <ThemeToggle />
+                <Button variant="outline" size="sm" className="h-8 px-3 text-xs sm:h-9 sm:text-sm" onClick={openLogoutConfirm}>
+                  Logout
+                </Button>
+              </div>
+            </div>
+          </header>
+
+          <main className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-3xl items-center px-3 py-8 sm:px-6">
+            <Card className="w-full border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5" /> No facility assigned
+                </CardTitle>
+                <CardDescription className="text-amber-800 dark:text-amber-200">
+                  Your CHW account is active, but it has not been assigned to any facility.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <p>
+                  You cannot find children, register children, view your register, manage visits, or sync outreach records until an administrator assigns your account to a facility.
+                </p>
+                <p className="font-medium">Please contact your Branch Manager or HQ Admin for assignment.</p>
+              </CardContent>
+            </Card>
+          </main>
+        </div>
+
+        <AlertDialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Log out?</AlertDialogTitle>
+              <AlertDialogDescription>
+                You will return to the sign-in screen.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmLogout}>Logout</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
+    )
   }
 
   return (

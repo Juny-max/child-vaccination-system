@@ -15,6 +15,7 @@ import { BranchManagerService } from './branch-manager.service';
 import {
   CreateHqUserDto,
   ResetHqUserPasswordDto,
+  TransferHqUserDto,
   UpdateHqUserDto,
   UpdateHqUserStatusDto,
 } from './hq-users.dto';
@@ -50,6 +51,15 @@ export class HqUsersController {
     @Body() dto: UpdateHqUserStatusDto,
   ) {
     return this.branchManagerService.updateHqUserStatus(userId, dto.status);
+  }
+
+  @Post(':userId/transfer')
+  async transferUser(
+    @CurrentUser('id') actorUserId: string,
+    @Param('userId') userId: string,
+    @Body() dto: TransferHqUserDto,
+  ) {
+    return this.branchManagerService.transferHqUser(userId, dto, actorUserId);
   }
 
   @Post('reset-password')

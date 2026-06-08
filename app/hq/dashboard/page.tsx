@@ -58,6 +58,7 @@ import {
   createHqUser,
   getHqUsers,
   resetHqUserPassword,
+  transferHqUser,
   updateHqUser,
   updateHqUserStatus,
 } from "@/lib/api/hq-users"
@@ -182,6 +183,8 @@ type UserRecord = {
   mustChangePassword?: boolean
   lastLoginAt?: string | null
 }
+
+const hasCompletedAccountSetup = (user: UserRecord) => user.mustChangePassword !== true
 
 type VaccineConfig = {
   id: string
@@ -383,6 +386,9 @@ const isAdminRole = (role?: string | null): boolean =>
 const formatRoleLabel = (role: string): string =>
   isAdminRole(role) ? "Admin" : role
 
+const isTransferableStaffRole = (role: string): boolean =>
+  ["Branch Manager", "branch-manager", "Facility Nurse", "facility-nurse", "Community Health Worker", "chw"].includes(role)
+
 const mapUserRoleToApiRole = (role: string): string => {
   if (isAdminRole(role)) return "hq-admin"
 
@@ -390,7 +396,6 @@ const mapUserRoleToApiRole = (role: string): string => {
     "Branch Manager": "branch-manager",
     "Facility Nurse": "facility-nurse",
     "Community Health Worker": "chw",
-    "Parent": "parent",
   }
 
   return roleMap[role] ?? role
@@ -523,6 +528,17 @@ export default function HqDashboardPage() {
   const [showUserBreakdownModal, setShowUserBreakdownModal] = useState(false)
 
   const [users, setUsers] = useState(initialUsers)
+  const displayUsers = useMemo(() => users.filter(hasCompletedAccountSetup), [users])
+  const completedUserStats = useMemo(() => {
+    const activeUsers = displayUsers.filter((user) => user.status === "active")
+    return {
+      total: activeUsers.length,
+      branchManagers: activeUsers.filter((user) => user.role === "Branch Manager" || user.role === "branch-manager").length,
+      nurses: activeUsers.filter((user) => user.role === "Facility Nurse" || user.role === "facility-nurse").length,
+      chws: activeUsers.filter((user) => user.role === "Community Health Worker" || user.role === "chw").length,
+      parents: activeUsers.filter((user) => user.role === "Parent" || user.role === "parent").length,
+    }
+  }, [displayUsers])
   const [userForm, setUserForm] = useState({
     name: "",
     email: "",
@@ -531,6 +547,11 @@ export default function HqDashboardPage() {
   })
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [isProvisioningUser, setIsProvisioningUser] = useState(false)
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false)
+  const [transferUser, setTransferUser] = useState<UserRecord | null>(null)
+  const [transferTargetBranchId, setTransferTargetBranchId] = useState("")
+  const [transferReplacementManagerId, setTransferReplacementManagerId] = useState("")
+  const [isTransferringUser, setIsTransferringUser] = useState(false)
 
   const [vaccines, setVaccines] = useState(initialVaccines)
   const [vaccineForm, setVaccineForm] = useState({
@@ -2327,6 +2348,102 @@ export default function HqDashboardPage() {
     setUserActionNotice(null)
   }
 
+  const closeTransferModal = () => {
+    if (isTransferringUser) return
+    setIsTransferModalOpen(false)
+    setTransferUser(null)
+    setTransferTargetBranchId("")
+    setTransferReplacementManagerId("")
+  }
+
+  const handleOpenTransferModal = (user: UserRecord) => {
+    if (!isTransferableStaffRole(user.role)) {
+      setSystemMessage("Only branch managers, nurses, and CHWs can be transferred.")
+      return
+    }
+
+    if (user.status !== "active") {
+      setSystemMessage("Only active users can be transferred.")
+      return
+    }
+
+    setTransferUser(user)
+    setTransferTargetBranchId("")
+    setTransferReplacementManagerId("")
+    setIsTransferModalOpen(true)
+  }
+
+  const transferSourceBranch = useMemo(() => {
+    if (!transferUser?.branch) return null
+    return branches.find((branch) => branch.name === transferUser.branch) ?? null
+  }, [branches, transferUser])
+
+  const transferTargetOptions = useMemo(
+    () => branches.filter((branch) => branch.status === "active" && branch.id !== transferSourceBranch?.id),
+    [branches, transferSourceBranch?.id],
+  )
+
+  const transferReplacementOptions = useMemo(() => {
+    if (!transferUser || transferUser.role !== "Branch Manager" && transferUser.role !== "branch-manager") {
+      return []
+    }
+
+    return users.filter((candidate) => {
+      if (candidate.id === transferUser.id) return false
+      if (candidate.status !== "active") return false
+      if (!hasCompletedAccountSetup(candidate)) return false
+      if (!(candidate.role === "Branch Manager" || candidate.role === "branch-manager")) return false
+
+      return !candidate.branch || candidate.branch === transferUser.branch
+    })
+  }, [transferUser, users])
+
+  const handleConfirmTransfer = async () => {
+    if (!transferUser) return
+    if (!transferTargetBranchId) {
+      setSystemMessage("Select a target facility for this transfer.")
+      return
+    }
+
+    const targetBranch = branches.find((branch) => branch.id === transferTargetBranchId)
+    if (!targetBranch) {
+      setSystemMessage("Selected target facility no longer exists. Refresh and try again.")
+      return
+    }
+
+    const isBranchManager = transferUser.role === "Branch Manager" || transferUser.role === "branch-manager"
+    if (isBranchManager && !transferReplacementManagerId) {
+      setSystemMessage("Select a replacement manager for the current facility.")
+      return
+    }
+
+    setIsTransferringUser(true)
+    try {
+      const updatedUser = await transferHqUser(transferUser.id, {
+        targetBranch: transferTargetBranchId,
+        replacementManagerId: isBranchManager ? transferReplacementManagerId : undefined,
+      })
+
+      setUsers((previous) => previous.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
+      setSystemMessage(`User "${updatedUser.name}" transferred to ${targetBranch.name}.`)
+      setUserActionNotice({
+        tone: "success",
+        title: "Transfer completed",
+        detail: `${updatedUser.name} is now assigned to ${targetBranch.name}.`,
+      })
+      appendAuditLog({ action: `Transferred ${updatedUser.name} to ${targetBranch.name}`, category: "User" })
+
+      closeTransferModal()
+    } catch (error) {
+      console.error("Failed to transfer user", error)
+      const notice = mapUserManagementError(error)
+      setUserActionNotice(notice)
+      setSystemMessage(notice.detail)
+    } finally {
+      setIsTransferringUser(false)
+    }
+  }
+
   const cancelVaccineEditing = () => {
     setEditingVaccineId(null)
     setVaccineForm({ name: "", weeks: "", timingUnit: "weeks", siteCategory: "" })
@@ -2524,7 +2641,7 @@ export default function HqDashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-semibold mb-3">
-              {isOverviewLoading ? "..." : (overviewStats?.totalUsers ?? users.length).toLocaleString()}
+              {isOverviewLoading ? "..." : completedUserStats.total.toLocaleString()}
             </p>
             {isOverviewLoading ? (
               <p className="text-xs text-muted-foreground">Loading breakdown...</p>
@@ -2533,22 +2650,22 @@ export default function HqDashboardPage() {
                 <div className="flex items-center gap-1.5">
                   <Building2 className="h-3 w-3 text-blue-500 shrink-0" />
                   <span className="text-xs text-muted-foreground flex-1 truncate">Br. Managers</span>
-                  <span className="text-xs font-semibold tabular-nums">{overviewStats?.usersByRole?.branchManagers ?? 0}</span>
+                  <span className="text-xs font-semibold tabular-nums">{completedUserStats.branchManagers}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Stethoscope className="h-3 w-3 text-emerald-500 shrink-0" />
                   <span className="text-xs text-muted-foreground flex-1 truncate">Nurses</span>
-                  <span className="text-xs font-semibold tabular-nums">{overviewStats?.usersByRole?.nurses ?? 0}</span>
+                  <span className="text-xs font-semibold tabular-nums">{completedUserStats.nurses}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <MapPin className="h-3 w-3 text-orange-500 shrink-0" />
                   <span className="text-xs text-muted-foreground flex-1 truncate">CHWs</span>
-                  <span className="text-xs font-semibold tabular-nums">{overviewStats?.usersByRole?.chws ?? 0}</span>
+                  <span className="text-xs font-semibold tabular-nums">{completedUserStats.chws}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Baby className="h-3 w-3 text-pink-500 shrink-0" />
                   <span className="text-xs text-muted-foreground flex-1 truncate">Parents</span>
-                  <span className="text-xs font-semibold tabular-nums">{overviewStats?.usersByRole?.parents ?? 0}</span>
+                  <span className="text-xs font-semibold tabular-nums">{completedUserStats.parents}</span>
                 </div>
               </div>
             )}
@@ -2570,10 +2687,10 @@ export default function HqDashboardPage() {
             {/* Role summary row */}
             <div className="grid grid-cols-4 gap-3 py-2">
               {[
-                { label: "Br. Managers", value: overviewStats?.usersByRole?.branchManagers ?? 0, color: "text-blue-500", icon: <Building2 className="h-4 w-4" /> },
-                { label: "Nurses", value: overviewStats?.usersByRole?.nurses ?? 0, color: "text-emerald-500", icon: <Stethoscope className="h-4 w-4" /> },
-                { label: "CHWs", value: overviewStats?.usersByRole?.chws ?? 0, color: "text-orange-500", icon: <MapPin className="h-4 w-4" /> },
-                { label: "Parents", value: overviewStats?.usersByRole?.parents ?? 0, color: "text-pink-500", icon: <Baby className="h-4 w-4" /> },
+                { label: "Br. Managers", value: completedUserStats.branchManagers, color: "text-blue-500", icon: <Building2 className="h-4 w-4" /> },
+                { label: "Nurses", value: completedUserStats.nurses, color: "text-emerald-500", icon: <Stethoscope className="h-4 w-4" /> },
+                { label: "CHWs", value: completedUserStats.chws, color: "text-orange-500", icon: <MapPin className="h-4 w-4" /> },
+                { label: "Parents", value: completedUserStats.parents, color: "text-pink-500", icon: <Baby className="h-4 w-4" /> },
               ].map((item) => (
                 <div key={item.label} className="flex flex-col items-center gap-1 rounded-lg border p-3">
                   <span className={item.color}>{item.icon}</span>
@@ -2604,7 +2721,7 @@ export default function HqDashboardPage() {
                   </thead>
                   <tbody>
                     {branches.filter((b) => b.status === "active").map((branch, idx) => {
-                      const branchUsers = users.filter((u) => u.branch === branch.name && u.status === "active")
+                      const branchUsers = displayUsers.filter((u) => u.branch === branch.name && u.status === "active")
                       const managerCount = branchUsers.filter((u) => u.role === "Branch Manager").length
                       const nurseCount = branchUsers.filter((u) => u.role === "Facility Nurse").length
                       const chwCount = branchUsers.filter((u) => u.role === "Community Health Worker").length
@@ -2634,7 +2751,7 @@ export default function HqDashboardPage() {
                   <span className="text-xs text-muted-foreground">(portal accounts, not facility-specific)</span>
                 </div>
                 <span className="text-xl font-bold tabular-nums">
-                  {overviewStats?.usersByRole?.parents ?? users.filter((u) => u.role === "Parent" && u.status === "active").length}
+                  {completedUserStats.parents}
                 </span>
               </div>
             </div>
@@ -3030,8 +3147,8 @@ export default function HqDashboardPage() {
             <div className="space-y-2">
               <Label htmlFor="branchManagerSelect">Branch manager</Label>
               {(() => {
-                const available = users.filter(
-                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active" && u.mustChangePassword === false
+                const available = displayUsers.filter(
+                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active"
                 )
                 const selected = users.find((u) => u.id === branchForm.managerId)
                 return (
@@ -3118,8 +3235,8 @@ export default function HqDashboardPage() {
                 const currentManagerUser = editingBranch
                   ? users.find((u) => (u.role === "Branch Manager" || u.role === "branch-manager") && u.branch === editingBranch.name)
                   : null
-                const unassigned = users.filter(
-                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active" && u.mustChangePassword === false
+                const unassigned = displayUsers.filter(
+                  (u) => (u.role === "Branch Manager" || u.role === "branch-manager") && !u.branch && u.status === "active"
                 )
                 const options = currentManagerUser
                   ? [currentManagerUser, ...unassigned.filter((u) => u.id !== currentManagerUser.id)]
@@ -3346,7 +3463,7 @@ export default function HqDashboardPage() {
                 <div className="space-y-2">
                   <Label>Available CHWs</Label>
                   <div className="max-h-60 space-y-2 overflow-y-auto rounded-md border border-border bg-muted/30 p-3">
-                    {users
+                    {displayUsers
                       .filter((user) => user.role === "Community Health Worker" || user.role === "chw")
                       .filter((user) => user.name.toLowerCase().includes(chwSearchFilter.toLowerCase()))
                       .map((chw) => {
@@ -3386,7 +3503,7 @@ export default function HqDashboardPage() {
                           </div>
                         )
                       })}
-                    {users.filter((user) => user.role === "Community Health Worker" || user.role === "chw").length === 0 && (
+                    {displayUsers.filter((user) => user.role === "Community Health Worker" || user.role === "chw").length === 0 && (
                       <p className="text-sm text-muted-foreground py-4 text-center">No CHWs found in the system</p>
                     )}
                   </div>
@@ -3500,6 +3617,8 @@ export default function HqDashboardPage() {
       {(() => {
         const editingUser = editingUserId ? users.find((user) => user.id === editingUserId) ?? null : null
         const lockRoleSelection = isAdminRole(editingUser?.role)
+        const canAssignFacility = !lockRoleSelection
+        const hasFacilities = branches.length > 0
 
         return (
       <Card ref={userFormPanelRef} className="border-primary/40">
@@ -3507,7 +3626,7 @@ export default function HqDashboardPage() {
           <CardTitle className="flex items-center gap-2 text-lg">
             <UsersIcon className="h-5 w-5 text-primary" /> {editingUserId ? "Edit User Profile" : "Create or Assign User"}
           </CardTitle>
-          <CardDescription>Provision admin, branch, and supervisory accounts.</CardDescription>
+          <CardDescription>Provision staff accounts and assign them to a facility.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleAddUser} className="grid gap-4 md:grid-cols-2">
@@ -3545,12 +3664,38 @@ export default function HqDashboardPage() {
                 <option>Branch Manager</option>
                 <option>Facility Nurse</option>
                 <option>Community Health Worker</option>
-                <option>Parent</option>
               </select>
               {lockRoleSelection ? (
                 <p className="text-xs text-muted-foreground">Admin role assignment is restricted in this console.</p>
               ) : null}
             </div>
+            {canAssignFacility ? (
+              <div className="space-y-2">
+                <Label htmlFor="userBranch">Assigned facility</Label>
+                <select
+                  id="userBranch"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={userForm.branch}
+                  onChange={(event) => setUserForm((prev) => ({ ...prev, branch: event.target.value }))}
+                  disabled={!hasFacilities}
+                >
+                  <option value="">Unassigned</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.name}>
+                      {branch.name}{branch.status === "inactive" ? " (inactive)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Unassigned nurses and CHWs can sign in, but cannot perform work until a facility is assigned.
+                </p>
+                {!hasFacilities ? (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Create a facility before assigning staff.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="md:col-span-2 flex justify-end gap-2">
               {editingUserId ? (
                 <Button type="button" variant="ghost" onClick={cancelUserEditing}>
@@ -3587,7 +3732,7 @@ export default function HqDashboardPage() {
             >
               Active
               <span className="ml-1.5 rounded-full bg-background/20 px-1.5 py-0.5 text-xs">
-                {users.filter((u) => u.status === "active").length}
+                {displayUsers.filter((u) => u.status === "active").length}
               </span>
             </button>
             <button
@@ -3597,7 +3742,7 @@ export default function HqDashboardPage() {
             >
               Inactive
               <span className="ml-1.5 rounded-full bg-background/20 px-1.5 py-0.5 text-xs">
-                {users.filter((u) => u.status === "inactive").length}
+                {displayUsers.filter((u) => u.status === "inactive").length}
               </span>
             </button>
           </div>
@@ -3620,14 +3765,13 @@ export default function HqDashboardPage() {
               <option value="branch-manager">Branch Manager</option>
               <option value="facility-nurse">Facility Nurse</option>
               <option value="chw">Community Health Worker</option>
-              <option value="parent">Parent</option>
             </select>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {(() => {
             const q = userSearchQuery.trim().toLowerCase()
-            const filtered = users.filter((u) => {
+            const filtered = displayUsers.filter((u) => {
               if (u.status !== userStatusTab) return false
               if (userRoleFilter) {
                 const normalized = u.role.toLowerCase().replace(/\s+/g, "-")
@@ -3685,6 +3829,11 @@ export default function HqDashboardPage() {
                 <Button size="sm" variant="outline" onClick={() => handleUserEditRoles(user)}>
                   Edit roles
                 </Button>
+                {isTransferableStaffRole(user.role) ? (
+                  <Button size="sm" variant="outline" onClick={() => handleOpenTransferModal(user)}>
+                    Transfer
+                  </Button>
+                ) : null}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -3842,6 +3991,87 @@ export default function HqDashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={isTransferModalOpen}
+        onOpenChange={(open) => {
+          if (!open) closeTransferModal()
+          else setIsTransferModalOpen(true)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Transfer User</DialogTitle>
+            <DialogDescription>
+              Move staff to another active facility. Branch manager transfers require a replacement manager for the current facility.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+              <p><span className="font-medium">User:</span> {transferUser?.name ?? "-"}</p>
+              <p><span className="font-medium">Role:</span> {transferUser ? formatRoleLabel(transferUser.role) : "-"}</p>
+              <p><span className="font-medium">Current facility:</span> {transferUser?.branch ?? "Unassigned"}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="transferTargetBranch">Target facility</Label>
+              <select
+                id="transferTargetBranch"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                value={transferTargetBranchId}
+                onChange={(event) => setTransferTargetBranchId(event.target.value)}
+                disabled={isTransferringUser}
+              >
+                <option value="">Select facility</option>
+                {transferTargetOptions.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {transferUser && (transferUser.role === "Branch Manager" || transferUser.role === "branch-manager") ? (
+              <div className="space-y-2">
+                <Label htmlFor="replacementManager">Replacement manager for current facility</Label>
+                <select
+                  id="replacementManager"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={transferReplacementManagerId}
+                  onChange={(event) => setTransferReplacementManagerId(event.target.value)}
+                  disabled={isTransferringUser}
+                >
+                  <option value="">Select replacement manager</option>
+                  {transferReplacementOptions.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.name}{candidate.branch ? ` (${candidate.branch})` : " (Unassigned)"}
+                    </option>
+                  ))}
+                </select>
+                {transferReplacementOptions.length === 0 ? (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    No eligible replacement manager found. Provision or activate another branch manager first.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeTransferModal} disabled={isTransferringUser}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmTransfer}
+              disabled={isTransferringUser || !transferTargetBranchId}
+              className="gap-2"
+            >
+              {isTransferringUser ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Confirm transfer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader>
@@ -4673,7 +4903,7 @@ export default function HqDashboardPage() {
             <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
               <p className="font-medium text-foreground">Why Measles and DPT-3?</p>
               <p><span className="font-semibold text-foreground">Measles</span> is the most contagious vaccine-preventable disease. A drop in measles coverage is an early warning sign of outbreak risk.</p>
-              <p><span className="font-semibold text-foreground">DPT-3</span> (the third dose of the Diphtheria, Pertussis, Tetanus series) is the WHO's benchmark indicator for a country's immunisation programme performance. It is reported to UNICEF quarterly.</p>
+              <p><span className="font-semibold text-foreground">DPT-3</span> (the third dose of the Diphtheria, Pertussis, Tetanus series) is the WHO&apos;s benchmark indicator for a country&apos;s immunisation programme performance. It is reported to UNICEF quarterly.</p>
             </div>
             <p>
               Use this chart to spot declining months early and investigate whether the cause is supply chain, CHW performance, or community demand issues.

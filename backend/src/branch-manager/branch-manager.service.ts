@@ -3131,6 +3131,229 @@ export class BranchManagerService {
     return users.find((item) => item.id === updated.id);
   }
 
+  async transferHqUser(
+    userId: string,
+    dto: { targetBranch: string; replacementManagerId?: string },
+    actorUserId?: string,
+  ) {
+    const db = this.databaseService.supabase;
+    const targetBranchId = await this.resolveBranchId(dto.targetBranch);
+
+    if (!targetBranchId) {
+      throw new BadRequestException({
+        message: 'Target facility is required for staff transfer.',
+        code: 'TARGET_BRANCH_REQUIRED',
+      });
+    }
+
+    const { data: user, error: userError } = await db
+      .from('users')
+      .select('id, full_name, email, role, status, branch_id, must_change_password')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (userError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load user for transfer: ${userError.message}`,
+        code: 'HQ_USER_TRANSFER_LOAD_FAILED',
+      });
+    }
+
+    if (!user) {
+      throw new NotFoundException({ message: 'User not found', code: 'USER_NOT_FOUND' });
+    }
+
+    if (!['branch-manager', 'facility-nurse', 'chw'].includes(user.role)) {
+      throw new BadRequestException({
+        message: 'Only branch managers, facility nurses, and CHWs can be transferred.',
+        code: 'ROLE_NOT_TRANSFERABLE',
+      });
+    }
+
+    if (user.status !== 'active') {
+      throw new BadRequestException({
+        message: 'Inactive users cannot be transferred.',
+        code: 'USER_INACTIVE',
+      });
+    }
+
+    if (user.must_change_password) {
+      throw new BadRequestException({
+        message: 'User must complete first login and password change before transfer.',
+        code: 'USER_SETUP_INCOMPLETE',
+      });
+    }
+
+    if (!user.branch_id) {
+      throw new BadRequestException({
+        message: 'User is not currently assigned. Use assignment instead of transfer.',
+        code: 'USER_NOT_ASSIGNED',
+      });
+    }
+
+    if (user.branch_id === targetBranchId) {
+      throw new BadRequestException({
+        message: 'Target facility must be different from the current facility.',
+        code: 'SAME_BRANCH_TRANSFER',
+      });
+    }
+
+    const { data: branchRows, error: branchError } = await db
+      .from('branches')
+      .select('id, name, status, metadata')
+      .in('id', [user.branch_id, targetBranchId]);
+
+    if (branchError) {
+      throw new InternalServerErrorException({
+        message: `Failed to load transfer facilities: ${branchError.message}`,
+        code: 'HQ_TRANSFER_BRANCH_LOOKUP_FAILED',
+      });
+    }
+
+    const sourceBranch = (branchRows ?? []).find((branch: any) => branch.id === user.branch_id);
+    const targetBranch = (branchRows ?? []).find((branch: any) => branch.id === targetBranchId);
+
+    if (!sourceBranch || !targetBranch) {
+      throw new NotFoundException({
+        message: 'Source or target facility was not found.',
+        code: 'TRANSFER_BRANCH_NOT_FOUND',
+      });
+    }
+
+    if (sourceBranch.status !== 'active' || targetBranch.status !== 'active') {
+      throw new BadRequestException({
+        message: 'Transfers require both source and target facilities to be active.',
+        code: 'TRANSFER_BRANCH_INACTIVE',
+      });
+    }
+
+    if (user.role === 'branch-manager') {
+      if (!dto.replacementManagerId) {
+        throw new BadRequestException({
+          message: 'A replacement branch manager is required before transferring the current manager.',
+          code: 'REPLACEMENT_MANAGER_REQUIRED',
+        });
+      }
+
+      const { data: targetManager, error: targetManagerError } = await db
+        .from('users')
+        .select('id, full_name')
+        .eq('role', 'branch-manager')
+        .eq('branch_id', targetBranchId)
+        .neq('id', user.id)
+        .maybeSingle();
+
+      if (targetManagerError) {
+        throw new InternalServerErrorException({
+          message: `Failed to check target manager: ${targetManagerError.message}`,
+          code: 'TARGET_MANAGER_LOOKUP_FAILED',
+        });
+      }
+
+      if (targetManager) {
+        throw new BadRequestException({
+          message: `Target facility already has a branch manager: ${targetManager.full_name}.`,
+          code: 'TARGET_MANAGER_EXISTS',
+        });
+      }
+
+      const { data: replacement, error: replacementError } = await db
+        .from('users')
+        .select('id, full_name, role, status, branch_id, must_change_password')
+        .eq('id', dto.replacementManagerId)
+        .maybeSingle();
+
+      if (replacementError) {
+        throw new InternalServerErrorException({
+          message: `Failed to load replacement manager: ${replacementError.message}`,
+          code: 'REPLACEMENT_MANAGER_LOOKUP_FAILED',
+        });
+      }
+
+      if (!replacement) {
+        throw new NotFoundException({
+          message: 'Replacement manager not found.',
+          code: 'REPLACEMENT_MANAGER_NOT_FOUND',
+        });
+      }
+
+      if (
+        replacement.role !== 'branch-manager' ||
+        replacement.status !== 'active' ||
+        replacement.must_change_password ||
+        (replacement.branch_id && replacement.branch_id !== user.branch_id)
+      ) {
+        throw new BadRequestException({
+          message: 'Replacement manager must be active, setup-complete, and either unassigned or already assigned to the source facility.',
+          code: 'REPLACEMENT_MANAGER_INVALID',
+        });
+      }
+
+      const { error: replacementUpdateError } = await db
+        .from('users')
+        .update({ branch_id: user.branch_id })
+        .eq('id', replacement.id);
+
+      if (replacementUpdateError) {
+        throw new BadRequestException({
+          message: `Failed to assign replacement manager: ${replacementUpdateError.message}`,
+          code: 'REPLACEMENT_MANAGER_UPDATE_FAILED',
+        });
+      }
+
+      const sourceMetadata = (sourceBranch.metadata ?? {}) as Record<string, any>;
+      await db
+        .from('branches')
+        .update({ metadata: { ...sourceMetadata, managerName: replacement.full_name ?? 'Unassigned' } })
+        .eq('id', sourceBranch.id);
+    }
+
+    const { error: transferError } = await db
+      .from('users')
+      .update({ branch_id: targetBranchId })
+      .eq('id', user.id);
+
+    if (transferError) {
+      throw new BadRequestException({
+        message: `Failed to transfer user: ${transferError.message}`,
+        code: 'HQ_USER_TRANSFER_FAILED',
+      });
+    }
+
+    if (user.role === 'branch-manager') {
+      const targetMetadata = (targetBranch.metadata ?? {}) as Record<string, any>;
+      await db
+        .from('branches')
+        .update({ metadata: { ...targetMetadata, managerName: user.full_name ?? 'Unassigned' } })
+        .eq('id', targetBranch.id);
+    }
+
+    try {
+      await this.databaseService.createAuditLog(
+        actorUserId ?? null,
+        'transfer_staff',
+        'users',
+        user.id,
+        {
+          after: {
+            userId: user.id,
+            role: user.role,
+            fromBranchId: sourceBranch.id,
+            fromBranchName: sourceBranch.name,
+            toBranchId: targetBranch.id,
+            toBranchName: targetBranch.name,
+            replacementManagerId: dto.replacementManagerId ?? null,
+          },
+        },
+      );
+    } catch (auditError) {
+      this.logger.warn(`Failed to write staff transfer audit log: ${String(auditError)}`);
+    }
+
+    const users = await this.getHqUsers();
+    return users.find((item) => item.id === user.id);
+  }
+
   async resetHqUserPassword(email: string) {
     const db = this.databaseService.supabase;
     const normalizedEmail = email.trim().toLowerCase();

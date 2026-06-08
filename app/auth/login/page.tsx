@@ -130,6 +130,8 @@ function UnifiedLoginPageContent() {
       localStorage.setItem("userId", response.user.id)
       if (response.user.branchId) {
         localStorage.setItem("branchId", response.user.branchId)
+      } else {
+        localStorage.removeItem("branchId")
       }
 
       // Check if user must change password (first-time login with temp password)

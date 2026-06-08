@@ -7,6 +7,8 @@ export interface HqUser {
   role: string;
   branch?: string;
   status: 'active' | 'inactive';
+  mustChangePassword?: boolean;
+  lastLoginAt?: string | null;
 }
 
 export interface HqUserCreateResponse extends HqUser {
@@ -36,6 +38,11 @@ export interface HqResetPasswordResponse {
   reason?: string | null;
 }
 
+export interface TransferHqUserPayload {
+  targetBranch: string;
+  replacementManagerId?: string;
+}
+
 export async function getHqUsers(): Promise<HqUser[]> {
   return apiRequest<HqUser[]>('/hq-admin/users');
 }
@@ -58,6 +65,13 @@ export async function updateHqUserStatus(userId: string, status: 'active' | 'ina
   return apiRequest<HqUser>(`/hq-admin/users/${encodeURIComponent(userId)}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
+  });
+}
+
+export async function transferHqUser(userId: string, payload: TransferHqUserPayload): Promise<HqUser> {
+  return apiRequest<HqUser>(`/hq-admin/users/${encodeURIComponent(userId)}/transfer`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 
