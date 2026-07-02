@@ -18,34 +18,12 @@ export class ApiError extends Error {
   }
 }
 
-function getPreferredAccessToken(): string | null {
-  if (typeof window === 'undefined') return null;
-
-  const accessToken = localStorage.getItem('accessToken');
-  if (accessToken) return accessToken;
-
-  const legacyToken = localStorage.getItem('authToken');
-  if (!legacyToken) return null;
-
-  localStorage.setItem('accessToken', legacyToken);
-  localStorage.removeItem('authToken');
-  return legacyToken;
-}
-
 /**
- * Get authorization headers (cookies sent automatically)
+ * Get request headers. Auth is carried by the backend's HttpOnly cookie.
  */
 export function getAuthHeaders(): HeadersInit {
-  let authorizationHeader: string | undefined;
-
-  const token = getPreferredAccessToken();
-  if (token) {
-    authorizationHeader = `Bearer ${token}`;
-  }
-
   return {
     'Content-Type': 'application/json',
-    ...(authorizationHeader ? { Authorization: authorizationHeader } : {}),
   };
 }
 

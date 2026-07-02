@@ -62,12 +62,10 @@ export async function login(credentials: LoginRequest): Promise<AuthResponse> {
   }, true); // Skip auth redirect for login endpoint
   
   // Store non-sensitive user info for UI purposes only
-  // JWT token is in HttpOnly cookie, not accessible to JavaScript
+  // JWT token is in the HttpOnly cookie, not accessible to JavaScript
   if (typeof window !== 'undefined') {
-    if (response.accessToken) {
-      localStorage.setItem('accessToken', response.accessToken);
-      localStorage.removeItem('authToken');
-    }
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('authToken');
     localStorage.setItem('userRole', response.user.role);
     sessionStorage.setItem('userName', response.user.fullName);
     localStorage.removeItem('userName');
@@ -88,12 +86,10 @@ export async function register(data: RegisterRequest): Promise<AuthResponse> {
   });
   
   // Store non-sensitive user info for UI purposes only
-  // JWT token is in HttpOnly cookie, not accessible to JavaScript
+  // JWT token is in the HttpOnly cookie, not accessible to JavaScript
   if (typeof window !== 'undefined') {
-    if (response.accessToken) {
-      localStorage.setItem('accessToken', response.accessToken);
-      localStorage.removeItem('authToken');
-    }
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('authToken');
     localStorage.setItem('userRole', response.user.role);
     sessionStorage.setItem('userName', response.user.fullName);
     localStorage.removeItem('userName');
@@ -121,17 +117,10 @@ export async function verifyToken(): Promise<{ valid: boolean; user: UserProfile
  * Refresh JWT token
  * Token is automatically refreshed in HttpOnly cookie by backend
  */
-export async function refreshToken(): Promise<{ accessToken?: string }> {
-  const response = await apiRequest<{ accessToken?: string }>('/auth/refresh', {
+export async function refreshToken(): Promise<{ success?: boolean; expiresIn?: number }> {
+  return apiRequest<{ success?: boolean; expiresIn?: number }>('/auth/refresh', {
     method: 'POST',
   });
-
-  if (typeof window !== 'undefined' && response.accessToken) {
-    localStorage.setItem('accessToken', response.accessToken);
-    localStorage.removeItem('authToken');
-  }
-
-  return response;
 }
 
 /**

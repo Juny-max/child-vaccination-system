@@ -340,7 +340,7 @@ export class AuthService {
    * Refresh JWT token
    * Enhanced with audit logging
    */
-  async refreshToken(userId: string): Promise<{ accessToken: string }> {
+  async refreshToken(userId: string): Promise<{ accessToken: string; expiresIn: number }> {
     const user = await this.databaseService.getUserById(userId);
     
     if (!user || !this.isUserActive(user)) {
@@ -392,7 +392,7 @@ export class AuthService {
       console.warn('Audit log failed (non-critical):', auditError);
     }
 
-    return { accessToken };
+    return { accessToken, expiresIn: 604800 };
   }
 
   /**
@@ -534,6 +534,10 @@ export class AuthService {
       .join('');
   }
 
+  private hashResetToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
   /**
    * Request password reset with email
    * Returns success message without revealing if email exists (security best practice)
@@ -555,12 +559,18 @@ export class AuthService {
 
     // Generate token with 1-hour expiration
     const resetToken = this.generateResetToken();
+    const resetTokenHash = this.hashResetToken(resetToken);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-    // Save token — if this fails the table probably doesn't exist yet
+    await this.databaseService.supabase
+      .from('password_reset_tokens')
+      .delete()
+      .eq('user_id', user.id);
+
+    // Save only a hash of the reset token. The raw token is sent once by email.
     const { error: insertError } = await this.databaseService.supabase
       .from('password_reset_tokens')
-      .insert({ user_id: user.id, token: resetToken, expires_at: expiresAt.toISOString() });
+      .insert({ user_id: user.id, token: resetTokenHash, expires_at: expiresAt.toISOString() });
 
     if (insertError) {
       this.logger.error('[FORGOT-PASSWORD] Failed to save reset token:', insertError.message);
@@ -608,11 +618,13 @@ export class AuthService {
       throw new BadRequestException('Invalid or malformed reset token');
     }
 
+    const tokenHash = this.hashResetToken(token);
+
     // Get reset token from database
     const { data: resetTokenData, error: tokenError } = await this.databaseService.supabase
       .from('password_reset_tokens')
       .select('*')
-      .eq('token', token)
+      .eq('token', tokenHash)
       .maybeSingle();
 
     if (tokenError || !resetTokenData) {

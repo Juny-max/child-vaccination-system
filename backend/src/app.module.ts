@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { hours, minutes, ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { resolve } from 'path';
 import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './auth/auth.module';
@@ -27,11 +27,11 @@ import { VaccinationSchedulerService } from './common/vaccination-scheduler.serv
     // Rate limiting
     ThrottlerModule.forRoot([
       {
-        ttl: 60,        // 60 seconds
+        ttl: minutes(1),
         limit: 10,      // 10 requests per minute default
       },
       {
-        ttl: 3600,      // 1 hour
+        ttl: hours(1),
         limit: 100,     // 100 requests per hour
       },
     ]),

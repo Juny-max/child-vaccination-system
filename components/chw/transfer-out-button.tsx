@@ -41,12 +41,10 @@ export function TransferOutButton({
     try {
       if (isOnline) {
         // Online: Make API call to transfer out
-        const token = localStorage.getItem("accessToken")
         const response = await fetch(`${API_BASE_URL}/chw/children/${childId}/transfer-out`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           credentials: "include",
           body: JSON.stringify({

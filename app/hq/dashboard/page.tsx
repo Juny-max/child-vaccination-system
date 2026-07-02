@@ -753,12 +753,12 @@ export default function HqDashboardPage() {
   }, [activeTemplateId, previewChannel, templates])
 
   useEffect(() => {
-    const token = localStorage.getItem("accessToken") || localStorage.getItem("authToken")
+    const userId = localStorage.getItem("userId")
     const role = localStorage.getItem("userRole")
     const detail = localStorage.getItem("userRoleDetail")
     const name = sessionStorage.getItem("userName") || localStorage.getItem("userName")
 
-    if (!token) {
+    if (!userId) {
       router.push("/auth/login")
       return
     }

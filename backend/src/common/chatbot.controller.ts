@@ -1,7 +1,10 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards } from '@nestjs/common';
 import { ChatbotService } from './chatbot.service';
 import { VaccinationSchedulerService } from './vaccination-scheduler.service';
 import { SmsService } from './sms.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('chatbot')
 export class ChatbotController {
@@ -40,6 +43,8 @@ export class ChatbotController {
    * { "testPhoneNumber": "0241234567" } - Override recipient phone number for testing
    */
   @Post('test-vaccination-reminders')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('hq-admin')
   async testVaccinationReminders(@Body() body: any = {}) {
     const testPhoneNumber = body.testPhoneNumber || null;
     return this.vaccinationScheduler.sendRemindersNow(testPhoneNumber);
@@ -52,6 +57,8 @@ export class ChatbotController {
    * Body: { "phoneNumber": "0545427393" }
    */
   @Post('test-sms')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('hq-admin')
   async testSms(@Body() body: any) {
     if (!body.phoneNumber) {
       return {

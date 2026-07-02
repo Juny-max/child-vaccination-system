@@ -73,12 +73,10 @@ export function TransferInModal({ open, onClose, onSuccess }: TransferInModalPro
           )
         } else {
           // Use the standard transfer-in endpoint
-          const token = localStorage.getItem("accessToken")
           const response = await fetch(`${API_BASE_URL}/chw/children/${selectedChild.id}/transfer-in`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
             },
             credentials: "include",
             body: JSON.stringify({
